@@ -1,9 +1,12 @@
 import express from 'express'
 import cors from 'cors'
+import session from 'express-session'
 
-import { FRONTEND_URL, PORT } from './config/env.js'
+import { FRONTEND_URL, PORT, SESSION_SECRET } from './config/env.js'
 import { testDatabaseConnection } from './config/db.js'
+
 import healthRoutes from './routes/healthRoutes.js'
+import authRoutes from './routes/authRoutes.js'
 
 const app = express()
 
@@ -16,7 +19,20 @@ app.use(
 
 app.use(express.json())
 
+app.use(
+  session({
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: false,
+    },
+  })
+)
+
 app.use('/api/health', healthRoutes)
+app.use('/api/auth', authRoutes)
 
 async function startServer() {
   try {
