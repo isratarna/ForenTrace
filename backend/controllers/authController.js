@@ -70,3 +70,26 @@ export async function login(req, res) {
     })
   }
 }
+export function getCurrentUser(req, res) {
+  return res.status(200).json({
+    success: true,
+    user: req.session.user,
+  })
+}
+export function logout(req, res) {
+  req.session.destroy((error) => {
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        message: 'Logout failed.',
+      })
+    }
+
+    res.clearCookie('connect.sid')
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logout successful.',
+    })
+  })
+}
