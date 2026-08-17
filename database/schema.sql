@@ -20,3 +20,13 @@ CREATE TABLE users (
         FOREIGN KEY (role_id)
         REFERENCES roles(role_id)
 );
+CREATE TABLE police_stations (
+    station_id INT AUTO_INCREMENT PRIMARY KEY,
+    station_name VARCHAR(150) NOT NULL,
+    district VARCHAR(100) NOT NULL,
+    city VARCHAR(100) NOT NULL,
+    address TEXT NOT NULL,
+    contact_number VARCHAR(50) NOT NULL,
+    email VARCHAR(150) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
