@@ -201,6 +201,43 @@ export async function updateUser(req, res) {
   }
 }
 
+export async function deleteUser(req, res) {
+  try {
+    const userId = parseUserId(req.params.id)
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user id.',
+      })
+    }
+
+    const existing = await findUserById(userId)
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.',
+      })
+    }
+
+    const updated = await updateUserStatus(userId, 'inactive')
+
+    return res.status(200).json({
+      success: true,
+      message: 'User deactivated successfully.',
+      user: formatUser(updated),
+    })
+  } catch (error) {
+    console.error('Delete user error:', error)
+
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error.',
+    })
+  }
+}
+
 export async function setUserStatus(req, res) {
   try {
     const userId = parseUserId(req.params.id)

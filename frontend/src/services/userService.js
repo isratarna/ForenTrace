@@ -24,3 +24,8 @@ export async function updateUserStatus(id, status) {
   const response = await api.put(`/users/${id}/status`, { status })
   return response.data.user
 }
+
+export async function deleteUser(id) {
+  const response = await api.delete(`/users/${id}`)
+  return response.data.user
+}
