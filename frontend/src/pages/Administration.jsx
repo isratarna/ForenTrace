@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { PageHeader, SearchFilters, StatusBadge } from '../components/Ui'
-import { useRole } from '../components/RoleContext'
+import { useAuth } from '../context/AuthContext'
 import { useData } from '../data/DataContext'
-import { changePassword, getAccounts, updateAccount } from '../services/api'
+import { changePassword } from '../services/mockAuth'
+import { getUsers, updateUser, updateUserStatus } from '../services/userService'
 
 const recordConfig = {
   stations: { title: 'Police Stations', subtitle: 'Manage police station records.', button: 'Add Station', fields: [['name', 'Station name'], ['district', 'District'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email', 'email']] },
@@ -34,25 +35,52 @@ export function AdminList({ kind }) {
   const [activeOnly, setActiveOnly] = useState(false)
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
-  const [accountRows, setAccountRows] = useState(getAccounts)
+  const [accountRows, setAccountRows] = useState([])
+  const [usersLoading, setUsersLoading] = useState(false)
+  const [usersError, setUsersError] = useState('')
   const config = recordConfig[kind]
-  const refreshAccounts = () => setAccountRows(getAccounts())
+
+  const refreshAccounts = async () => {
+    try {
+      setUsersLoading(true)
+      setUsersError('')
+      const users = await getUsers()
+      setAccountRows(users)
+    } catch (error) {
+      setUsersError(error.response?.data?.message || 'Failed to load users.')
+    } finally {
+      setUsersLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (kind !== 'users') return undefined
-    window.addEventListener('forentrace-accounts-changed', refreshAccounts)
-    return () => window.removeEventListener('forentrace-accounts-changed', refreshAccounts)
+    refreshAccounts()
   }, [kind])
 
   const rows = kind === 'users' ? accountRows : data[kind]
   const columns = displayColumns[kind]
   const filtered = useMemo(() => rows.filter(row => (!activeOnly || row.status === 'Active') && (!query || Object.values(row).some(value => String(value ?? '').toLowerCase().includes(query.toLowerCase())))), [rows, activeOnly, query])
   const fields = kind === 'users' ? [['name', 'Full name'], ['email', 'Email', 'email'], ['role', 'Role', 'select', ['Admin', 'Officer', 'Lab Technician']], ['linked', 'Linked person'], ['station', 'Police station'], ['lab', 'DNA laboratory'], ['status', 'Status', 'select', ['Pending Approval', 'Active', 'Inactive']]] : config.fields
-  const save = values => {
+  const save = async values => {
     if (kind === 'users') {
-      updateAccount(editing.id, values)
-      refreshAccounts()
-    } else if (editing?.id) updateAdminRecord(kind, editing.id, values)
+      try {
+        await updateUser(editing.id, {
+          name: values.name,
+          email: values.email,
+          role: values.role,
+        })
+        if (values.status !== editing.status) {
+          await updateUserStatus(editing.id, values.status)
+        }
+        await refreshAccounts()
+        setEditing(null)
+      } catch (error) {
+        window.alert(error.response?.data?.message || 'Failed to update user.')
+      }
+      return
+    }
+    if (editing?.id) updateAdminRecord(kind, editing.id, values)
     else addAdminRecord(kind, values)
     setEditing(null)
   }
@@ -64,7 +92,7 @@ export function AdminList({ kind }) {
   const title = kind === 'users' ? 'Users & Accounts' : config.title
   const subtitle = kind === 'users' ? 'Manage registered officer and laboratory accounts. New accounts are created through registration.' : config.subtitle
 
-  return <><PageHeader title={title} subtitle={subtitle} action={kind === 'users' ? null : <button onClick={() => { setViewing(null); setEditing(emptyRecord(fields)) }} className="btn btn-primary">{config.button}</button>}/>{editing && <RecordForm title={editing.id ? `Edit ${editing.name || editing.id}` : config.button} fields={fields} value={editing} onCancel={() => setEditing(null)} onSave={save}/>}<SearchFilters onSearchChange={setQuery} onClear={() => setActiveOnly(false)}><div className="col-md-3"><label className="form-label">Filter</label><select value={activeOnly ? 'active' : ''} onChange={event => setActiveOnly(event.target.value === 'active')} className="form-select"><option value="">All records</option><option value="active">Active only</option></select></div></SearchFilters>{viewing && <div className="alert alert-info d-flex justify-content-between align-items-center"><span><b>{viewing.name}</b> · ID {viewing.id}</span><button onClick={() => setViewing(null)} className="btn btn-sm btn-outline-secondary">Close</button></div>}<div className="card"><div className="table-responsive"><table className="table table-hover align-middle mb-0"><thead><tr>{columns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead><tbody>{filtered.map(row => <tr key={row.id}>{columns.map(([key]) => <td key={key}>{isStatus(key) ? <StatusBadge value={row[key]}/> : row[key] || '—'}</td>)}<td className="text-nowrap"><button onClick={() => setViewing(row)} className="btn btn-sm btn-outline-primary me-1">View</button><button onClick={() => { setViewing(null); setEditing(row) }} className="btn btn-sm btn-outline-secondary me-1">Edit</button>{kind !== 'users' && <button onClick={() => remove(row)} className="btn btn-sm btn-outline-danger">Delete</button>}</td></tr>)}{!filtered.length && <tr><td colSpan={columns.length + 1} className="text-center text-secondary py-4">No matching records found.</td></tr>}</tbody></table></div></div></>
+  return <><PageHeader title={title} subtitle={subtitle} action={kind === 'users' ? null : <button onClick={() => { setViewing(null); setEditing(emptyRecord(fields)) }} className="btn btn-primary">{config.button}</button>}/>{kind === 'users' && usersError && <div className="alert alert-danger">{usersError}</div>}{editing && <RecordForm title={editing.id ? `Edit ${editing.name || editing.id}` : config.button} fields={fields} value={editing} onCancel={() => setEditing(null)} onSave={save}/>}<SearchFilters onSearchChange={setQuery} onClear={() => setActiveOnly(false)}><div className="col-md-3"><label className="form-label">Filter</label><select value={activeOnly ? 'active' : ''} onChange={event => setActiveOnly(event.target.value === 'active')} className="form-select"><option value="">All records</option><option value="active">Active only</option></select></div></SearchFilters>{viewing && <div className="alert alert-info d-flex justify-content-between align-items-center"><span><b>{viewing.name}</b> · ID {viewing.id}</span><button onClick={() => setViewing(null)} className="btn btn-sm btn-outline-secondary">Close</button></div>}<div className="card"><div className="table-responsive"><table className="table table-hover align-middle mb-0"><thead><tr>{columns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead><tbody>{kind === 'users' && usersLoading ? <tr><td colSpan={columns.length + 1} className="text-center text-secondary py-4">Loading users...</td></tr> : filtered.map(row => <tr key={row.id}>{columns.map(([key]) => <td key={key}>{isStatus(key) ? <StatusBadge value={row[key]}/> : row[key] || '—'}</td>)}<td className="text-nowrap"><button onClick={() => setViewing(row)} className="btn btn-sm btn-outline-primary me-1">View</button><button onClick={() => { setViewing(null); setEditing(row) }} className="btn btn-sm btn-outline-secondary me-1">Edit</button>{kind !== 'users' && <button onClick={() => remove(row)} className="btn btn-sm btn-outline-danger">Delete</button>}</td></tr>)}{kind !== 'users' || !usersLoading ? !filtered.length && <tr><td colSpan={columns.length + 1} className="text-center text-secondary py-4">No matching records found.</td></tr> : null}</tbody></table></div></div></>
 }
 
 export function Reports() {
@@ -72,6 +100,6 @@ export function Reports() {
 }
 
 export function Profile() {
-  const { user } = useRole(); const roleName = user.role === 'Officer' ? 'Police Officer' : user.role; const [editingPassword, setEditingPassword] = useState(false); const [form, setForm] = useState({ current: '', next: '' }); const [message, setMessage] = useState(''); const submitPassword = event => { event.preventDefault(); try { changePassword(user.id, form.current, form.next); setMessage('Password updated.'); setForm({ current: '', next: '' }); setEditingPassword(false) } catch (error) { setMessage(error.message) } }
+  const { user } = useAuth(); const roleName = user.role === 'Officer' ? 'Police Officer' : user.role; const [editingPassword, setEditingPassword] = useState(false); const [form, setForm] = useState({ current: '', next: '' }); const [message, setMessage] = useState(''); const submitPassword = event => { event.preventDefault(); try { changePassword(user.id, form.current, form.next); setMessage('Password updated.'); setForm({ current: '', next: '' }); setEditingPassword(false) } catch (error) { setMessage(error.message) } }
   return <><PageHeader title="My Profile" subtitle="Your authorized system account details."/><div className="row g-4"><div className="col-lg-4"><div className="card"><div className="card-body text-center py-5"><div className="profile-avatar">{user.initials}</div><h4 className="mt-3 mb-1">{user.name}</h4><p className="text-secondary mb-2">{roleName}</p><StatusBadge value={user.status || 'Active'}/></div></div></div><div className="col-lg-8"><div className="card"><div className="card-header bg-white"><strong>Account information</strong></div><div className="card-body"><div className="detail-grid"><span>Name<b>{user.name}</b></span><span>Email<b>{user.email}</b></span><span>Role<b>{roleName}</b></span><span>Account type<b>{user.role === 'Admin' ? 'Predefined administrator account' : 'Registered user account'}</b></span></div>{message && <div className={`alert ${message === 'Password updated.' ? 'alert-success' : 'alert-danger'} mt-3 mb-0`}>{message}</div>}</div><div className="card-footer bg-white">{editingPassword ? <form className="row g-2" onSubmit={submitPassword}><div className="col-md-5"><input className="form-control" type="password" placeholder="Current password" value={form.current} onChange={event => setForm({ ...form, current: event.target.value })} required/></div><div className="col-md-5"><input className="form-control" type="password" placeholder="New password" value={form.next} onChange={event => setForm({ ...form, next: event.target.value })} required/></div><div className="col-md-2 d-flex gap-2"><button className="btn btn-primary">Save</button><button type="button" onClick={() => setEditingPassword(false)} className="btn btn-light">Cancel</button></div></form> : <button onClick={() => { setMessage(''); setEditingPassword(true) }} className="btn btn-outline-primary">Change Password</button>}</div></div></div></div></>
 }

@@ -1,54 +1,363 @@
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
+
 import AppLayout from '../layouts/AppLayout'
 import Login from '../pages/Auth'
-import { Dashboard } from '../pages/Dashboards'
-import { CaseDetails, CaseForm, Cases, FamilyMembers, MissingPersonDetails, MissingPersonForm, MissingPersons } from '../pages/Investigation'
-import { DNAAnalysis, MatchDetails, Matches, SampleDetails, SampleForm, Samples } from '../pages/Laboratory'
-import { AdminList, Profile, Reports } from '../pages/Administration'
-import { dashboardPath, useRole } from '../components/RoleContext'
+import Unauthorized from '../pages/Unauthorized'
 
-function RequireAuth() { const { user } = useRole(); return user ? <Outlet /> : <Navigate to="/login" replace /> }
-function HomeRedirect() { const { role } = useRole(); return <Navigate to={dashboardPath(role)} replace /> }
-function RoleDashboard({ role: requiredRole }) { const { role } = useRole(); return role === requiredRole ? <Dashboard type={role} /> : <Navigate to={dashboardPath(role)} replace /> }
-function RoleGuard({ allowedRoles }) { const { role } = useRole(); return allowedRoles.includes(role) ? <Outlet /> : <Navigate to={dashboardPath(role)} replace /> }
+import { Dashboard } from '../pages/Dashboards'
+
+import {
+  CaseDetails,
+  CaseForm,
+  Cases,
+  FamilyMembers,
+  MissingPersonDetails,
+  MissingPersonForm,
+  MissingPersons,
+} from '../pages/Investigation'
+
+import {
+  DNAAnalysis,
+  MatchDetails,
+  Matches,
+  SampleDetails,
+  SampleForm,
+  Samples,
+} from '../pages/Laboratory'
+
+import {
+  AdminList,
+  Profile,
+  Reports,
+} from '../pages/Administration'
+
+import { useAuth } from '../context/AuthContext'
+import { dashboardPath } from '../utils/auth'
+import ProtectedRoute from './ProtectedRoute'
+
+
+function HomeRedirect() {
+  const { user } = useAuth()
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  return (
+    <Navigate
+      to={dashboardPath(user.role)}
+      replace
+    />
+  )
+}
+
 
 export default function AppRoutes() {
-  return <Routes>
-    <Route path="/login" element={<Login />} />
-    <Route element={<RequireAuth />}><Route element={<AppLayout />}>
-      <Route index element={<HomeRedirect />} />
-      <Route path="admin/dashboard" element={<RoleDashboard role="Admin" />} />
-      <Route path="officer/dashboard" element={<RoleDashboard role="Officer" />} />
-      <Route path="lab/dashboard" element={<RoleDashboard role="Lab Technician" />} />
-      <Route element={<RoleGuard allowedRoles={['Admin', 'Officer']} />}>
-        <Route path="missing-persons" element={<MissingPersons />} />
-        <Route path="missing-persons/:id" element={<MissingPersonDetails />} />
-        <Route path="family-members" element={<FamilyMembers />} />
-        <Route path="cases" element={<Cases />} />
-        <Route path="cases/:id" element={<CaseDetails />} />
+  return (
+    <Routes>
+
+      {/* PUBLIC ROUTES */}
+
+      <Route
+        path="/login"
+        element={<Login />}
+      />
+
+      <Route
+        path="/unauthorized"
+        element={<Unauthorized />}
+      />
+
+
+      {/* PROTECTED APPLICATION */}
+
+      <Route
+        element={
+          <ProtectedRoute>
+            <AppLayout />
+          </ProtectedRoute>
+        }
+      >
+
+        <Route
+          index
+          element={<HomeRedirect />}
+        />
+
+
+        {/* DASHBOARDS */}
+
+        <Route
+          path="admin/dashboard"
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <Dashboard type="Admin" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="officer/dashboard"
+          element={
+            <ProtectedRoute allowedRoles={['Officer']}>
+              <Dashboard type="Officer" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="lab/dashboard"
+          element={
+            <ProtectedRoute allowedRoles={['Lab Technician']}>
+              <Dashboard type="Lab Technician" />
+            </ProtectedRoute>
+          }
+        />
+
+
+        {/* MISSING PERSON + CASE VIEW */}
+
+        <Route
+          path="missing-persons"
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Officer']}>
+              <MissingPersons />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="missing-persons/:id"
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Officer']}>
+              <MissingPersonDetails />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="family-members"
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Officer']}>
+              <FamilyMembers />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="cases"
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Officer']}>
+              <Cases />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="cases/:id"
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Officer']}>
+              <CaseDetails />
+            </ProtectedRoute>
+          }
+        />
+
+
+        {/* OFFICER-ONLY CREATE OPERATIONS */}
+
+        <Route
+          path="missing-persons/new"
+          element={
+            <ProtectedRoute allowedRoles={['Officer']}>
+              <MissingPersonForm />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="cases/new"
+          element={
+            <ProtectedRoute allowedRoles={['Officer']}>
+              <CaseForm />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="dna-samples/new"
+          element={
+            <ProtectedRoute allowedRoles={['Officer']}>
+              <SampleForm />
+            </ProtectedRoute>
+          }
+        />
+
+
+        {/* DNA RECORDS */}
+
+        <Route
+          path="dna-samples"
+          element={
+            <ProtectedRoute
+              allowedRoles={[
+                'Admin',
+                'Officer',
+                'Lab Technician',
+              ]}
+            >
+              <Samples />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="dna-samples/:id"
+          element={
+            <ProtectedRoute
+              allowedRoles={[
+                'Admin',
+                'Officer',
+                'Lab Technician',
+              ]}
+            >
+              <SampleDetails />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="dna-matches"
+          element={
+            <ProtectedRoute
+              allowedRoles={[
+                'Admin',
+                'Officer',
+                'Lab Technician',
+              ]}
+            >
+              <Matches />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="dna-matches/:id"
+          element={
+            <ProtectedRoute
+              allowedRoles={[
+                'Admin',
+                'Officer',
+                'Lab Technician',
+              ]}
+            >
+              <MatchDetails />
+            </ProtectedRoute>
+          }
+        />
+
+
+        {/* LAB TECHNICIAN ANALYSIS */}
+
+        <Route
+          path="lab/analysis/:id"
+          element={
+            <ProtectedRoute allowedRoles={['Lab Technician']}>
+              <DNAAnalysis />
+            </ProtectedRoute>
+          }
+        />
+
+
+        {/* COMMON ROUTES */}
+
+        <Route
+          path="reports"
+          element={
+            <ProtectedRoute
+              allowedRoles={[
+                'Admin',
+                'Officer',
+                'Lab Technician',
+              ]}
+            >
+              <Reports />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="profile"
+          element={
+            <ProtectedRoute
+              allowedRoles={[
+                'Admin',
+                'Officer',
+                'Lab Technician',
+              ]}
+            >
+              <Profile />
+            </ProtectedRoute>
+          }
+        />
+
+
+        {/* ADMIN MANAGEMENT */}
+
+        <Route
+          path="admin/police-stations"
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <AdminList kind="stations" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="admin/officers"
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <AdminList kind="officers" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="admin/labs"
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <AdminList kind="labs" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="admin/technicians"
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <AdminList kind="technicians" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="admin/users"
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <AdminList kind="users" />
+            </ProtectedRoute>
+          }
+        />
+
       </Route>
-      <Route element={<RoleGuard allowedRoles={['Officer']} />}>
-        <Route path="missing-persons/new" element={<MissingPersonForm />} />
-        <Route path="cases/new" element={<CaseForm />} />
-        <Route path="dna-samples/new" element={<SampleForm />} />
-      </Route>
-      <Route element={<RoleGuard allowedRoles={['Admin', 'Officer', 'Lab Technician']} />}>
-        <Route path="dna-samples" element={<Samples />} />
-        <Route path="dna-samples/:id" element={<SampleDetails />} />
-        <Route path="dna-matches" element={<Matches />} />
-        <Route path="dna-matches/:id" element={<MatchDetails />} />
-        <Route path="reports" element={<Reports />} />
-        <Route path="profile" element={<Profile />} />
-      </Route>
-      <Route element={<RoleGuard allowedRoles={['Lab Technician']} />}><Route path="lab/analysis/:id" element={<DNAAnalysis />} /></Route>
-      <Route element={<RoleGuard allowedRoles={['Admin']} />}>
-        <Route path="admin/police-stations" element={<AdminList kind="stations" />} />
-        <Route path="admin/officers" element={<AdminList kind="officers" />} />
-        <Route path="admin/labs" element={<AdminList kind="labs" />} />
-        <Route path="admin/technicians" element={<AdminList kind="technicians" />} />
-        <Route path="admin/users" element={<AdminList kind="users" />} />
-      </Route>
-    </Route></Route>
-    <Route path="*" element={<Navigate to="/login" replace />} />
-  </Routes>
+
+
+      {/* UNKNOWN ROUTES */}
+
+      <Route
+        path="*"
+        element={<Navigate to="/" replace />}
+      />
+
+    </Routes>
+  )
 }

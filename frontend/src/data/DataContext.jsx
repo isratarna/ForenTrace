@@ -1,13 +1,11 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useMemo, useState } from 'react'
 import * as seed from './mockData'
-import { API_BASE_URL } from '../services/api'
 
 const DATA_KEY = 'forentrace-records-v2'
 const collections = ['missingPeople', 'cases', 'familyMembers', 'samples', 'matches', 'stations', 'officers', 'labs', 'technicians']
 const clone = value => JSON.parse(JSON.stringify(value))
 const initialData = () => Object.fromEntries(collections.map(key => [key, clone(seed[key])]))
 const hasCollections = value => collections.every(key => Array.isArray(value?.[key]))
-const saveRemote = value => fetch(`${API_BASE_URL}/records`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) }).catch(() => undefined)
 
 function normalizeRecords(records) {
   const familyMembers = records.familyMembers.map(member => ({ ...member, sample: member.sample || '—' }))
@@ -42,15 +40,7 @@ export function DataProvider({ children }) {
     const normalized = normalizeRecords(next)
     setData(normalized)
     localStorage.setItem(DATA_KEY, JSON.stringify(normalized))
-    saveRemote(normalized)
   }
-
-  useEffect(() => {
-    fetch(`${API_BASE_URL}/records`)
-      .then(response => response.ok ? response.json() : null)
-      .then(remote => { if (hasCollections(remote)) setData(normalizeRecords(remote)) })
-      .catch(() => undefined)
-  }, [])
 
   const api = useMemo(() => ({
     data,

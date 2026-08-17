@@ -1,11 +1,11 @@
 import { Link } from 'react-router-dom'
 import { MetricCard, PageHeader, StatusBadge } from '../components/Ui'
 import { useData } from '../data/DataContext'
-import { useRole } from '../components/RoleContext'
+import { useAuth } from '../context/AuthContext'
 
 export function Dashboard({ type }) {
   const { data } = useData()
-  const { user } = useRole()
+  const { user } = useAuth()
   const assignedLab = user?.lab || data.technicians.find(technician => technician.email === user?.email || technician.name === user?.name)?.lab || ''
   const scopedCases = type === 'Officer' ? data.cases.filter(caseItem => caseItem.officer === user?.name) : data.cases
   const scopedSamples = type === 'Lab Technician' ? data.samples.filter(sample => sample.lab === assignedLab) : type === 'Officer' ? data.samples.filter(sample => scopedCases.some(caseItem => caseItem.id === sample.caseId)) : data.samples
