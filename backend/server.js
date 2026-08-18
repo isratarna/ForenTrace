@@ -8,6 +8,8 @@ import { testDatabaseConnection } from './config/db.js'
 import healthRoutes from './routes/healthRoutes.js'
 import authRoutes from './routes/authRoutes.js'
 import userRoutes from './routes/userRoutes.js'
+import officerRoutes from './routes/officerRoutes.js'
+import policeStationRoutes from './routes/policeStationRoutes.js'
 
 const app = express()
 
@@ -37,6 +39,8 @@ app.use(
 app.use('/api/health', healthRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/users', userRoutes)
+app.use('/api/officers', officerRoutes)
+app.use('/api/police-stations', policeStationRoutes)
 
 async function startServer() {
   try {

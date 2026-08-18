@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PageHeader, SearchFilters, StatusBadge } from '../components/Ui'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../data/DataContext'
 import { changePassword } from '../services/mockAuth'
 import { getUsers, updateUser, updateUserStatus, deleteUser } from '../services/userService'
+import { getOfficers, createOfficer, updateOfficer, deleteOfficer } from '../services/officerService'
+import { getStations, createStation, updateStation, deleteStation } from '../services/policeStationService'
 
 const recordConfig = {
   stations: { title: 'Police Stations', subtitle: 'Manage police station records.', button: 'Add Station', fields: [['name', 'Station name'], ['district', 'District'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email', 'email']] },
@@ -22,6 +24,7 @@ const displayColumns = {
 
 const emptyRecord = fields => Object.fromEntries(fields.map(([key]) => [key, key === 'status' ? 'Active' : '']))
 const isStatus = key => key === 'status'
+const backendKinds = ['users', 'officers', 'stations']
 
 function RecordForm({ title, fields, value, onCancel, onSave }) {
   const [form, setForm] = useState(value)
@@ -36,32 +39,55 @@ export function AdminList({ kind }) {
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [accountRows, setAccountRows] = useState([])
+  const [stationRows, setStationRows] = useState(data.stations)
   const [usersLoading, setUsersLoading] = useState(false)
   const [usersError, setUsersError] = useState('')
   const config = recordConfig[kind]
 
-  const refreshAccounts = async () => {
+  const refreshRecords = useCallback(async () => {
     try {
       setUsersLoading(true)
       setUsersError('')
-      const users = await getUsers()
-      setAccountRows(users)
+      if (kind === 'users') {
+        const users = await getUsers()
+        setAccountRows(users)
+      } else if (kind === 'officers') {
+        const [officers, stations] = await Promise.all([getOfficers(), getStations()])
+        setAccountRows(officers)
+        setStationRows(stations)
+      } else if (kind === 'stations') {
+        const stations = await getStations()
+        setAccountRows(stations)
+        setStationRows(stations)
+      }
     } catch (error) {
-      setUsersError(error.response?.data?.message || 'Failed to load users.')
+      setUsersError(error.response?.data?.message || `Failed to load ${kind}.`)
     } finally {
       setUsersLoading(false)
     }
-  }
-
-  useEffect(() => {
-    if (kind !== 'users') return undefined
-    refreshAccounts()
   }, [kind])
 
-  const rows = kind === 'users' ? accountRows : data[kind]
+  useEffect(() => {
+    if (!backendKinds.includes(kind)) return undefined
+    refreshRecords()
+  }, [kind, refreshRecords])
+
+  const rows = backendKinds.includes(kind) ? accountRows : data[kind]
   const columns = displayColumns[kind]
   const filtered = useMemo(() => rows.filter(row => (!activeOnly || row.status === 'Active') && (!query || Object.values(row).some(value => String(value ?? '').toLowerCase().includes(query.toLowerCase())))), [rows, activeOnly, query])
-  const fields = kind === 'users' ? [['name', 'Full name'], ['email', 'Email', 'email'], ['role', 'Role', 'select', ['Admin', 'Officer', 'Lab Technician']]] : config.fields
+
+  const fields = useMemo(() => {
+    if (kind === 'users') {
+      return [['name', 'Full name'], ['email', 'Email', 'email'], ['role', 'Role', 'select', ['Admin', 'Officer', 'Lab Technician']]]
+    }
+    const baseFields = config.fields
+    if (kind === 'officers') {
+      const stationNames = stationRows.map(s => s.name)
+      return baseFields.map(f => f[0] === 'station' ? [f[0], f[1], 'select', stationNames] : f)
+    }
+    return baseFields
+  }, [kind, config, stationRows])
+
   const save = async values => {
     if (kind === 'users') {
       try {
@@ -70,40 +96,119 @@ export function AdminList({ kind }) {
           email: values.email,
           role: values.role,
         })
-        await refreshAccounts()
+        await refreshRecords()
         setEditing(null)
       } catch (error) {
         window.alert(error.response?.data?.message || 'Failed to update user.')
       }
       return
     }
+
+    if (kind === 'stations') {
+      try {
+        const stationPayload = {
+          name: values.name,
+          district: values.district,
+          city: values.city,
+          address: values.address,
+          contact: values.contact,
+          email: values.email,
+        }
+
+        if (editing?.id) {
+          await updateStation(editing.id, stationPayload)
+        } else {
+          await createStation(stationPayload)
+        }
+        await refreshRecords()
+        setEditing(null)
+      } catch (error) {
+        window.alert(error.response?.data?.message || `Failed to ${editing?.id ? 'update' : 'create'} police station.`)
+      }
+      return
+    }
+
+    if (kind === 'officers') {
+      try {
+        const selectedStation = stationRows.find(s => s.name === values.station)
+        let stationId = selectedStation?.stationId || selectedStation?.station_id
+        if (!stationId && selectedStation?.id) {
+          const numMatch = String(selectedStation.id).match(/\d+/)
+          stationId = numMatch ? parseInt(numMatch[0], 10) : null
+        }
+
+        const officerPayload = {
+          name: values.name,
+          rank: values.rank,
+          badge: values.badge,
+          phone: values.phone,
+          email: values.email,
+          stationId: stationId,
+        }
+
+        if (editing?.id) {
+          await updateOfficer(editing.id, officerPayload)
+        } else {
+          await createOfficer(officerPayload)
+        }
+        await refreshRecords()
+        setEditing(null)
+      } catch (error) {
+        window.alert(error.response?.data?.message || `Failed to ${editing?.id ? 'update' : 'create'} officer.`)
+      }
+      return
+    }
+
     if (editing?.id) updateAdminRecord(kind, editing.id, values)
     else addAdminRecord(kind, values)
     setEditing(null)
   }
-  const remove = record => {
+
+  const remove = async record => {
     if (!window.confirm(`Delete ${record.name}?`)) return
+    if (kind === 'stations') {
+      try {
+        await deleteStation(record.id)
+        await refreshRecords()
+      } catch (error) {
+        window.alert(error.response?.data?.message || 'Failed to delete police station.')
+      }
+      return
+    }
+
+    if (kind === 'officers') {
+      try {
+        await deleteOfficer(record.id)
+        await refreshRecords()
+      } catch (error) {
+        window.alert(error.response?.data?.message || 'Failed to delete officer.')
+      }
+      return
+    }
     const result = removeAdminRecord(kind, record.id)
     if (!result.ok) window.alert(result.message)
   }
+
   const activateUser = async record => {
     if (!window.confirm(`Activate ${record.name}?`)) return
     try {
       await updateUserStatus(record.id, 'Active')
-      await refreshAccounts()
+      await refreshRecords()
     } catch (error) {
       window.alert(error.response?.data?.message || 'Failed to activate user.')
     }
   }
+
   const deactivateUser = async record => {
     if (!window.confirm(`Deactivate ${record.name}?`)) return
     try {
       await deleteUser(record.id)
-      await refreshAccounts()
+      await refreshRecords()
     } catch (error) {
       window.alert(error.response?.data?.message || 'Failed to deactivate user.')
     }
   }
+
   const userActions = row => <>
     <button onClick={() => setViewing(row)} className="btn btn-sm btn-outline-primary me-1">View</button>
     <button onClick={() => { setViewing(null); setEditing(row) }} className="btn btn-sm btn-outline-secondary me-1">Edit</button>
@@ -111,10 +216,11 @@ export function AdminList({ kind }) {
       ? <button onClick={() => deactivateUser(row)} className="btn btn-sm btn-outline-danger">Deactivate</button>
       : <button onClick={() => activateUser(row)} className="btn btn-sm btn-outline-success">Activate</button>}
   </>
+
   const title = kind === 'users' ? 'Users & Accounts' : config.title
   const subtitle = kind === 'users' ? 'Manage registered officer and laboratory accounts. New accounts are created through registration.' : config.subtitle
 
-  return <><PageHeader title={title} subtitle={subtitle} action={kind === 'users' ? null : <button onClick={() => { setViewing(null); setEditing(emptyRecord(fields)) }} className="btn btn-primary">{config.button}</button>}/>{kind === 'users' && usersError && <div className="alert alert-danger">{usersError}</div>}{editing && <RecordForm title={editing.id ? `Edit ${editing.name || editing.id}` : config.button} fields={fields} value={editing} onCancel={() => setEditing(null)} onSave={save}/>}<SearchFilters onSearchChange={setQuery} onClear={() => setActiveOnly(false)}><div className="col-md-3"><label className="form-label">Filter</label><select value={activeOnly ? 'active' : ''} onChange={event => setActiveOnly(event.target.value === 'active')} className="form-select"><option value="">All records</option><option value="active">Active only</option></select></div></SearchFilters>{viewing && <div className="alert alert-info d-flex justify-content-between align-items-center"><span><b>{viewing.name}</b> · ID {viewing.id}</span><button onClick={() => setViewing(null)} className="btn btn-sm btn-outline-secondary">Close</button></div>}<div className="card"><div className="table-responsive"><table className="table table-hover align-middle mb-0"><thead><tr>{columns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead><tbody>{kind === 'users' && usersLoading ? <tr><td colSpan={columns.length + 1} className="text-center text-secondary py-4">Loading users...</td></tr> : filtered.map(row => <tr key={row.id}>{columns.map(([key]) => <td key={key}>{isStatus(key) ? <StatusBadge value={row[key]}/> : row[key] || '—'}</td>)}<td className="text-nowrap">{kind === 'users' ? userActions(row) : <><button onClick={() => setViewing(row)} className="btn btn-sm btn-outline-primary me-1">View</button><button onClick={() => { setViewing(null); setEditing(row) }} className="btn btn-sm btn-outline-secondary me-1">Edit</button><button onClick={() => remove(row)} className="btn btn-sm btn-outline-danger">Delete</button></>}</td></tr>)}{kind !== 'users' || !usersLoading ? !filtered.length && <tr><td colSpan={columns.length + 1} className="text-center text-secondary py-4">No matching records found.</td></tr> : null}</tbody></table></div></div></>
+  return <><PageHeader title={title} subtitle={subtitle} action={kind === 'users' ? null : <button onClick={() => { setViewing(null); setEditing(emptyRecord(fields)) }} className="btn btn-primary">{config.button}</button>}/>{backendKinds.includes(kind) && usersError && <div className="alert alert-danger">{usersError}</div>}{editing && <RecordForm title={editing.id ? `Edit ${editing.name || editing.id}` : config.button} fields={fields} value={editing} onCancel={() => setEditing(null)} onSave={save}/>}<SearchFilters onSearchChange={setQuery} onClear={() => setActiveOnly(false)}><div className="col-md-3"><label className="form-label">Filter</label><select value={activeOnly ? 'active' : ''} onChange={event => setActiveOnly(event.target.value === 'active')} className="form-select"><option value="">All records</option><option value="active">Active only</option></select></div></SearchFilters>{viewing && <div className="alert alert-info d-flex justify-content-between align-items-center"><span><b>{viewing.name}</b> · ID {viewing.id}</span><button onClick={() => setViewing(null)} className="btn btn-sm btn-outline-secondary">Close</button></div>}<div className="card"><div className="table-responsive"><table className="table table-hover align-middle mb-0"><thead><tr>{columns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead><tbody>{backendKinds.includes(kind) && usersLoading ? <tr><td colSpan={columns.length + 1} className="text-center text-secondary py-4">Loading {kind}...</td></tr> : filtered.map(row => <tr key={row.id}>{columns.map(([key]) => <td key={key}>{isStatus(key) ? <StatusBadge value={row[key]}/> : row[key] || '—'}</td>)}<td className="text-nowrap">{kind === 'users' ? userActions(row) : <><button onClick={() => setViewing(row)} className="btn btn-sm btn-outline-primary me-1">View</button><button onClick={() => { setViewing(null); setEditing(row) }} className="btn btn-sm btn-outline-secondary me-1">Edit</button><button onClick={() => remove(row)} className="btn btn-sm btn-outline-danger">Delete</button></>}</td></tr>)}{(!backendKinds.includes(kind) || !usersLoading) ? !filtered.length && <tr><td colSpan={columns.length + 1} className="text-center text-secondary py-4">No matching records found.</td></tr> : null}</tbody></table></div></div></>
 }
 
 export function Reports() {
