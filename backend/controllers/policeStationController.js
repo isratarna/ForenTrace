@@ -1,64 +1,218 @@
-const PoliceStation = require('../models/policeStationModel').default || require('../models/policeStationModel');
+import {
+  findAllStations,
+  findStationById,
+  createStation as dbCreateStation,
+  updateStationById as dbUpdateStation,
+  deleteStationById as dbDeleteStation,
+  stationHasOfficers,
+} from '../models/policeStationModel.js'
 
-// Get all stations
-exports.getStations = async (req, res) => {
-    try {
-        const stations = await PoliceStation.getAll();
-        res.status(200).json({ success: true, data: stations });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
+export function formatStation(row) {
+  if (!row) return null
 
-// Get station by ID
-exports.getStationById = async (req, res) => {
-    try {
-        const station = await PoliceStation.getById(req.params.id);
-        if (!station) {
-            return res.status(404).json({ success: false, message: 'Police station not found' });
-        }
-        res.status(200).json({ success: true, data: station });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
+  return {
+    id: row.station_id,
+    stationId: row.station_id,
+    name: row.station_name,
+    stationName: row.station_name,
+    district: row.district,
+    city: row.city,
+    address: row.address,
+    contact: row.contact_number,
+    contactNumber: row.contact_number,
+    email: row.email,
+    status: 'Active',
+    createdAt: row.created_at,
+  }
+}
 
-// Create a station
-exports.createStation = async (req, res) => {
-    try {
-        const { station_name, district, city, address, contact_number, email } = req.body;
-        if (!station_name || !district || !city || !address || !contact_number || !email) {
-            return res.status(400).json({ success: false, message: 'All fields are required' });
-        }
-        const stationId = await PoliceStation.create(req.body);
-        res.status(201).json({ success: true, message: 'Police station created successfully', stationId });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
+function parseStationId(value) {
+  const id = Number(value)
+  if (!Number.isInteger(id) || id <= 0) return null
+  return id
+}
 
-// Update a station
-exports.updateStation = async (req, res) => {
-    try {
-        const affectedRows = await PoliceStation.update(req.params.id, req.body);
-        if (affectedRows === 0) {
-            return res.status(404).json({ success: false, message: 'Police station not found or no changes made' });
-        }
-        res.status(200).json({ success: true, message: 'Police station updated successfully' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
+function stationPayload(body) {
+  const name = body.name?.trim() || body.stationName?.trim() || body.station_name?.trim()
+  const district = body.district?.trim()
+  const city = body.city?.trim()
+  const address = body.address?.trim()
+  const contact = body.contact?.trim() || body.contactNumber?.trim() || body.contact_number?.trim()
+  const email = body.email?.trim()
 
-// Delete a station
-exports.deleteStation = async (req, res) => {
-    try {
-        const affectedRows = await PoliceStation.delete(req.params.id);
-        if (affectedRows === 0) {
-            return res.status(404).json({ success: false, message: 'Police station not found' });
-        }
-        res.status(200).json({ success: true, message: 'Police station deleted successfully' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+  return {
+    name,
+    district,
+    city,
+    address,
+    contact,
+    email,
+  }
+}
+
+function validatePayload(payload) {
+  return payload.name &&
+    payload.district &&
+    payload.city &&
+    payload.address &&
+    payload.contact &&
+    payload.email
+}
+
+export async function listStations(req, res) {
+  try {
+    const search = req.query.search?.trim() || req.query.q?.trim() || ''
+    const stations = await findAllStations({ search: search || undefined })
+
+    return res.status(200).json({
+      success: true,
+      stations: stations.map(formatStation),
+    })
+  } catch (error) {
+    console.error('List police stations error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error.',
+    })
+  }
+}
+
+export async function getStation(req, res) {
+  try {
+    const id = parseStationId(req.params.id)
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid police station id.',
+      })
     }
-};
+
+    const station = await findStationById(id)
+    if (!station) {
+      return res.status(404).json({
+        success: false,
+        message: 'Police station not found.',
+      })
+    }
+
+    return res.status(200).json({
+      success: true,
+      station: formatStation(station),
+    })
+  } catch (error) {
+    console.error('Get police station error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error.',
+    })
+  }
+}
+
+export async function createStation(req, res) {
+  try {
+    const payload = stationPayload(req.body)
+
+    if (!validatePayload(payload)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Station name, district, city, address, contact, and email are required.',
+      })
+    }
+
+    const station = await dbCreateStation(payload)
+
+    return res.status(201).json({
+      success: true,
+      message: 'Police station created successfully.',
+      station: formatStation(station),
+    })
+  } catch (error) {
+    console.error('Create police station error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error.',
+    })
+  }
+}
+
+export async function updateStation(req, res) {
+  try {
+    const id = parseStationId(req.params.id)
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid police station id.',
+      })
+    }
+
+    const existing = await findStationById(id)
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'Police station not found.',
+      })
+    }
+
+    const payload = stationPayload(req.body)
+    if (!validatePayload(payload)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Station name, district, city, address, contact, and email are required.',
+      })
+    }
+
+    const station = await dbUpdateStation(id, payload)
+
+    return res.status(200).json({
+      success: true,
+      message: 'Police station updated successfully.',
+      station: formatStation(station),
+    })
+  } catch (error) {
+    console.error('Update police station error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error.',
+    })
+  }
+}
+
+export async function deleteStation(req, res) {
+  try {
+    const id = parseStationId(req.params.id)
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid police station id.',
+      })
+    }
+
+    const existing = await findStationById(id)
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'Police station not found.',
+      })
+    }
+
+    if (await stationHasOfficers(id)) {
+      return res.status(409).json({
+        success: false,
+        message: 'This police station has assigned officers and cannot be deleted.',
+      })
+    }
+
+    await dbDeleteStation(id)
+
+    return res.status(200).json({
+      success: true,
+      message: 'Police station deleted successfully.',
+    })
+  } catch (error) {
+    console.error('Delete police station error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error.',
+    })
+  }
+}
