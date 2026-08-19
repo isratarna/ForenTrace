@@ -1,3 +1,5 @@
+use railway;
+
 INSERT INTO roles (role_name, description)
 VALUES
 ('Admin', 'System administrator'),
