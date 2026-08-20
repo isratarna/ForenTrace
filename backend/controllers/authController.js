@@ -5,6 +5,7 @@ import {
   findRoleByName,
   emailExists,
   usernameExists,
+  generateUniqueUsername,
   createUser,
   updateLastLogin,
 } from '../models/userModel.js'
@@ -214,7 +215,7 @@ export async function registerOfficer(req, res) {
       })
     }
 
-    const username = `${firstName.trim()} ${lastName.trim()}`
+    const username = await generateUniqueUsername(firstName,lastName)
     const normalizedEmail = email.trim().toLowerCase()
 
     // Uniqueness checks
@@ -225,13 +226,6 @@ export async function registerOfficer(req, res) {
       })
     }
 
-    if (await usernameExists(username)) {
-      return res.status(409).json({
-        success: false,
-        message: 'An account with this username already exists in users.',
-      })
-    }
-
     if (await emailExistsInOfficers(normalizedEmail)) {
       return res.status(409).json({
         success: false,
@@ -239,7 +233,7 @@ export async function registerOfficer(req, res) {
       })
     }
 
-    if (await badgeNumberExists(badgeNumber)) {
+    if (await badgeNumberExists(badgeNumber, stationId)) {
       return res.status(409).json({
         success: false,
         message: 'An officer with this badge number already exists.',

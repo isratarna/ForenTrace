@@ -38,10 +38,13 @@ CREATE TABLE IF NOT EXISTS officers (
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     `rank` VARCHAR(50) NOT NULL,
-    badge_number VARCHAR(50) NOT NULL UNIQUE,
+    badge_number VARCHAR(50) NOT NULL,
     phone VARCHAR(50),
     email VARCHAR(150) NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(station_id, badge_number),
+
     CONSTRAINT fk_officer_station
         FOREIGN KEY (station_id) REFERENCES police_stations(station_id)
 );

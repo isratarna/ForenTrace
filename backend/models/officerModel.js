@@ -141,9 +141,22 @@ export async function officerHasUsers(id) {
   return rows.length > 0
 }
 
-export async function badgeNumberExists(badge, excludeId = null) {
-  let sql = 'SELECT officer_id FROM officers WHERE badge_number = ?'
-  const params = [badge.trim()]
+export async function badgeNumberExists(
+  badge,
+  stationId,
+  excludeId = null
+) {
+  let sql = `
+    SELECT officer_id 
+    FROM officers 
+    WHERE badge_number = ?
+    AND station_id = ?
+  `
+
+  const params = [
+    badge.trim(),
+    stationId,
+  ]
 
   if (excludeId) {
     sql += ' AND officer_id != ?'
@@ -153,6 +166,7 @@ export async function badgeNumberExists(badge, excludeId = null) {
   sql += ' LIMIT 1'
 
   const [rows] = await pool.execute(sql, params)
+
   return rows.length > 0
 }
 

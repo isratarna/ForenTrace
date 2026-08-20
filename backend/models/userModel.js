@@ -166,3 +166,18 @@ export async function updateLastLogin(userId) {
     [userId]
   )
 }
+export async function generateUniqueUsername(firstName, lastName) {
+
+  const baseUsername =
+    `${firstName.trim().toLowerCase()}.${lastName.trim().toLowerCase()}`
+
+  let username = baseUsername
+  let counter = 1
+
+  while (await usernameExists(username)) {
+    username = `${baseUsername}${counter}`
+    counter++
+  }
+
+  return username
+}
