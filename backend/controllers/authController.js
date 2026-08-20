@@ -310,10 +310,28 @@ export async function registerOfficer(req, res) {
       message: 'Officer registration submitted successfully. An administrator must approve your account before you can sign in.',
     })
   } catch (error) {
-    console.error('Register officer error:', error)
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error.',
-    })
+  console.error('Register officer error:', error)
+
+  if (error.code === 'ER_DUP_ENTRY') {
+
+    if (error.sqlMessage.includes('badge_number')) {
+      return res.status(409).json({
+        success: false,
+        message: 'This badge number already exists. Please use a different badge number.',
+      })
+    }
+
+    if (error.sqlMessage.includes('email')) {
+      return res.status(409).json({
+        success: false,
+        message: 'This email already exists.',
+      })
+    }
   }
+
+  return res.status(500).json({
+    success: false,
+    message: 'Internal server error.',
+  })
+}
 }
