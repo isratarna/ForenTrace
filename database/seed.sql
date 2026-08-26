@@ -34,3 +34,11 @@ VALUES
 (1, 1, 'Md.', 'Hasan', 'Inspector', 'BDP-4581', '+880 1711 992 002', 'hasan@police.gov.bd'),
 (2, 2, 'Nusrat', 'Jahan', 'Sub-Inspector', 'BDP-4612', '+880 1712 489 110', 'nusrat@police.gov.bd')
 ON DUPLICATE KEY UPDATE officer_id=officer_id;
+
+-- Seed missing persons
+INSERT INTO missing_persons (person_id, first_name, last_name, gender, date_of_birth, national_id, blood_group, height, weight, eye_color, hair_color, photo, missing_date, last_seen_location, city, description, status)
+VALUES
+(1, 'John', 'Doe', 'Male', '1995-03-12', 'NID-12345678', 'B+', 180.50, 75.00, 'Brown', 'Black', NULL, '2026-02-15', 'Sector 3', 'Dhaka', 'Last seen wearing blue jacket', 'Missing'),
+(2, 'Jane', 'Smith', 'Female', '2001-08-20', 'NID-87654321', 'O-', 165.00, 55.50, 'Blue', 'Blonde', NULL, '2026-05-10', 'Road 27, Dhanmondi', 'Dhaka', 'Left home for university', 'Missing'),
+(3, 'Rahim', 'Uddin', 'Male', '1988-11-05', 'NID-45612378', 'A+', 172.00, 68.00, 'Black', 'Black', NULL, '2026-01-20', 'Kotwali', 'Chattogram', 'Speaks local dialect', 'Identified')
+ON DUPLICATE KEY UPDATE person_id=person_id;
