@@ -8,10 +8,12 @@ import { Dashboard } from '../pages/Dashboards'
 
 import {
   FamilyMembers,
+} from '../pages/Investigation'
+import {
   MissingPersonDetails,
   MissingPersonForm,
   MissingPersons,
-} from '../pages/Investigation'
+} from '../pages/MissingPersons'
 import { CaseDetails, CaseForm, Cases } from '../pages/Cases'
 
 import {

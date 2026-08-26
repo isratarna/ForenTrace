@@ -70,6 +70,26 @@ DELIMITER ;
 CALL AddFkUserOfficer();
 DROP PROCEDURE IF EXISTS AddFkUserOfficer;
 
+CREATE TABLE IF NOT EXISTS missing_persons (
+    person_id INT AUTO_INCREMENT PRIMARY KEY,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    gender VARCHAR(20),
+    date_of_birth DATE,
+    national_id VARCHAR(50) UNIQUE,
+    blood_group VARCHAR(10),
+    height DECIMAL(5,2),
+    weight DECIMAL(5,2),
+    eye_color VARCHAR(50),
+    hair_color VARCHAR(50),
+    photo VARCHAR(255),
+    missing_date DATE NOT NULL,
+    last_seen_location VARCHAR(255),
+    city VARCHAR(100),
+    description TEXT,
+    status VARCHAR(30) NOT NULL DEFAULT 'Missing'
+);
+
 CREATE TABLE IF NOT EXISTS case_files (
     case_id INT AUTO_INCREMENT PRIMARY KEY,
     person_id INT NOT NULL,
