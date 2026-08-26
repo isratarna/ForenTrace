@@ -1,6 +1,8 @@
 import {
   findAllMissingPersons,
   findMissingPersonById,
+  findMissingPersonStatistics,
+  findMissingPersonsFromAboveAverageCities,
   createMissingPerson as dbCreateMissingPerson,
   updateMissingPersonById as dbUpdateMissingPerson,
   deleteMissingPersonById as dbDeleteMissingPerson,
@@ -49,6 +51,8 @@ export function formatMissingPerson(row) {
     city: row.city || '',
     description: row.description || '',
     status: row.status,
+    caseId: row.case_id ?? null,
+    hasCase: Boolean(row.has_case),
   }
 }
 
@@ -58,6 +62,29 @@ function parsePersonId(value) {
   return id
 }
 
+function isValidDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value)
+}
+
+function textValue(value) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function isValidPhotoUrl(value) {
+  if (!value) return true
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+const VALID_GENDERS = new Set(['Male', 'Female', 'Other'])
+const VALID_STATUSES = new Set(['Missing', 'Identified'])
+
 export async function listMissingPersons(req, res) {
   try {
     const search = req.query.search?.trim() || req.query.q?.trim() || ''
@@ -65,6 +92,16 @@ export async function listMissingPersons(req, res) {
     const gender = req.query.gender?.trim() || ''
     const city = req.query.city?.trim() || ''
     const missingDate = req.query.missingDate?.trim() || req.query.missing_date?.trim() || ''
+    const missingDateFrom = req.query.from?.trim() || req.query.missingDateFrom?.trim() || ''
+    const missingDateTo = req.query.to?.trim() || req.query.missingDateTo?.trim() || ''
+
+    if ((missingDate && !isValidDate(missingDate)) || (missingDateFrom && !isValidDate(missingDateFrom)) || (missingDateTo && !isValidDate(missingDateTo))) {
+      return res.status(400).json({ success: false, message: 'Invalid missing date filter.' })
+    }
+
+    if (missingDateFrom && missingDateTo && missingDateFrom > missingDateTo) {
+      return res.status(400).json({ success: false, message: 'Missing date range is invalid.' })
+    }
 
     const persons = await findAllMissingPersons({
       search,
@@ -72,6 +109,8 @@ export async function listMissingPersons(req, res) {
       gender: gender || undefined,
       city: city || undefined,
       missingDate: missingDate || undefined,
+      missingDateFrom: missingDateFrom || undefined,
+      missingDateTo: missingDateTo || undefined,
     })
 
     return res.status(200).json({
@@ -84,6 +123,26 @@ export async function listMissingPersons(req, res) {
       success: false,
       message: 'Internal server error.',
     })
+  }
+}
+
+export async function getMissingPersonStatistics(req, res) {
+  try {
+    const statistics = await findMissingPersonStatistics()
+    return res.status(200).json({ success: true, ...statistics })
+  } catch (error) {
+    console.error('Missing person statistics error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+export async function getAboveAverageCityMissingPersons(req, res) {
+  try {
+    const persons = await findMissingPersonsFromAboveAverageCities()
+    return res.status(200).json({ success: true, missingPersons: persons.map(formatMissingPerson) })
+  } catch (error) {
+    console.error('Above-average city query error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
   }
 }
 
@@ -120,38 +179,53 @@ export async function getMissingPerson(req, res) {
 
 export async function createMissingPerson(req, res) {
   try {
-    const firstName = req.body.firstName?.trim() || req.body.first_name?.trim()
-    const lastName = req.body.lastName?.trim() || req.body.last_name?.trim()
-    const gender = req.body.gender?.trim() || null
+    const firstName = textValue(req.body.firstName) || textValue(req.body.first_name)
+    const lastName = textValue(req.body.lastName) || textValue(req.body.last_name)
+    const gender = textValue(req.body.gender) || null
     const dateOfBirth = req.body.date_of_birth || req.body.dob || null
-    const nationalId = req.body.national_id?.trim() || req.body.nationalId?.trim() || null
-    const bloodGroup = req.body.blood_group?.trim() || req.body.bloodGroup?.trim() || null
+    const nationalId = textValue(req.body.national_id) || textValue(req.body.nationalId) || null
+    const bloodGroup = textValue(req.body.blood_group) || textValue(req.body.bloodGroup) || null
     const heightVal = req.body.height !== undefined && req.body.height !== '' ? Number(req.body.height) : null
     const weightVal = req.body.weight !== undefined && req.body.weight !== '' ? Number(req.body.weight) : null
-    const eyeColor = req.body.eye_color?.trim() || req.body.eyeColor?.trim() || null
-    const hairColor = req.body.hair_color?.trim() || req.body.hairColor?.trim() || null
-    const photo = req.body.photo?.trim() || null
+    const eyeColor = textValue(req.body.eye_color) || textValue(req.body.eyeColor) || null
+    const hairColor = textValue(req.body.hair_color) || textValue(req.body.hairColor) || null
+    const photo = textValue(req.body.photo) || null
     const missingDate = req.body.missing_date || req.body.missingDate
-    const lastSeenLocation = req.body.last_seen_location?.trim() || req.body.location?.trim() || null
-    const city = req.body.city?.trim() || null
-    const description = req.body.description?.trim() || null
-    const status = req.body.status?.trim() || 'Missing'
+    const lastSeenLocation = textValue(req.body.last_seen_location) || textValue(req.body.location) || null
+    const city = textValue(req.body.city) || null
+    const description = textValue(req.body.description) || null
+    const status = textValue(req.body.status) || 'Missing'
 
-    if (!firstName || !lastName || !missingDate || !status) {
+    if (typeof firstName !== 'string' || typeof lastName !== 'string' || !firstName || !lastName || !missingDate || !status) {
       return res.status(400).json({
         success: false,
         message: 'First name, last name, missing date, and status are required.',
       })
     }
 
+    if (gender && !VALID_GENDERS.has(gender)) {
+      return res.status(400).json({ success: false, message: 'Invalid gender value.' })
+    }
+    if (!VALID_STATUSES.has(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status value.' })
+    }
+
+    if (!isValidDate(missingDate) || dateOfBirth && !isValidDate(dateOfBirth)) {
+      return res.status(400).json({ success: false, message: 'Invalid date value.' })
+    }
+
+    if (!isValidPhotoUrl(photo)) {
+      return res.status(400).json({ success: false, message: 'Photo must be a valid HTTP or HTTPS URL.' })
+    }
+
     // Validate height/weight numeric range
-    if (heightVal !== null && (isNaN(heightVal) || heightVal <= 0)) {
+    if (heightVal !== null && (!Number.isFinite(heightVal) || heightVal <= 0)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid height value.',
       })
     }
-    if (weightVal !== null && (isNaN(weightVal) || weightVal <= 0)) {
+    if (weightVal !== null && (!Number.isFinite(weightVal) || weightVal <= 0)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid weight value.',
@@ -192,6 +266,12 @@ export async function createMissingPerson(req, res) {
     })
   } catch (error) {
     console.error('Create missing person error:', error)
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({
+        success: false,
+        message: 'A missing person with this National ID already exists.',
+      })
+    }
     return res.status(500).json({
       success: false,
       message: 'Internal server error.',
@@ -217,38 +297,53 @@ export async function updateMissingPerson(req, res) {
       })
     }
 
-    const firstName = req.body.firstName?.trim() || req.body.first_name?.trim()
-    const lastName = req.body.lastName?.trim() || req.body.last_name?.trim()
-    const gender = req.body.gender?.trim() || null
+    const firstName = textValue(req.body.firstName) || textValue(req.body.first_name)
+    const lastName = textValue(req.body.lastName) || textValue(req.body.last_name)
+    const gender = textValue(req.body.gender) || null
     const dateOfBirth = req.body.date_of_birth || req.body.dob || null
-    const nationalId = req.body.national_id?.trim() || req.body.nationalId?.trim() || null
-    const bloodGroup = req.body.blood_group?.trim() || req.body.bloodGroup?.trim() || null
+    const nationalId = textValue(req.body.national_id) || textValue(req.body.nationalId) || null
+    const bloodGroup = textValue(req.body.blood_group) || textValue(req.body.bloodGroup) || null
     const heightVal = req.body.height !== undefined && req.body.height !== '' ? Number(req.body.height) : null
     const weightVal = req.body.weight !== undefined && req.body.weight !== '' ? Number(req.body.weight) : null
-    const eyeColor = req.body.eye_color?.trim() || req.body.eyeColor?.trim() || null
-    const hairColor = req.body.hair_color?.trim() || req.body.hairColor?.trim() || null
-    const photo = req.body.photo?.trim() || null
+    const eyeColor = textValue(req.body.eye_color) || textValue(req.body.eyeColor) || null
+    const hairColor = textValue(req.body.hair_color) || textValue(req.body.hairColor) || null
+    const photo = textValue(req.body.photo) || null
     const missingDate = req.body.missing_date || req.body.missingDate
-    const lastSeenLocation = req.body.last_seen_location?.trim() || req.body.location?.trim() || null
-    const city = req.body.city?.trim() || null
-    const description = req.body.description?.trim() || null
-    const status = req.body.status?.trim() || 'Missing'
+    const lastSeenLocation = textValue(req.body.last_seen_location) || textValue(req.body.location) || null
+    const city = textValue(req.body.city) || null
+    const description = textValue(req.body.description) || null
+    const status = textValue(req.body.status) || 'Missing'
 
-    if (!firstName || !lastName || !missingDate || !status) {
+    if (typeof firstName !== 'string' || typeof lastName !== 'string' || !firstName || !lastName || !missingDate || !status) {
       return res.status(400).json({
         success: false,
         message: 'First name, last name, missing date, and status are required.',
       })
     }
 
+    if (gender && !VALID_GENDERS.has(gender)) {
+      return res.status(400).json({ success: false, message: 'Invalid gender value.' })
+    }
+    if (!VALID_STATUSES.has(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status value.' })
+    }
+
+    if (!isValidDate(missingDate) || dateOfBirth && !isValidDate(dateOfBirth)) {
+      return res.status(400).json({ success: false, message: 'Invalid date value.' })
+    }
+
+    if (!isValidPhotoUrl(photo)) {
+      return res.status(400).json({ success: false, message: 'Photo must be a valid HTTP or HTTPS URL.' })
+    }
+
     // Validate height/weight numeric range
-    if (heightVal !== null && (isNaN(heightVal) || heightVal <= 0)) {
+    if (heightVal !== null && (!Number.isFinite(heightVal) || heightVal <= 0)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid height value.',
       })
     }
-    if (weightVal !== null && (isNaN(weightVal) || weightVal <= 0)) {
+    if (weightVal !== null && (!Number.isFinite(weightVal) || weightVal <= 0)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid weight value.',
@@ -289,6 +384,12 @@ export async function updateMissingPerson(req, res) {
     })
   } catch (error) {
     console.error('Update missing person error:', error)
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({
+        success: false,
+        message: 'A missing person with this National ID already exists.',
+      })
+    }
     return res.status(500).json({
       success: false,
       message: 'Internal server error.',
