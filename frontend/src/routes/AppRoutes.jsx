@@ -7,14 +7,12 @@ import Unauthorized from '../pages/Unauthorized'
 import { Dashboard } from '../pages/Dashboards'
 
 import {
-  CaseDetails,
-  CaseForm,
-  Cases,
   FamilyMembers,
   MissingPersonDetails,
   MissingPersonForm,
   MissingPersons,
 } from '../pages/Investigation'
+import { CaseDetails, CaseForm, Cases } from '../pages/Cases'
 
 import {
   DNAAnalysis,
