@@ -11,6 +11,7 @@ import userRoutes from './routes/userRoutes.js'
 import officerRoutes from './routes/officerRoutes.js'
 import policeStationRoutes from './routes/policeStationRoutes.js'
 import caseRoutes from './routes/caseRoutes.js'
+import missingPersonRoutes from './routes/missingPersonRoutes.js'
 
 const app = express()
 
@@ -43,6 +44,7 @@ app.use('/api/users', userRoutes)
 app.use('/api/officers', officerRoutes)
 app.use('/api/police-stations', policeStationRoutes)
 app.use('/api/cases', caseRoutes)
+app.use('/api/missing-persons', missingPersonRoutes)
 
 async function startServer() {
   try {
