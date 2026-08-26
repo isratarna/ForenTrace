@@ -44,6 +44,15 @@ export async function getCaseById(id) {
   return normalizeCase(response.data.case)
 }
 
+export async function getCaseStatistics() {
+  const response = await api.get('/cases/statistics')
+  return {
+    summary: response.data.summary,
+    stationStatistics: response.data.stationStatistics,
+    officerStatistics: response.data.officerStatistics,
+  }
+}
+
 export async function createCase(data) {
   const response = await api.post('/cases', data)
   return normalizeCase(response.data.case)
@@ -62,6 +71,7 @@ export async function deleteCase(id) {
 export default {
   getCases,
   getCaseById,
+  getCaseStatistics,
   createCase,
   updateCase,
   deleteCase,

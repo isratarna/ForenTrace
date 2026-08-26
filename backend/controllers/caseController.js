@@ -1,6 +1,9 @@
 import {
   findAllCases,
   findCaseById,
+  findCaseStatisticsSummary,
+  findStationCaseStatistics,
+  findOfficerCaseStatistics,
   findMissingPersonById,
   findCaseStationById,
   findCaseOfficerById,
@@ -39,6 +42,35 @@ export function formatCase(row) {
     identifiedDate: formatDate(row.identified_date),
     notes: row.case_notes || '',
     caseNotes: row.case_notes || '',
+  }
+}
+
+function formatStatisticsCounts(row) {
+  return {
+    totalCases: Number(row.total_cases),
+    activeCases: Number(row.active_cases),
+    solvedCases: Number(row.solved_cases),
+    pendingCases: Number(row.pending_cases),
+    highPriorityCases: Number(row.high_priority_cases),
+  }
+}
+
+function formatStationStatistics(row) {
+  return {
+    stationId: row.station_id,
+    stationName: row.station_name,
+    ...formatStatisticsCounts(row),
+    earliestCaseDate: formatDate(row.earliest_case_date),
+    latestCaseDate: formatDate(row.latest_case_date),
+  }
+}
+
+function formatOfficerStatistics(row) {
+  return {
+    officerId: row.officer_id,
+    officerName: row.officer_name,
+    stationName: row.station_name,
+    ...formatStatisticsCounts(row),
   }
 }
 
@@ -120,6 +152,34 @@ export async function listCases(req, res) {
     })
   } catch (error) {
     console.error('List cases error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error.',
+    })
+  }
+}
+
+export async function getCaseStatistics(req, res) {
+  try {
+    const [summary, stationStatistics, officerStatistics] = await Promise.all([
+      findCaseStatisticsSummary(),
+      findStationCaseStatistics(),
+      findOfficerCaseStatistics(),
+    ])
+
+    return res.status(200).json({
+      success: true,
+      summary: {
+        ...formatStatisticsCounts(summary),
+        averageResolutionDays: summary.average_resolution_days === null
+          ? null
+          : Number(summary.average_resolution_days),
+      },
+      stationStatistics: stationStatistics.map(formatStationStatistics),
+      officerStatistics: officerStatistics.map(formatOfficerStatistics),
+    })
+  } catch (error) {
+    console.error('Get case statistics error:', error)
     return res.status(500).json({
       success: false,
       message: 'Internal server error.',

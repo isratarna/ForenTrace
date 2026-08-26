@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
-import { PageHeader, SearchFilters, StatusBadge } from '../components/Ui'
+import { MetricCard, PageHeader, SearchFilters, StatusBadge } from '../components/Ui'
 import { useAuth } from '../context/AuthContext'
 import {
   createCase,
   deleteCase,
   getCaseById,
+  getCaseStatistics,
   getCases,
   updateCase,
 } from '../services/caseService'
@@ -18,6 +19,18 @@ const CASE_STATUSES = ['Active', 'Pending', 'Solved']
 const PRIORITIES = ['High', 'Medium', 'Low']
 
 const emptyLookups = { people: [], stations: [], officers: [] }
+const emptyStatistics = {
+  summary: {
+    totalCases: 0,
+    activeCases: 0,
+    solvedCases: 0,
+    pendingCases: 0,
+    highPriorityCases: 0,
+    averageResolutionDays: null,
+  },
+  stationStatistics: [],
+  officerStatistics: [],
+}
 const asId = value => String(value ?? '')
 const isPositiveId = value => Number.isInteger(Number(value)) && Number(value) > 0
 const isValidDate = value => {
@@ -143,6 +156,7 @@ function CaseFields({ form, lookups, change, includeCreationFields = false }) {
 export function Cases() {
   const { role } = useAuth()
   const [cases, setCases] = useState([])
+  const [statistics, setStatistics] = useState(emptyStatistics)
   const [lookups, setLookups] = useState(emptyLookups)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -155,11 +169,13 @@ export function Cases() {
     try {
       setLoading(true)
       setError('')
-      const [caseRows, related] = await Promise.all([
+      const [caseRows, caseStatistics, related] = await Promise.all([
         getCases(),
+        getCaseStatistics(),
         loadLookups({ tolerateMissingPeople: true }),
       ])
       setCases(caseRows)
+      setStatistics(caseStatistics)
       setLookups(related)
       setWarning(related.warning)
     } catch (requestError) {
@@ -195,6 +211,42 @@ export function Cases() {
       <PageHeader title="Investigation Cases" subtitle="Investigation case files associated with missing persons." action={role === 'Officer' ? <Link to="/cases/new" className="btn btn-primary">Create Case</Link> : null} />
       {error && <div className="alert alert-danger" role="alert">{error}</div>}
       {warning && <div className="alert alert-warning" role="alert">{warning}</div>}
+      <div className="row g-3 mb-4">
+        <div className="col-sm-6 col-lg-4 col-xl-2"><MetricCard label="Total Cases" value={statistics.summary.totalCases} hint="All case files" /></div>
+        <div className="col-sm-6 col-lg-4 col-xl-2"><MetricCard label="Active Cases" value={statistics.summary.activeCases} hint="Open investigations" /></div>
+        <div className="col-sm-6 col-lg-4 col-xl-2"><MetricCard label="Pending Cases" value={statistics.summary.pendingCases} hint="Awaiting action" tone="warning" /></div>
+        <div className="col-sm-6 col-lg-4 col-xl-2"><MetricCard label="Solved Cases" value={statistics.summary.solvedCases} hint="Completed investigations" tone="success" /></div>
+        <div className="col-sm-6 col-lg-4 col-xl-2"><MetricCard label="High Priority" value={statistics.summary.highPriorityCases} hint="Urgent case files" tone="warning" /></div>
+        <div className="col-sm-6 col-lg-4 col-xl-2"><MetricCard label="Avg. Resolution" value={statistics.summary.averageResolutionDays === null ? '—' : `${statistics.summary.averageResolutionDays} days`} hint="Solved cases with dates" tone="success" /></div>
+      </div>
+      <div className="card mb-4">
+        <div className="card-header bg-white"><strong>Cases by police station</strong></div>
+        <div className="table-responsive">
+          <table className="table table-hover align-middle mb-0">
+            <thead><tr><th>Police Station</th><th>Total</th><th>Active</th><th>Solved</th><th>Pending</th><th>High Priority</th><th>Earliest Case</th><th>Latest Case</th></tr></thead>
+            <tbody>
+              {loading ? <tr><td colSpan="8" className="text-center text-secondary py-4">Loading statistics...</td></tr> : statistics.stationStatistics.map(station => (
+                <tr key={station.stationId}><td className="fw-semibold">{station.stationName}</td><td>{station.totalCases}</td><td>{station.activeCases}</td><td>{station.solvedCases}</td><td>{station.pendingCases}</td><td>{station.highPriorityCases}</td><td>{station.earliestCaseDate}</td><td>{station.latestCaseDate}</td></tr>
+              ))}
+              {!loading && !statistics.stationStatistics.length && <tr><td colSpan="8" className="text-center text-secondary py-4">No case statistics are available.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="card mb-4">
+        <div className="card-header bg-white"><strong>Officers handling at least 3 cases</strong></div>
+        <div className="table-responsive">
+          <table className="table table-hover align-middle mb-0">
+            <thead><tr><th>Officer</th><th>Police Station</th><th>Total</th><th>Active</th><th>Solved</th><th>Pending</th><th>High Priority</th></tr></thead>
+            <tbody>
+              {loading ? <tr><td colSpan="7" className="text-center text-secondary py-4">Loading statistics...</td></tr> : statistics.officerStatistics.map(officer => (
+                <tr key={officer.officerId}><td className="fw-semibold">{officer.officerName}</td><td>{officer.stationName}</td><td>{officer.totalCases}</td><td>{officer.activeCases}</td><td>{officer.solvedCases}</td><td>{officer.pendingCases}</td><td>{officer.highPriorityCases}</td></tr>
+              ))}
+              {!loading && !statistics.officerStatistics.length && <tr><td colSpan="7" className="text-center text-secondary py-4">No officers currently meet this workload threshold.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
       <SearchFilters onSearchChange={setQuery} onClear={() => setFilters({ priority: '', status: '' })}>
         <SelectFilter label="Priority" value={filters.priority} values={PRIORITIES} onChange={priority => setFilters(current => ({ ...current, priority }))} />
         <SelectFilter label="Status" value={filters.status} values={CASE_STATUSES} onChange={status => setFilters(current => ({ ...current, status }))} />
