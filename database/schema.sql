@@ -154,3 +154,19 @@ CREATE TABLE IF NOT EXISTS dna_labs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+-- Table: lab_technicians
+-- Scope: Member 2 (Checkpoint 2)
+-- Relationship: DNALab 1 : M LabTechnician
+
+CREATE TABLE IF NOT EXISTS lab_technicians (
+    technician_id INT AUTO_INCREMENT PRIMARY KEY,
+    lab_id INT NOT NULL,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    designation VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (lab_id) REFERENCES dna_labs(lab_id) ON DELETE RESTRICT ON UPDATE CASCADE
+);
