@@ -143,6 +143,50 @@ export async function findOfficerCaseStatistics() {
   return rows
 }
 
+export async function findOfficersAboveAverageCaseWorkload() {
+  const [rows] = await pool.execute(
+    `
+    SELECT
+      o.officer_id,
+      CONCAT(o.first_name, ' ', o.last_name) AS officer_name,
+      o.badge_number,
+      o.station_id,
+      ps.station_name,
+      (
+        SELECT COUNT(*)
+        FROM case_files assigned_cases
+        WHERE assigned_cases.officer_id = o.officer_id
+          AND assigned_cases.station_id = o.station_id
+      ) AS assigned_case_count,
+      workload_average.average_active_officer_workload
+    FROM officers o
+    INNER JOIN police_stations ps ON ps.station_id = o.station_id
+    CROSS JOIN (
+      SELECT
+        ROUND(AVG(active_officer_workloads.assigned_case_count), 2)
+          AS average_active_officer_workload
+      FROM (
+        SELECT
+          cf.station_id,
+          cf.officer_id,
+          COUNT(*) AS assigned_case_count
+        FROM case_files cf
+        GROUP BY cf.station_id, cf.officer_id
+      ) active_officer_workloads
+    ) workload_average
+    WHERE (
+      SELECT COUNT(*)
+      FROM case_files assigned_cases
+      WHERE assigned_cases.officer_id = o.officer_id
+        AND assigned_cases.station_id = o.station_id
+    ) > workload_average.average_active_officer_workload
+    ORDER BY assigned_case_count DESC, officer_name ASC
+    `
+  )
+
+  return rows
+}
+
 export async function findMissingPersonById(personId) {
   const [rows] = await pool.execute(
     'SELECT person_id FROM missing_persons WHERE person_id = ? LIMIT 1',

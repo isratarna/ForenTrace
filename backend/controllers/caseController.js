@@ -4,6 +4,7 @@ import {
   findCaseStatisticsSummary,
   findStationCaseStatistics,
   findOfficerCaseStatistics,
+  findOfficersAboveAverageCaseWorkload,
   findMissingPersonById,
   findCaseStationById,
   findCaseOfficerById,
@@ -77,6 +78,18 @@ function formatOfficerStatistics(row) {
     officerName: row.officer_name,
     stationName: row.station_name,
     ...formatStatisticsCounts(row),
+  }
+}
+
+function formatAboveAverageOfficer(row) {
+  return {
+    officerId: row.officer_id,
+    officerName: row.officer_name,
+    badgeNumber: row.badge_number,
+    stationId: row.station_id,
+    stationName: row.station_name,
+    assignedCaseCount: Number(row.assigned_case_count),
+    averageActiveOfficerWorkload: Number(row.average_active_officer_workload),
   }
 }
 
@@ -187,6 +200,23 @@ export async function getCaseStatistics(req, res) {
     })
   } catch (error) {
     console.error('Get case statistics error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error.',
+    })
+  }
+}
+
+export async function getAboveAverageOfficers(req, res) {
+  try {
+    const officers = await findOfficersAboveAverageCaseWorkload()
+
+    return res.status(200).json({
+      success: true,
+      aboveAverageOfficers: officers.map(formatAboveAverageOfficer),
+    })
+  } catch (error) {
+    console.error('Get above-average officer workloads error:', error)
     return res.status(500).json({
       success: false,
       message: 'Internal server error.',

@@ -53,6 +53,11 @@ export async function getCaseStatistics() {
   }
 }
 
+export async function getAboveAverageOfficers() {
+  const response = await api.get('/cases/statistics/above-average-officers')
+  return response.data.aboveAverageOfficers ?? []
+}
+
 export async function createCase(data) {
   const response = await api.post('/cases', data)
   return normalizeCase(response.data.case)
@@ -72,6 +77,7 @@ export default {
   getCases,
   getCaseById,
   getCaseStatistics,
+  getAboveAverageOfficers,
   createCase,
   updateCase,
   deleteCase,

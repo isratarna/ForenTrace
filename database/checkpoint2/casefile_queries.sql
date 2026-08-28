@@ -22,6 +22,48 @@ INNER JOIN police_stations AS ps ON cf.station_id = ps.station_id
 INNER JOIN officers AS o ON cf.officer_id = o.officer_id
 ORDER BY cf.case_id;
 
+-- NESTED SUBQUERY
+-- Officers whose station-scoped CaseFile count is greater than the average
+-- workload of officers who currently have at least one assigned CaseFile.
+-- The grouped active_officer_workloads derived table is nested inside the
+-- aggregate workload_average subquery; the WHERE clause is also correlated
+-- with the outer Officer row through both officer_id and station_id.
+SELECT
+    o.officer_id,
+    CONCAT(o.first_name, ' ', o.last_name) AS officer_name,
+    o.badge_number,
+    o.station_id,
+    ps.station_name,
+    (
+        SELECT COUNT(*)
+        FROM case_files AS assigned_cases
+        WHERE assigned_cases.officer_id = o.officer_id
+          AND assigned_cases.station_id = o.station_id
+    ) AS assigned_case_count,
+    workload_average.average_active_officer_workload
+FROM officers AS o
+INNER JOIN police_stations AS ps ON ps.station_id = o.station_id
+CROSS JOIN (
+    SELECT
+        ROUND(AVG(active_officer_workloads.assigned_case_count), 2)
+            AS average_active_officer_workload
+    FROM (
+        SELECT
+            cf.station_id,
+            cf.officer_id,
+            COUNT(*) AS assigned_case_count
+        FROM case_files AS cf
+        GROUP BY cf.station_id, cf.officer_id
+    ) AS active_officer_workloads
+) AS workload_average
+WHERE (
+    SELECT COUNT(*)
+    FROM case_files AS assigned_cases
+    WHERE assigned_cases.officer_id = o.officer_id
+      AND assigned_cases.station_id = o.station_id
+) > workload_average.average_active_officer_workload
+ORDER BY assigned_case_count DESC, officer_name ASC;
+
 -- LEFT JOIN
 -- Every PoliceStation is retained, including stations with zero CaseFiles.
 SELECT

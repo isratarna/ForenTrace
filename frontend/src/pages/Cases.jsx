@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   createCase,
   deleteCase,
+  getAboveAverageOfficers,
   getCaseById,
   getCaseStatistics,
   getCases,
@@ -157,6 +158,7 @@ export function Cases() {
   const { role } = useAuth()
   const [cases, setCases] = useState([])
   const [statistics, setStatistics] = useState(emptyStatistics)
+  const [aboveAverageOfficers, setAboveAverageOfficers] = useState([])
   const [lookups, setLookups] = useState(emptyLookups)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -169,13 +171,15 @@ export function Cases() {
     try {
       setLoading(true)
       setError('')
-      const [caseRows, caseStatistics, related] = await Promise.all([
+      const [caseRows, caseStatistics, workloadOfficers, related] = await Promise.all([
         getCases(),
         getCaseStatistics(),
+        getAboveAverageOfficers(),
         loadLookups({ tolerateMissingPeople: true }),
       ])
       setCases(caseRows)
       setStatistics(caseStatistics)
+      setAboveAverageOfficers(workloadOfficers)
       setLookups(related)
       setWarning(related.warning)
     } catch (requestError) {
@@ -243,6 +247,20 @@ export function Cases() {
                 <tr key={officer.officerId}><td className="fw-semibold">{officer.officerName}</td><td>{officer.stationName}</td><td>{officer.totalCases}</td><td>{officer.activeCases}</td><td>{officer.solvedCases}</td><td>{officer.pendingCases}</td><td>{officer.highPriorityCases}</td></tr>
               ))}
               {!loading && !statistics.officerStatistics.length && <tr><td colSpan="7" className="text-center text-secondary py-4">No officers currently meet this workload threshold.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="card mb-4">
+        <div className="card-header bg-white"><strong>Above Average Officer Workload</strong></div>
+        <div className="table-responsive">
+          <table className="table table-hover align-middle mb-0">
+            <thead><tr><th>Officer</th><th>Badge Number</th><th>Police Station</th><th>Assigned Cases</th><th>Average Officer Workload</th></tr></thead>
+            <tbody>
+              {loading ? <tr><td colSpan="5" className="text-center text-secondary py-4">Loading above-average workloads...</td></tr> : aboveAverageOfficers.map(officer => (
+                <tr key={officer.officerId}><td className="fw-semibold">{officer.officerName}</td><td>{officer.badgeNumber}</td><td>{officer.stationName}</td><td>{officer.assignedCaseCount}</td><td>{Number(officer.averageActiveOfficerWorkload).toFixed(2)}</td></tr>
+              ))}
+              {!loading && !aboveAverageOfficers.length && <tr><td colSpan="5" className="text-center text-secondary py-4">No officers currently have an above-average case workload.</td></tr>}
             </tbody>
           </table>
         </div>
