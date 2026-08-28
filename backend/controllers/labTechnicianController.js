@@ -113,3 +113,36 @@ export const deleteTechnician = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+// POST /api/technicians/:id/link-user (Step 8: 1:1 Account Linking)
+export const linkUserAccount = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { user_id } = req.body;
+
+        if (!user_id) {
+            return res.status(400).json({ success: false, message: 'User ID is required for linking' });
+        }
+
+        const tech = await labTechnicianModel.getTechnicianById(id);
+        if (!tech) {
+            return res.status(404).json({ success: false, message: 'Technician not found' });
+        }
+
+        const existingLink = await labTechnicianModel.getTechnicianByUserId(user_id);
+        if (existingLink && existingLink.technician_id !== parseInt(id, 10)) {
+            return res.status(400).json({
+                success: false,
+                message: 'This user account is already linked to another technician'
+            });
+        }
+
+        await labTechnicianModel.linkUserAccount(id, user_id);
+        res.status(200).json({
+            success: true,
+            message: 'Technician successfully linked to user account'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};

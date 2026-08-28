@@ -53,3 +53,21 @@ export const deleteTechnician = async (id) => {
     const [result] = await db.query('DELETE FROM lab_technicians WHERE technician_id = ?', [id]);
     return result.affectedRows;
 };
+
+// Link technician to a user account (1:1 mapping)
+export const linkUserAccount = async (technicianId, userId) => {
+    const [result] = await db.query(
+        'UPDATE lab_technicians SET user_id = ? WHERE technician_id = ?',
+        [userId, technicianId]
+    );
+    return result.affectedRows;
+};
+
+// Check if user is already linked to another technician
+export const getTechnicianByUserId = async (userId) => {
+    const [rows] = await db.query(
+        'SELECT * FROM lab_technicians WHERE user_id = ?',
+        [userId]
+    );
+    return rows[0];
+};
