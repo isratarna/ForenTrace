@@ -41,4 +41,13 @@ VALUES
 (1, 'John', 'Doe', 'Male', '1995-03-12', 'NID-12345678', 'B+', 180.50, 75.00, 'Brown', 'Black', NULL, '2026-02-15', 'Sector 3', 'Dhaka', 'Last seen wearing blue jacket', 'Missing'),
 (2, 'Jane', 'Smith', 'Female', '2001-08-20', 'NID-87654321', 'O-', 165.00, 55.50, 'Blue', 'Blonde', NULL, '2026-05-10', 'Road 27, Dhanmondi', 'Dhaka', 'Left home for university', 'Missing'),
 (3, 'Rahim', 'Uddin', 'Male', '1988-11-05', 'NID-45612378', 'A+', 172.00, 68.00, 'Black', 'Black', NULL, '2026-01-20', 'Kotwali', 'Chattogram', 'Speaks local dialect', 'Identified')
-ON DUPLICATE KEY UPDATE person_id=person_id;
+ON DUPLICATE KEY UPDATE person_id=person_id;
+
+-- Seed DNA Labs (Member 2 Checkpoint 2)
+
+INSERT INTO dna_labs (lab_name, city, address, contact_number, email) VALUES
+('Central Forensic DNA Laboratory', 'Dhaka', 'CID Headquarters, Malibagh, Dhaka', '+8801711000001', 'cfdl.dhaka@forentrace.gov'),
+('National Forensic DNA Profiling Laboratory', 'Dhaka', 'Dhaka Medical College Campus, Dhaka', '+8801711000002', 'nfdpl.dmc@forentrace.gov'),
+('Regional DNA Screening Lab', 'Chittagong', 'Chittagong Medical College, Chittagong', '+8801711000003', 'rdsl.ctg@forentrace.gov'),
+('Sylhet Forensic Analysis Lab', 'Sylhet', 'Osmani Medical College Road, Sylhet', '+8801711000004', 'sfal.sylhet@forentrace.gov')
+ON DUPLICATE KEY UPDATE lab_name=VALUES(lab_name);
