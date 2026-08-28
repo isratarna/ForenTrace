@@ -140,3 +140,17 @@ END //
 DELIMITER ;
 CALL AddFkCasePerson();
 DROP PROCEDURE IF EXISTS AddFkCasePerson;
+
+-- Table: dna_labs
+-- Scope: Member 2 (Checkpoint 2)
+
+CREATE TABLE IF NOT EXISTS dna_labs (
+    lab_id INT AUTO_INCREMENT PRIMARY KEY,
+    lab_name VARCHAR(150) NOT NULL,
+    city VARCHAR(100) NOT NULL,
+    address TEXT NOT NULL,
+    contact_number VARCHAR(20) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
