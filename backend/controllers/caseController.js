@@ -42,6 +42,12 @@ export function formatCase(row) {
     identifiedDate: formatDate(row.identified_date),
     notes: row.case_notes || '',
     caseNotes: row.case_notes || '',
+    ...(row.missing_person_name !== undefined && {
+      missingPersonName: row.missing_person_name,
+      stationName: row.station_name,
+      officerName: row.officer_name,
+      officerBadgeNumber: row.officer_badge_number,
+    }),
   }
 }
 
@@ -144,7 +150,8 @@ async function validateReferences(personId, stationId, officerId, checkPerson = 
 
 export async function listCases(req, res) {
   try {
-    const cases = await findAllCases()
+    const search = req.query.search?.trim() || req.query.q?.trim() || ''
+    const cases = await findAllCases({ search: search || undefined })
 
     return res.status(200).json({
       success: true,
