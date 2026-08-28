@@ -1,21 +1,24 @@
-import express from 'express'
-
+import express from 'express';
 import {
-  listStations,
-  getStation,
-  createStation,
-  updateStation,
-  deleteStation,
-} from '../controllers/policeStationController.js'
-import { requireAuth } from '../middleware/authMiddleware.js'
-import { requireRole } from '../middleware/roleMiddleware.js'
+    listStations,
+    getStation,
+    createStation,
+    updateStation,
+    deleteStation
+} from '../controllers/policeStationController.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
+import { requireRole } from '../middleware/roleMiddleware.js'; // Apnar middleware folder theke import kora holo
 
-const router = express.Router()
+const router = express.Router();
+//Express library ar router instance load kora hoyeche jate HTTP routes toiri kora jay.
 
-router.get('/', listStations)
-router.get('/:id', getStation)
-router.post('/', requireAuth, requireRole('Admin'), createStation)
-router.put('/:id', requireAuth, requireRole('Admin'), updateStation)
-router.delete('/:id', requireAuth, requireRole('Admin'), deleteStation)
+// Public routes (Sobar jonno open)
+router.get('/', listStations);
+router.get('/:id', getStation);
 
-export default router
+// Protected routes (Shudhu Admin-ra create, update, ebong delete korte parbe)
+router.post('/', requireAuth, requireRole('Admin'), createStation);
+router.put('/:id', requireAuth, requireRole('Admin'), updateStation);
+router.delete('/:id', requireAuth, requireRole('Admin'), deleteStation);
+
+export default router;

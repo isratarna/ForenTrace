@@ -52,6 +52,10 @@ export async function login(req, res) {
       })
     }
 
+    // 1. Session Storage:
+    // Storing authenticated user data on `req.session`.
+    // Express-session saves this data server-side and automatically sends a signed
+    // session identifier cookie (`connect.sid`) to the client in the HTTP response headers.
     req.session.user = {
       userId: user.user_id,
       username: user.username,
@@ -62,8 +66,10 @@ export async function login(req, res) {
       technicianId: user.technician_id,
     }
 
+    // 2. Track activity in database
     await updateLastLogin(user.user_id)
 
+    // 3. Return sanitized session user payload to frontend
     return res.status(200).json({
       success: true,
       message: 'Login successful.',
@@ -153,12 +159,16 @@ export async function register(req, res) {
   }
 }
 
+// When the client makes a request with the `connect.sid` cookie,
+// express-session automatically restores `req.session.user`.
 export function getCurrentUser(req, res) {
   return res.status(200).json({
     success: true,
     user: req.session.user,
   })
 }
+
+// Clears the session from the server store and deletes the cookie from the browser.
 export function logout(req, res) {
   req.session.destroy((error) => {
     if (error) {
@@ -168,6 +178,7 @@ export function logout(req, res) {
       })
     }
 
+    // Instructs the browser to remove the session cookie
     res.clearCookie('connect.sid')
 
     return res.status(200).json({
