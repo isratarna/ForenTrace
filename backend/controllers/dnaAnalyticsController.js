@@ -22,3 +22,14 @@ export const getLabCapacityAnalytics = async (req, res) => {
         return res.status(500).json({ success: false, message: error.message });
     }
 };
+
+// GET /api/analytics/dna/above-average-labs
+export const getAboveAverageCapacityLabs = async (req, res) => {
+    try {
+        const data = await dnaAnalyticsModel.getAboveAverageCapacityLabs();
+        return res.status(200).json({ success: true, count: data.length, data });
+    } catch (error) {
+        console.error('Analytics Subquery Error:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};

@@ -42,3 +42,33 @@ export const getLabCapacityAnalytics = async (minTechnicians = 0) => {
     const [rows] = await db.query(query, [parseInt(minTechnicians, 10) || 0]);
     return rows;
 };
+// Query 3: Nested Subquery (DNA Labs with above-average staffing capacity)
+export const getAboveAverageCapacityLabs = async () => {
+    const query = `
+    SELECT 
+      dl.lab_id,
+      dl.lab_name,
+      dl.city,
+      COUNT(lt.technician_id) AS technician_count,
+      ROUND((SELECT AVG(tech_count) FROM (
+        SELECT COUNT(technician_id) AS tech_count 
+        FROM dna_labs 
+        LEFT JOIN lab_technicians USING (lab_id) 
+        GROUP BY lab_id
+      ) AS avg_table), 2) AS system_avg_technicians
+    FROM dna_labs dl
+    LEFT JOIN lab_technicians lt ON dl.lab_id = lt.lab_id
+    GROUP BY dl.lab_id, dl.lab_name, dl.city
+    HAVING technician_count >= (
+      SELECT AVG(tech_count) FROM (
+        SELECT COUNT(technician_id) AS tech_count 
+        FROM dna_labs 
+        LEFT JOIN lab_technicians USING (lab_id) 
+        GROUP BY lab_id
+      ) AS avg_table
+    )
+    ORDER BY technician_count DESC
+  `;
+    const [rows] = await db.query(query);
+    return rows;
+};
