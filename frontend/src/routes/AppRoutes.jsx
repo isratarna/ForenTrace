@@ -35,6 +35,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { dashboardPath } from '../utils/auth'
 import ProtectedRoute from './ProtectedRoute'
+import LabTechniciansPage from '../pages/LabTechniciansPage'
 
 
 function HomeRedirect() {
@@ -64,6 +65,7 @@ export default function AppRoutes() {
         element={<Login />}
       />
       <Route path="/dna-labs" element={<DnaLabsPage />} />
+      <Route path="/lab-technicians" element={<LabTechniciansPage />} />
 
       <Route
         path="/unauthorized"
