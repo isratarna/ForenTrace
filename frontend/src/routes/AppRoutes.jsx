@@ -6,6 +6,7 @@ import Unauthorized from '../pages/Unauthorized'
 
 import { Dashboard } from '../pages/Dashboards'
 import DnaLabsPage from '../pages/DnaLabsPage'
+import DnaAnalyticsDashboard from '../pages/DnaAnalyticsDashboard';
 
 import {
   FamilyMembers,
@@ -64,8 +65,10 @@ export default function AppRoutes() {
         path="/login"
         element={<Login />}
       />
+
       <Route path="/dna-labs" element={<DnaLabsPage />} />
       <Route path="/lab-technicians" element={<LabTechniciansPage />} />
+      <Route path="/dna-analytics" element={<DnaAnalyticsDashboard />} />
 
       <Route
         path="/unauthorized"

@@ -2,9 +2,34 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 const navByRole = {
-  Admin: [['Dashboard', '/admin/dashboard'], ['Missing Persons', '/missing-persons'], ['Investigation Cases', '/cases'], ['DNA Samples', '/dna-samples'], ['DNA Matches', '/dna-matches'], ['Police Stations', '/admin/police-stations'], ['Police Officers', '/admin/officers'], ['DNA Labs', '/admin/labs'], ['Lab Technicians', '/admin/technicians'], ['Users & Accounts', '/admin/users'], ['Reports', '/reports']],
-  Officer: [['Dashboard', '/officer/dashboard'], ['Missing Persons', '/missing-persons'], ['Investigation Cases', '/cases'], ['DNA Samples', '/dna-samples'], ['DNA Matches', '/dna-matches'], ['Reports', '/reports']],
-  'Lab Technician': [['Dashboard', '/lab/dashboard'], ['DNA Samples', '/dna-samples'], ['DNA Matches', '/dna-matches'], ['Reports', '/reports']],
+  Admin: [
+    ['Dashboard', '/admin/dashboard'],
+    ['Missing Persons', '/missing-persons'],
+    ['Investigation Cases', '/cases'],
+    ['DNA Samples', '/dna-samples'],
+    ['DNA Matches', '/dna-matches'],
+    ['Police Stations', '/admin/police-stations'],
+    ['Police Officers', '/admin/officers'],
+    ['DNA Labs', '/admin/labs'],
+    ['Lab Technicians', '/admin/technicians'],
+    ['DNA Analytics', '/dna-analytics'],
+    ['Users & Accounts', '/admin/users'],
+    ['Reports', '/reports']
+  ],
+  Officer: [
+    ['Dashboard', '/officer/dashboard'],
+    ['Missing Persons', '/missing-persons'],
+    ['Investigation Cases', '/cases'],
+    ['DNA Samples', '/dna-samples'],
+    ['DNA Matches', '/dna-matches'],
+    ['Reports', '/reports']
+  ],
+  'Lab Technician': [
+    ['Dashboard', '/lab/dashboard'],
+    ['DNA Samples', '/dna-samples'],
+    ['DNA Matches', '/dna-matches'],
+    ['Reports', '/reports']
+  ],
 }
 
 export default function AppLayout() {
