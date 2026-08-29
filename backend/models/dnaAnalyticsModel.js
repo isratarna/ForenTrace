@@ -23,3 +23,22 @@ export const getTechnicianLabOverview = async () => {
   `);
     return rows;
 };
+
+// Query 2: Aggregate with GROUP BY & HAVING (Staffing count per DNA lab)
+export const getLabCapacityAnalytics = async (minTechnicians = 0) => {
+    const query = `
+    SELECT 
+      dl.lab_id,
+      dl.lab_name,
+      dl.city,
+      dl.contact_number,
+      COUNT(lt.technician_id) AS total_technicians
+    FROM dna_labs dl
+    LEFT JOIN lab_technicians lt ON dl.lab_id = lt.lab_id
+    GROUP BY dl.lab_id, dl.lab_name, dl.city, dl.contact_number
+    HAVING total_technicians >= ?
+    ORDER BY total_technicians DESC, dl.lab_name ASC
+  `;
+    const [rows] = await db.query(query, [parseInt(minTechnicians, 10) || 0]);
+    return rows;
+};

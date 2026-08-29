@@ -10,3 +10,15 @@ export const getTechnicianLabOverview = async (req, res) => {
         return res.status(500).json({ success: false, message: error.message });
     }
 };
+
+// Step 12: Aggregate with GROUP BY & HAVING
+export const getLabCapacityAnalytics = async (req, res) => {
+    try {
+        const minTech = req.query.minTech || 0;
+        const data = await dnaAnalyticsModel.getLabCapacityAnalytics(minTech);
+        return res.status(200).json({ success: true, count: data.length, data });
+    } catch (error) {
+        console.error('Analytics Group By Query Error:', error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
