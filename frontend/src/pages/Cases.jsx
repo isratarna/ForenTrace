@@ -43,10 +43,12 @@ const errorMessage = (error, fallback) => error.response?.data?.message || fallb
 const personName = person => person?.name || [person?.firstName, person?.lastName].filter(Boolean).join(' ')
 const personId = person => person?.id
 
+// Finds a related person, station, or officer even when ID types differ.
 function findById(records, id, getId = item => item.id) {
   return records.find(record => asId(getId(record)) === asId(id))
 }
 
+// Replaces relationship IDs with readable names for the case screens.
 function caseLabel(caseFile, lookups) {
   const person = findById(lookups.people, caseFile.personId, personId)
   const station = findById(lookups.stations, caseFile.stationId)
@@ -59,6 +61,7 @@ function caseLabel(caseFile, lookups) {
   }
 }
 
+// Loads the dropdown and display data related to a case file.
 async function loadLookups({ tolerateMissingPeople = false } = {}) {
   if (!tolerateMissingPeople) {
     const [people, stations, officers] = await Promise.all([
@@ -84,6 +87,7 @@ async function loadLookups({ tolerateMissingPeople = false } = {}) {
   }
 }
 
+// Shared input used by both the create and edit case forms.
 function Input({ label, name, type = 'text', options, required = false, value, onChange, disabled = false }) {
   return (
     <div className="col-md-6">
@@ -100,6 +104,7 @@ function Input({ label, name, type = 'text', options, required = false, value, o
   )
 }
 
+// Checks case form values before sending them to the backend.
 function validateCase(values, officers, { creating = false } = {}) {
   if (creating && !isPositiveId(values.personId)) return 'Select a valid missing person.'
   if (!isPositiveId(values.stationId)) return 'Select a valid police station.'
@@ -117,6 +122,7 @@ function validateCase(values, officers, { creating = false } = {}) {
   return ''
 }
 
+// Converts form strings into the values expected by the case API.
 function toPayload(values, creating = false) {
   const payload = {
     stationId: Number(values.stationId),
@@ -135,6 +141,7 @@ function toPayload(values, creating = false) {
   return payload
 }
 
+// Renders the fields shared by the case creation and update forms.
 function CaseFields({ form, lookups, change, includeCreationFields = false }) {
   const officers = lookups.officers.filter(officer => asId(officer.stationId) === asId(form.stationId))
   return (
@@ -154,6 +161,7 @@ function CaseFields({ form, lookups, change, includeCreationFields = false }) {
   )
 }
 
+// Shows the case dashboard, statistics, filters, and case list.
 export function Cases() {
   const { role } = useAuth()
   const [cases, setCases] = useState([])
@@ -167,6 +175,7 @@ export function Cases() {
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState({ priority: '', status: '' })
 
+  // Refreshes the list and all dashboard data together.
   const refreshCases = useCallback(async () => {
     try {
       setLoading(true)
@@ -191,6 +200,7 @@ export function Cases() {
 
   useEffect(() => { refreshCases() }, [refreshCases])
 
+  // Adds readable labels, then applies the search and dropdown filters.
   const rows = useMemo(() => cases.map(caseFile => ({ ...caseFile, ...caseLabel(caseFile, lookups) })).filter(caseFile => {
     const searchable = Object.values(caseFile).some(value => asId(value).toLowerCase().includes(query.toLowerCase()))
     return searchable && (!filters.priority || caseFile.priority === filters.priority) && (!filters.status || caseFile.status === filters.status)
@@ -292,6 +302,7 @@ export function Cases() {
   )
 }
 
+// Shows the form used to create a new case file.
 export function CaseForm() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
@@ -352,6 +363,7 @@ export function CaseForm() {
   )
 }
 
+// Shows one case file and lets officers switch into edit mode.
 export function CaseDetails() {
   const { id } = useParams()
   const { role } = useAuth()
@@ -457,6 +469,7 @@ export function CaseDetails() {
   )
 }
 
+// Small reusable dropdown used by the case list filters.
 function SelectFilter({ label, value, values, onChange }) {
   return <div className="col-md-2"><label className="form-label">{label}</label><select value={value} onChange={event => onChange(event.target.value)} className="form-select"><option value="">All {label.toLowerCase()}s</option>{values.map(item => <option key={item}>{item}</option>)}</select></div>
 }

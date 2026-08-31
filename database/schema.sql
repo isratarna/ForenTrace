@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS missing_persons (
 );
 
 CREATE TABLE IF NOT EXISTS case_files (
+    -- Each case belongs to one missing person, station, and investigating officer.
     case_id INT AUTO_INCREMENT PRIMARY KEY,
     person_id INT NOT NULL,
     station_id INT NOT NULL,
@@ -101,6 +102,7 @@ CREATE TABLE IF NOT EXISTS case_files (
     identified_date DATE NULL,
     case_notes TEXT NULL,
 
+    -- A missing person can have only one case file.
     UNIQUE(person_id),
 
     CONSTRAINT fk_case_station
@@ -110,6 +112,7 @@ CREATE TABLE IF NOT EXISTS case_files (
         FOREIGN KEY (officer_id) REFERENCES officers(officer_id),
 
     CONSTRAINT fk_case_officer_station
+        -- This prevents assigning an officer through a station they do not belong to.
         FOREIGN KEY (station_id, officer_id)
         REFERENCES officers(station_id, officer_id)
 );
