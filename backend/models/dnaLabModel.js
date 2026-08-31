@@ -1,20 +1,26 @@
+//Database connection niye shorashori Raw SQL queries run kora ebong data fetch/modify korar dayitto Model-er
+
 import db from '../config/db.js';
 
+// 1. Shob lab fetch kora
 export const getAllLabs = async () => {
-    const [rows] = await db.query('SELECT * FROM dna_labs ORDER BY lab_id ASC');
+    const [rows] = await db.query('SELECT * FROM dna_labs ORDER BY lab_id ASC'); //aggregate func 
     return rows;
 };
 
+// 2. Specific lab fetch kora ID diye
 export const getLabById = async (id) => {
-    const [rows] = await db.query('SELECT * FROM dna_labs WHERE lab_id = ?', [id]);
+    const [rows] = await db.query('SELECT * FROM dna_labs WHERE lab_id = ?', [id]); //Parameterized Query (?)
     return rows[0];
 };
+
 
 export const getLabByEmail = async (email) => {
     const [rows] = await db.query('SELECT * FROM dna_labs WHERE email = ?', [email]);
     return rows[0];
 };
 
+// 3. Notun lab insert kora
 export const createLab = async (labData) => {
     const { lab_name, city, address, contact_number, email } = labData;
     const [result] = await db.query(
@@ -24,6 +30,7 @@ export const createLab = async (labData) => {
     return result.insertId;
 };
 
+// 4. Existing lab update kora
 export const updateLab = async (id, labData) => {
     const { lab_name, city, address, contact_number, email } = labData;
     const [result] = await db.query(
@@ -41,6 +48,7 @@ export const getTechnicianCountByLabId = async (labId) => {
     return rows[0]?.total || 0;
 };
 
+// 5. Lab delete kora
 export const deleteLab = async (id) => {
     const [result] = await db.query('DELETE FROM dna_labs WHERE lab_id = ?', [id]);
     return result.affectedRows;

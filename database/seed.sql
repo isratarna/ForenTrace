@@ -59,3 +59,5 @@ INSERT INTO lab_technicians (lab_id, first_name, last_name, designation, phone, 
 (2, 'Kamrul', 'Hasan', 'DNA Specialist', '+8801811000003', 'kamrul.dna@forentrace.gov'),
 (3, 'Farhana', 'Akter', 'Junior Serologist', '+8801811000004', 'farhana.lab@forentrace.gov');
 ON DUPLICATE KEY UPDATE designation=VALUES(designation);
+
+--Database Seeding (database/seed.sql): 5-ti realistic DNA Labs ebong 5-ti Lab Technicians test data insert kora hoyeche.

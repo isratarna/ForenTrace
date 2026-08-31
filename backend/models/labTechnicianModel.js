@@ -14,13 +14,14 @@ export const getAllTechnicians = async () => {
 // Get single technician by ID
 export const getTechnicianById = async (id) => {
     const [rows] = await db.query(`
-    SELECT lt.*, dl.lab_name, dl.city as lab_city
+    SELECT lt.*, dl.lab_name, dl.city as lab_city  
     FROM lab_technicians lt
     JOIN dna_labs dl ON lt.lab_id = dl.lab_id
     WHERE lt.technician_id = ?
   `, [id]);
     return rows[0];
 };
+//lt.* = lab tech table er shob collum
 
 // Check email uniqueness
 export const getTechnicianByEmail = async (email) => {

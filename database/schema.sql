@@ -145,7 +145,7 @@ CALL AddFkCasePerson();
 DROP PROCEDURE IF EXISTS AddFkCasePerson;
 
 -- Table: dna_labs
--- Scope: Member 2 (Checkpoint 2)
+-- Scope: Member 2 (Checkpoint 2)urmee
 
 CREATE TABLE IF NOT EXISTS dna_labs (
     lab_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS dna_labs (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 -- Table: lab_technicians
--- Scope: Member 2 (Checkpoint 2)
+-- Scope: Member 2 (Checkpoint 2)urmee
 -- Relationship: DNALab 1 : M LabTechnician
 
 CREATE TABLE IF NOT EXISTS lab_technicians (

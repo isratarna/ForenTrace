@@ -1,3 +1,6 @@
+//Lab-er validity check kore technician assign kore
+//POST /api/technicians/:id/link-user endpoint-er maddhome 1:1 user account map kore।
+
 import * as labTechnicianModel from '../models/labTechnicianModel.js';
 import * as dnaLabModel from '../models/dnaLabModel.js';
 
@@ -110,6 +113,12 @@ export const deleteTechnician = async (req, res) => {
         await labTechnicianModel.deleteTechnician(id);
         res.status(200).json({ success: true, message: 'Technician deleted successfully' });
     } catch (error) {
+        if (error.code === 'ER_ROW_IS_REFERENCED_2' || error.errno === 1451) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot delete technician referenced by active DNA samples or forensic records.'
+            });
+        }
         res.status(500).json({ success: false, message: error.message });
     }
 };

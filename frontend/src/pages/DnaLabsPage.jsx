@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { PageHeader, SearchFilters } from '../components/Ui';
 
 const API_BASE = 'http://localhost:8000/api/labs';
 
@@ -7,7 +8,8 @@ export default function DnaLabsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
-    const [searchCity, setSearchCity] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [cityFilter, setCityFilter] = useState('');
 
     const [formData, setFormData] = useState({
         lab_name: '',
@@ -17,6 +19,7 @@ export default function DnaLabsPage() {
         email: '',
     });
     const [editingId, setEditingId] = useState(null);
+    const [showForm, setShowForm] = useState(false);
 
     useEffect(() => {
         fetchLabs();
@@ -30,7 +33,7 @@ export default function DnaLabsPage() {
             });
             const data = await res.json();
             if (data.success) {
-                setLabs(data.data);
+                setLabs(data.data || []);
             } else {
                 setError(data.message || 'Failed to fetch labs');
             }
@@ -64,8 +67,7 @@ export default function DnaLabsPage() {
             const data = await res.json();
             if (data.success) {
                 setSuccess(editingId ? 'Lab updated successfully!' : 'Lab created successfully!');
-                setFormData({ lab_name: '', city: '', address: '', contact_number: '', email: '' });
-                setEditingId(null);
+                resetForm();
                 fetchLabs();
             } else {
                 setError(data.message || 'Action failed');
@@ -84,6 +86,8 @@ export default function DnaLabsPage() {
             contact_number: lab.contact_number,
             email: lab.email,
         });
+        setShowForm(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleDelete = async (id) => {
@@ -108,133 +112,240 @@ export default function DnaLabsPage() {
         }
     };
 
-    const filteredLabs = labs.filter((lab) =>
-        lab.city.toLowerCase().includes(searchCity.toLowerCase()) ||
-        lab.lab_name.toLowerCase().includes(searchCity.toLowerCase())
-    );
+    const resetForm = () => {
+        setFormData({ lab_name: '', city: '', address: '', contact_number: '', email: '' });
+        setEditingId(null);
+        setShowForm(false);
+    };
+
+    const uniqueCities = Array.from(new Set(labs.map((lab) => lab.city))).filter(Boolean);
+
+    const filteredLabs = labs.filter((lab) => {
+        const matchesQuery =
+            lab.lab_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            lab.city?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            lab.email?.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesCity = cityFilter ? lab.city === cityFilter : true;
+        return matchesQuery && matchesCity;
+    });
 
     return (
-        <div style={{ padding: '24px', maxWidth: '1100px', margin: '0 auto', fontFamily: 'system-ui, sans-serif' }}>
-            <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px' }}>DNA Laboratories Management</h2>
-
-            {error && <div style={{ background: '#fee2e2', color: '#991b1b', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>{error}</div>}
-            {success && <div style={{ background: '#dcfce7', color: '#166534', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>{success}</div>}
-
-            {/* Form Section */}
-            <form onSubmit={handleSubmit} style={{ background: '#f8fafc', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
-                <h3 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '12px' }}>{editingId ? 'Edit DNA Lab' : 'Register New DNA Lab'}</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '12px' }}>
-                    <input
-                        type="text"
-                        name="lab_name"
-                        placeholder="Laboratory Name"
-                        value={formData.lab_name}
-                        onChange={handleInputChange}
-                        required
-                        style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                    />
-                    <input
-                        type="text"
-                        name="city"
-                        placeholder="City"
-                        value={formData.city}
-                        onChange={handleInputChange}
-                        required
-                        style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                    />
-                    <input
-                        type="text"
-                        name="contact_number"
-                        placeholder="Contact Number"
-                        value={formData.contact_number}
-                        onChange={handleInputChange}
-                        required
-                        style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                    />
-                    <input
-                        type="email"
-                        name="email"
-                        placeholder="Email Address"
-                        value={formData.email}
-                        onChange={handleInputChange}
-                        required
-                        style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                    />
-                </div>
-                <textarea
-                    name="address"
-                    placeholder="Complete Address"
-                    value={formData.address}
-                    onChange={handleInputChange}
-                    required
-                    rows={2}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: '4px', border: '1px solid #cbd5e1', marginBottom: '12px', boxSizing: 'border-box' }}
-                />
-                <div>
-                    <button type="submit" style={{ background: '#2563eb', color: '#fff', padding: '8px 18px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '500' }}>
-                        {editingId ? 'Update Lab' : 'Save Lab'}
+        <div className="container-fluid py-4">
+            <PageHeader
+                title="DNA Laboratories"
+                subtitle="Manage and oversee registered forensic DNA testing facilities."
+                action={
+                    <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => {
+                            resetForm();
+                            setShowForm(!showForm);
+                        }}
+                    >
+                        {showForm ? 'Close Form' : '+ Add DNA Lab'}
                     </button>
-                    {editingId && (
-                        <button
-                            type="button"
-                            onClick={() => { setEditingId(null); setFormData({ lab_name: '', city: '', address: '', contact_number: '', email: '' }); }}
-                            style={{ background: '#64748b', color: '#fff', padding: '8px 18px', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '8px' }}
-                        >
-                            Cancel
-                        </button>
-                    )}
+                }
+            />
+
+            {error && <div className="alert alert-danger my-3 shadow-sm">{error}</div>}
+            {success && <div className="alert alert-success my-3 shadow-sm">{success}</div>}
+
+            {/* Collapsible / Toggleable Form */}
+            {showForm && (
+                <div className="card shadow-sm border-0 mb-4 bg-light">
+                    <div className="card-body p-4">
+                        <h5 className="card-title fw-bold mb-3">
+                            {editingId ? 'Edit DNA Laboratory' : 'Register New DNA Laboratory'}
+                        </h5>
+                        <form onSubmit={handleSubmit}>
+                            <div className="row g-3">
+                                <div className="col-md-6">
+                                    <label className="form-label small fw-semibold">Lab Name</label>
+                                    <input
+                                        type="text"
+                                        name="lab_name"
+                                        className="form-control"
+                                        placeholder="Central Forensic DNA Laboratory"
+                                        value={formData.lab_name}
+                                        onChange={handleInputChange}
+                                        required
+                                    />
+                                </div>
+                                <div className="col-md-6">
+                                    <label className="form-label small fw-semibold">City</label>
+                                    <input
+                                        type="text"
+                                        name="city"
+                                        className="form-control"
+                                        placeholder="Dhaka"
+                                        value={formData.city}
+                                        onChange={handleInputChange}
+                                        required
+                                    />
+                                </div>
+                                <div className="col-md-6">
+                                    <label className="form-label small fw-semibold">Contact Number</label>
+                                    <input
+                                        type="text"
+                                        name="contact_number"
+                                        className="form-control"
+                                        placeholder="+8801711000001"
+                                        value={formData.contact_number}
+                                        onChange={handleInputChange}
+                                        required
+                                    />
+                                </div>
+                                <div className="col-md-6">
+                                    <label className="form-label small fw-semibold">Email Address</label>
+                                    <input
+                                        type="email"
+                                        name="email"
+                                        className="form-control"
+                                        placeholder="lab@forentrace.gov.bd"
+                                        value={formData.email}
+                                        onChange={handleInputChange}
+                                        required
+                                    />
+                                </div>
+                                <div className="col-12">
+                                    <label className="form-label small fw-semibold">Complete Address</label>
+                                    <textarea
+                                        name="address"
+                                        className="form-control"
+                                        rows={2}
+                                        placeholder="CID Headquarters, Malibagh, Dhaka"
+                                        value={formData.address}
+                                        onChange={handleInputChange}
+                                        required
+                                    />
+                                </div>
+                                <div className="col-12 d-flex gap-2 pt-2">
+                                    <button type="submit" className="btn btn-primary px-4">
+                                        {editingId ? 'Update Laboratory' : 'Save Laboratory'}
+                                    </button>
+                                    <button type="button" className="btn btn-outline-secondary" onClick={resetForm}>
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
                 </div>
-            </form>
+            )}
 
             {/* Filter / Search Bar */}
-            <div style={{ marginBottom: '16px' }}>
-                <input
-                    type="text"
-                    placeholder="Filter by lab name or city..."
-                    value={searchCity}
-                    onChange={(e) => setSearchCity(e.target.value)}
-                    style={{ width: '100%', maxWidth: '360px', padding: '8px 12px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                />
+            <div className="card mb-4 shadow-sm border-0">
+                <div className="card-body">
+                    <div className="row g-3 align-items-end">
+                        <div className="col-md-5">
+                            <label className="form-label small fw-semibold text-secondary">Search</label>
+                            <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Search by name, city, email..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                        <div className="col-md-4">
+                            <label className="form-label small fw-semibold text-secondary">Filter by City</label>
+                            <select
+                                className="form-select"
+                                value={cityFilter}
+                                onChange={(e) => setCityFilter(e.target.value)}
+                            >
+                                <option value="">All Cities</option>
+                                {uniqueCities.map((city) => (
+                                    <option key={city} value={city}>
+                                        {city}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="col-md-3">
+                            <button
+                                type="button"
+                                className="btn btn-outline-secondary w-100"
+                                onClick={() => {
+                                    setSearchQuery('');
+                                    setCityFilter('');
+                                }}
+                            >
+                                Clear Filters
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            {/* Labs List Table */}
+            {/* DNA Labs Table */}
             {loading ? (
-                <p>Loading DNA labs...</p>
+                <div className="text-center py-5">
+                    <div className="spinner-border text-primary" role="status" />
+                    <p className="mt-2 text-secondary">Loading live laboratory records...</p>
+                </div>
             ) : (
-                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
-                        <thead style={{ background: '#f1f5f9' }}>
-                            <tr>
-                                <th style={{ padding: '12px' }}>ID</th>
-                                <th style={{ padding: '12px' }}>Lab Name</th>
-                                <th style={{ padding: '12px' }}>City</th>
-                                <th style={{ padding: '12px' }}>Contact</th>
-                                <th style={{ padding: '12px' }}>Email</th>
-                                <th style={{ padding: '12px', textAlign: 'center' }}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredLabs.length === 0 ? (
+                <div className="card shadow-sm border-0">
+                    <div className="table-responsive">
+                        <table className="table table-hover align-middle mb-0">
+                            <thead className="table-light">
                                 <tr>
-                                    <td colSpan="6" style={{ padding: '16px', textAlign: 'center', color: '#64748b' }}>No DNA laboratories found.</td>
+                                    <th className="ps-4">ID</th>
+                                    <th>Lab Name</th>
+                                    <th>City</th>
+                                    <th>Address</th>
+                                    <th>Contact</th>
+                                    <th>Email</th>
+                                    <th className="text-end pe-4">Actions</th>
                                 </tr>
-                            ) : (
-                                filteredLabs.map((lab) => (
-                                    <tr key={lab.lab_id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                                        <td style={{ padding: '12px', fontWeight: 'bold' }}>{lab.lab_id}</td>
-                                        <td style={{ padding: '12px' }}>{lab.lab_name}</td>
-                                        <td style={{ padding: '12px' }}>{lab.city}</td>
-                                        <td style={{ padding: '12px' }}>{lab.contact_number}</td>
-                                        <td style={{ padding: '12px' }}>{lab.email}</td>
-                                        <td style={{ padding: '12px', textAlign: 'center' }}>
-                                            <button onClick={() => handleEdit(lab)} style={{ background: '#f59e0b', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', marginRight: '6px' }}>Edit</button>
-                                            <button onClick={() => handleDelete(lab.lab_id)} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer' }}>Delete</button>
+                            </thead>
+                            <tbody>
+                                {filteredLabs.length === 0 ? (
+                                    <tr>
+                                        <td colSpan="7" className="text-center py-4 text-muted">
+                                            No DNA laboratories found matching your criteria.
                                         </td>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                                ) : (
+                                    filteredLabs.map((lab) => (
+                                        <tr key={lab.lab_id}>
+                                            <td className="ps-4 fw-bold text-secondary">#{lab.lab_id}</td>
+                                            <td className="fw-semibold text-dark">{lab.lab_name}</td>
+                                            <td>
+                                                <span className="badge bg-light text-dark border">
+                                                    {lab.city}
+                                                </span>
+                                            </td>
+                                            <td className="small text-muted" style={{ maxWidth: '220px' }}>
+                                                {lab.address}
+                                            </td>
+                                            <td className="small">{lab.contact_number}</td>
+                                            <td className="small text-primary">{lab.email}</td>
+                                            <td className="text-end pe-4">
+                                                <div className="btn-group btn-group-sm">
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-outline-primary"
+                                                        onClick={() => handleEdit(lab)}
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-outline-danger"
+                                                        onClick={() => handleDelete(lab.lab_id)}
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             )}
         </div>

@@ -332,7 +332,16 @@ export default function AppRoutes() {
           path="admin/labs"
           element={
             <ProtectedRoute allowedRoles={['Admin']}>
-              <AdminList kind="labs" />
+              <DnaLabsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="labs"
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <DnaLabsPage />
             </ProtectedRoute>
           }
         />
@@ -341,7 +350,34 @@ export default function AppRoutes() {
           path="admin/technicians"
           element={
             <ProtectedRoute allowedRoles={['Admin']}>
-              <AdminList kind="technicians" />
+              <LabTechniciansPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="technicians"
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <LabTechniciansPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="lab-technicians"
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <LabTechniciansPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="dna-analytics"
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Lab Technician']}>
+              <DnaAnalyticsDashboard />
             </ProtectedRoute>
           }
         />

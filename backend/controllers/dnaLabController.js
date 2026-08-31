@@ -92,6 +92,12 @@ export const deleteLab = async (req, res) => {
         await dnaLabModel.deleteLab(id);
         res.status(200).json({ success: true, message: 'DNA Lab deleted successfully' });
     } catch (error) {
+        if (error.code === 'ER_ROW_IS_REFERENCED_2' || error.errno === 1451) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot delete DNA Lab referenced by other records (e.g. technicians or samples).'
+            });
+        }
         res.status(500).json({ success: false, message: error.message });
     }
 };
