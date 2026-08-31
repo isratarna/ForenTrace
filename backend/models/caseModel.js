@@ -1,5 +1,6 @@
-import pool from '../config/db.js'
+import pool from '../config/db.js' // Import the database connection pool
 
+//define/store a reusable SQL query
 const caseSelect = `
   SELECT
     case_id,
@@ -13,7 +14,9 @@ const caseSelect = `
     case_notes
   FROM case_files
 `
-
+// define/store reusable SQL query for joined case data
+//connects casefile with missing persons, police stations, and officers to retrieve relevant information
+//inner join because we only want valid data where the relationships exist between the tables
 const joinedCaseSelect = `
   SELECT
     cf.case_id,
@@ -34,10 +37,10 @@ const joinedCaseSelect = `
   INNER JOIN police_stations ps ON cf.station_id = ps.station_id
   INNER JOIN officers o ON cf.officer_id = o.officer_id
 `
-
-export async function findAllCases({ search } = {}) {
-  let sql = `${joinedCaseSelect} WHERE 1 = 1`
-  const params = []
+//async is used because finding all cases from database takes time...returns a promise obj- future result
+export async function findAllCases({ search } = {}) { //means like it can be called with search parameter also with no parameter when i want to see all cases
+  let sql = `${joinedCaseSelect} WHERE 1 = 1` //where 1=1 used here so that when i append later with and , it will have a where condition, (using and without where is not allowed?)
+  const params = [] // stores all  search or filter values
 
   if (search) {
     sql += `
@@ -48,15 +51,16 @@ export async function findAllCases({ search } = {}) {
         OR CONCAT(o.first_name, ' ', o.last_name) LIKE ?
         OR o.badge_number LIKE ?
       )
-    `
-    const term = `%${search}%`
+    ` // or because any of these can be matched ,,,,, using ? placeholders reduces the risk of sql injection as it cannot be directly inserted
+
+    const term = `%${search}%` //wildcard
     const searchId = Number.isInteger(Number(search)) ? Number(search) : 0
     params.push(searchId, term, term, term, term)
   }
 
   sql += ' ORDER BY cf.case_id ASC'
 
-  const [rows] = await pool.execute(sql, params)
+  const [rows] = await pool.execute(sql, params) // pool.execute executes the query in mysql abd returns rows
 
   return rows
 }
@@ -64,12 +68,13 @@ export async function findAllCases({ search } = {}) {
 export async function findCaseById(id) {
   const [rows] = await pool.execute(
     `${caseSelect} WHERE case_id = ? LIMIT 1`,
-    [id]
+    [id] //in this string ? will be replaced with [id] value to prevent sql injection
   )
 
   return rows[0] || null
 }
 
+//for the cards
 export async function findCaseStatisticsSummary() {
   const [rows] = await pool.execute(
     `
@@ -91,7 +96,7 @@ export async function findCaseStatisticsSummary() {
       ) AS average_resolution_days
     FROM case_files
     `
-  )
+  ) // avg resolution means how many days it takes in avg to solve acase, rounds the decimal with 2 decimal places thats why 2
 
   return rows[0]
 }
@@ -113,7 +118,7 @@ export async function findStationCaseStatistics() {
     LEFT JOIN case_files cf ON cf.station_id = ps.station_id
     GROUP BY ps.station_id, ps.station_name
     ORDER BY total_cases DESC, ps.station_name ASC
-    `
+    ` //left join because we want to see all stations even if it has no cases yet
   )
 
   return rows
@@ -137,7 +142,7 @@ export async function findOfficerCaseStatistics() {
     GROUP BY o.officer_id, o.first_name, o.last_name, ps.station_name
     HAVING COUNT(cf.case_id) >= 3
     ORDER BY total_cases DESC, officer_name ASC
-    `
+    ` //inner join because we only want to see officers with cases,,, having because group filter(agg function)
   )
 
   return rows
@@ -187,6 +192,7 @@ export async function findOfficersAboveAverageCaseWorkload() {
   return rows
 }
 
+// The following lookups verify that submitted case relationships are valid.
 export async function findMissingPersonById(personId) {
   const [rows] = await pool.execute(
     'SELECT person_id FROM missing_persons WHERE person_id = ? LIMIT 1',
@@ -251,7 +257,7 @@ export async function createCase({
     ]
   )
 
-  return findCaseById(result.insertId)
+  return findCaseById(result.insertId) // function jei result dey shetai abar return kore
 }
 
 export async function updateCaseById(id, {
@@ -288,5 +294,5 @@ export async function deleteCaseById(id) {
     [id]
   )
 
-  return result.affectedRows
+  return result.affectedRows //koyta row affected return kore
 }

@@ -17,6 +17,7 @@ import {
 const ALLOWED_CASE_STATUSES = ['Active', 'Pending', 'Solved']
 const ALLOWED_PRIORITIES = ['High', 'Medium', 'Low']
 
+// Converts database dates into the YYYY-MM-DD format used by the frontend.
 function formatDate(value) {
   if (!value) return null
   if (typeof value === 'string') return value.slice(0, 10)
@@ -27,6 +28,7 @@ function formatDate(value) {
   return `${year}-${month}-${day}`
 }
 
+// Changes database column names into the case object returned by the API.
 export function formatCase(row) {
   if (!row) return null
 
@@ -52,6 +54,7 @@ export function formatCase(row) {
   }
 }
 
+// Converts SQL count values into normal JavaScript numbers.
 function formatStatisticsCounts(row) {
   return {
     totalCases: Number(row.total_cases),
@@ -62,6 +65,7 @@ function formatStatisticsCounts(row) {
   }
 }
 
+// Shapes one station statistics row for the API response.
 function formatStationStatistics(row) {
   return {
     stationId: row.station_id,
@@ -72,6 +76,7 @@ function formatStationStatistics(row) {
   }
 }
 
+// Shapes one officer statistics row for the API response.
 function formatOfficerStatistics(row) {
   return {
     officerId: row.officer_id,
@@ -81,6 +86,7 @@ function formatOfficerStatistics(row) {
   }
 }
 
+// Shapes the above-average workload result for the API response.
 function formatAboveAverageOfficer(row) {
   return {
     officerId: row.officer_id,
@@ -93,12 +99,13 @@ function formatAboveAverageOfficer(row) {
   }
 }
 
-function parseId(value) {
+function parseId(value) { //prevents sql injection by checking if the value is a valid positive integer
   const id = Number(value)
   if (!Number.isInteger(id) || id <= 0) return null
   return id
 }
 
+// Reads either a snake_case or camelCase version of a request field.
 function readField(body, ...names) {
   for (const name of names) {
     if (Object.prototype.hasOwnProperty.call(body, name)) {
@@ -109,10 +116,12 @@ function readField(body, ...names) {
   return { provided: false, value: undefined }
 }
 
+// Trims a text value, or returns an empty string for non-text values.
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+// Checks that a date is real and uses the YYYY-MM-DD format.
 function normalizeDate(value, required = false) {
   if (value === null || value === undefined || value === '') {
     return required ? undefined : null
@@ -131,12 +140,14 @@ function normalizeDate(value, required = false) {
   return date
 }
 
+// Stores blank notes as null and rejects non-text notes.
 function normalizeNotes(value) {
   if (value === null || value === undefined || value === '') return null
   if (typeof value !== 'string') return undefined
   return value.trim() || null
 }
 
+// Confirms the related records exist and the officer belongs to the station.
 async function validateReferences(personId, stationId, officerId, checkPerson = true) {
   if (checkPerson && !(await findMissingPersonById(personId))) {
     return { status: 404, message: 'Missing person not found.' }
@@ -161,6 +172,7 @@ async function validateReferences(personId, stationId, officerId, checkPerson = 
   return null
 }
 
+// Returns the searchable list of case files.
 export async function listCases(req, res) {
   try {
     const search = req.query.search?.trim() || req.query.q?.trim() || ''
@@ -179,6 +191,7 @@ export async function listCases(req, res) {
   }
 }
 
+// Returns dashboard totals grouped by case, station, and officer.
 export async function getCaseStatistics(req, res) {
   try {
     const [summary, stationStatistics, officerStatistics] = await Promise.all([
@@ -207,6 +220,7 @@ export async function getCaseStatistics(req, res) {
   }
 }
 
+// Returns officers whose assigned case count is higher than the average.
 export async function getAboveAverageOfficers(req, res) {
   try {
     const officers = await findOfficersAboveAverageCaseWorkload()
@@ -224,6 +238,7 @@ export async function getAboveAverageOfficers(req, res) {
   }
 }
 
+// Returns one case file after validating the URL ID.
 export async function getCase(req, res) {
   try {
     const id = parseId(req.params.id)
@@ -255,6 +270,7 @@ export async function getCase(req, res) {
   }
 }
 
+// Validates the request and creates a case for one missing person.
 export async function createCase(req, res) {
   try {
     const body = req.body || {}
@@ -363,6 +379,7 @@ export async function createCase(req, res) {
   }
 }
 
+// Merges supplied fields with the current case, validates them, and saves them.
 export async function updateCase(req, res) {
   try {
     const id = parseId(req.params.id)
@@ -489,6 +506,7 @@ export async function updateCase(req, res) {
   }
 }
 
+// Removes a case file after confirming that it exists.
 export async function deleteCase(req, res) {
   try {
     const id = parseId(req.params.id)
