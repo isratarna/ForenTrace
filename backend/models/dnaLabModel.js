@@ -53,3 +53,9 @@ export const deleteLab = async (id) => {
     const [result] = await db.query('DELETE FROM dna_labs WHERE lab_id = ?', [id]);
     return result.affectedRows;
 };
+
+/*
+-- 1. DNA Labs table dekhar query (dnaLabModel.js theke)
+SELECT * FROM dna_labs ORDER BY lab_id DESC;
+
+*/

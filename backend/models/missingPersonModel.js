@@ -294,3 +294,9 @@ export async function nationalIdExists(nationalId, excludeId = null) {
   const [rows] = await pool.execute(sql, params)
   return rows.length > 0
 }
+
+/*
+-- 2. Technicians table dekhar query (labTechnicianModel.js theke)
+SELECT * FROM lab_technicians ORDER BY technician_id DESC;
+
+*/

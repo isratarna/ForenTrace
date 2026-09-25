@@ -347,7 +347,7 @@ export default function DnaLabsPage() {
                         </table>
                     </div>
                 </div>
-            )}
+            )}l
         </div>
     );
 }

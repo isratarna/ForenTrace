@@ -43,7 +43,7 @@ VALUES
 (3, 'Rahim', 'Uddin', 'Male', '1988-11-05', 'NID-45612378', 'A+', 172.00, 68.00, 'Black', 'Black', NULL, '2026-01-20', 'Kotwali', 'Chattogram', 'Speaks local dialect', 'Identified')
 ON DUPLICATE KEY UPDATE person_id=person_id;
 
--- Seed DNA Labs (Member 2 Checkpoint 2)
+-- Seed DNA Labs (Member 2 Checkpoint 2)urmeeee
 
 INSERT INTO dna_labs (lab_name, city, address, contact_number, email) VALUES
 ('Central Forensic DNA Laboratory', 'Dhaka', 'CID Headquarters, Malibagh, Dhaka', '+8801711000001', 'cfdl.dhaka@forentrace.gov'),
@@ -52,7 +52,7 @@ INSERT INTO dna_labs (lab_name, city, address, contact_number, email) VALUES
 ('Sylhet Forensic Analysis Lab', 'Sylhet', 'Osmani Medical College Road, Sylhet', '+8801711000004', 'sfal.sylhet@forentrace.gov')
 ON DUPLICATE KEY UPDATE lab_name=VALUES(lab_name);
 
--- 1. Insert valid technicians for existing labs (lab_id 1, 2, 3)
+-- 1. Insert valid technicians for existing labs (lab_id 1, 2, 3) urmeeee
 INSERT INTO lab_technicians (lab_id, first_name, last_name, designation, phone, email) VALUES
 (1, 'Tanvir', 'Hossain', 'Senior DNA Analyst', '+8801811000001', 'tanvir.dna@forentrace.gov'),
 (1, 'Amina', 'Begum', 'Forensic Lab Technician', '+8801811000002', 'amina.lab@forentrace.gov'),

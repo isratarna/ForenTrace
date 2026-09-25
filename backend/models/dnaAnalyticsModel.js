@@ -3,7 +3,9 @@
 
 import db from '../config/db.js';
 
+//TOTAL REGISTERED STAFF: 5 (Multitable JOIN)
 // Query 1: Multitable JOIN (DNA Labs + Technicians + Users)
+
 export const getTechnicianLabOverview = async () => {
   const [rows] = await db.query(`
     SELECT 
@@ -35,6 +37,7 @@ export const getTechnicianLabOverview = async () => {
 // INNER JOIN ensures shudhu valid assigned lab information-i result-e ashbe।
 //left join = Eta Outer Join। Karon ekjon technician-er login user account thakteo pare (user_id = 1), abar NULL-o thakte pare।
 
+//2. Card 2: TOTAL DNA LABS: 5 (Aggregate & GROUP BY)
 // Query 2: Aggregate with GROUP BY & HAVING (Staffing count per DNA lab)
 
 export const getLabCapacityAnalytics = async (minTechnicians = 0) => {
@@ -56,6 +59,7 @@ export const getLabCapacityAnalytics = async (minTechnicians = 0) => {
   return rows;
 };
 
+//Card 3: ABOVE-AVG CAPACITY LABS: 4 (Nested Subquery Benchmark)
 // Query 3: Nested Subquery (DNA Labs with above-average staffing capacity)
 export const getAboveAverageCapacityLabs = async () => {
   const query = `

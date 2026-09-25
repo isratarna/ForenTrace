@@ -91,7 +91,6 @@ CREATE TABLE IF NOT EXISTS missing_persons (
 );
 
 CREATE TABLE IF NOT EXISTS case_files (
-    -- Each case belongs to one missing person, station, and investigating officer.
     case_id INT AUTO_INCREMENT PRIMARY KEY,
     person_id INT NOT NULL,
     station_id INT NOT NULL,
@@ -102,7 +101,6 @@ CREATE TABLE IF NOT EXISTS case_files (
     identified_date DATE NULL,
     case_notes TEXT NULL,
 
-    -- A missing person can have only one case file.
     UNIQUE(person_id),
 
     CONSTRAINT fk_case_station
@@ -112,7 +110,6 @@ CREATE TABLE IF NOT EXISTS case_files (
         FOREIGN KEY (officer_id) REFERENCES officers(officer_id),
 
     CONSTRAINT fk_case_officer_station
-        -- This prevents assigning an officer through a station they do not belong to.
         FOREIGN KEY (station_id, officer_id)
         REFERENCES officers(station_id, officer_id)
 );
@@ -163,8 +160,8 @@ CREATE TABLE IF NOT EXISTS dna_labs (
 
 CREATE TABLE IF NOT EXISTS lab_technicians (
     technician_id INT AUTO_INCREMENT PRIMARY KEY,
-    lab_id INT NOT NULL,
-    user_id INT UNIQUE NULL,
+    lab_id INT NOT NULL, --FK
+    user_id INT UNIQUE NULL, --FK 1 to 1 relation with users table
     first_name VARCHAR(50) NOT NULL,
     last_name VARCHAR(50) NOT NULL,
     designation VARCHAR(100) NOT NULL,
@@ -174,4 +171,6 @@ CREATE TABLE IF NOT EXISTS lab_technicians (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (lab_id) REFERENCES dna_labs(lab_id) ON DELETE RESTRICT ON UPDATE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL ON UPDATE CASCADE
+
+    --System user account delete hole technician delete hobe na, shudhu user_id null hoye jabe.
 );

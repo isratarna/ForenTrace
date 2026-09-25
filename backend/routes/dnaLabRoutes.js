@@ -1,3 +1,6 @@
+//এই কোডটির মূল কাজ হলো DNA Lab সম্পর্কিত API এন্ডপয়েন্টগুলোর রাউটিং (Routing) এবং অ্যাক্সেস কন্ট্রোল (Security/Permission) পরিচালনা করা।
+//নিরাপত্তা ও অথেন্টিকেশন নির্ধারণ (authGuard & adminGuard)
+
 import express from 'express';
 import * as dnaLabController from '../controllers/dnaLabController.js';
 import * as authMiddleware from '../middleware/authMiddleware.js';
