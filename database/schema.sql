@@ -176,3 +176,24 @@ CREATE TABLE IF NOT EXISTS lab_technicians (
 
     -- System user account delete hole technician delete hobe na, shudhu user_id null hoye jabe.
 );
+
+-- Family Members Table (Member 2 - Issue 1)
+CREATE TABLE IF NOT EXISTS family_members (
+    family_id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    relationship VARCHAR(50) NOT NULL,
+    gender VARCHAR(20),
+    phone VARCHAR(30) NOT NULL,
+    email VARCHAR(100),
+    national_id VARCHAR(50),
+    blood_group VARCHAR(10),
+    address TEXT,
+    remarks TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_family_missing_person
+        FOREIGN KEY (person_id) REFERENCES missing_persons(person_id)
+        ON DELETE CASCADE
+);

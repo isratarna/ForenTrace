@@ -62,3 +62,12 @@ INSERT INTO lab_technicians (lab_id, first_name, last_name, designation, phone, 
 ON DUPLICATE KEY UPDATE designation=VALUES(designation);
 
 -- Database Seeding (database/seed.sql): 5-ti realistic DNA Labs ebong 5-ti Lab Technicians test data insert kora hoyeche.
+
+-- Seed Data for family_members (Member 2 - Issue 1)
+-- (dhore nicchi apnar missing_persons table-e person_id 1 ebong 2 ache)
+INSERT INTO family_members (
+    person_id, first_name, last_name, relationship, gender, phone, email, national_id, blood_group, address, remarks
+) VALUES 
+(1, 'Rafiqul', 'Islam', 'Father', 'Male', '01711000001', 'rafiqul@example.com', '1975123456789', 'B+', 'Dhanmondi, Dhaka', 'Willing to provide DNA reference sample'),
+(1, 'Salma', 'Begum', 'Mother', 'Female', '01711000002', 'salma@example.com', '1980123456789', 'O+', 'Dhanmondi, Dhaka', 'Primary family contact'),
+(2, 'Tanvir', 'Ahmed', 'Brother', 'Male', '01819000003', 'tanvir@example.com', '1995123456789', 'A+', 'Agrabad, Chattogram', 'Reported the missing case');
