@@ -5,6 +5,7 @@ const navByRole = {
   Admin: [
     ['Dashboard', '/admin/dashboard'],
     ['Missing Persons', '/missing-persons'],
+    ['Family Members', '/family-members'],
     ['Investigation Cases', '/cases'],
     ['DNA Samples', '/dna-samples'],
     ['DNA Matches', '/dna-matches'],
@@ -19,6 +20,7 @@ const navByRole = {
   Officer: [
     ['Dashboard', '/officer/dashboard'],
     ['Missing Persons', '/missing-persons'],
+    ['Family Members', '/family-members'],
     ['Investigation Cases', '/cases'],
     ['DNA Samples', '/dna-samples'],
     ['DNA Matches', '/dna-matches'],
