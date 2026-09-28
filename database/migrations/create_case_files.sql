@@ -1,4 +1,5 @@
-use railway;
+CREATE DATABASE IF NOT EXISTS forentrace_db;
+USE forentrace_db;
 
 -- Existing databases need this composite key for the case officer/station relationship.
 DROP PROCEDURE IF EXISTS AddOfficerStationAssignmentKey;
