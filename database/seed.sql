@@ -1,4 +1,5 @@
-use railway;
+CREATE DATABASE IF NOT EXISTS forentrace_db;
+USE forentrace_db;
 
 INSERT INTO roles (role_name, description)
 VALUES
@@ -57,7 +58,7 @@ INSERT INTO lab_technicians (lab_id, first_name, last_name, designation, phone, 
 (1, 'Tanvir', 'Hossain', 'Senior DNA Analyst', '+8801811000001', 'tanvir.dna@forentrace.gov'),
 (1, 'Amina', 'Begum', 'Forensic Lab Technician', '+8801811000002', 'amina.lab@forentrace.gov'),
 (2, 'Kamrul', 'Hasan', 'DNA Specialist', '+8801811000003', 'kamrul.dna@forentrace.gov'),
-(3, 'Farhana', 'Akter', 'Junior Serologist', '+8801811000004', 'farhana.lab@forentrace.gov');
+(3, 'Farhana', 'Akter', 'Junior Serologist', '+8801811000004', 'farhana.lab@forentrace.gov')
 ON DUPLICATE KEY UPDATE designation=VALUES(designation);
 
---Database Seeding (database/seed.sql): 5-ti realistic DNA Labs ebong 5-ti Lab Technicians test data insert kora hoyeche.
+-- Database Seeding (database/seed.sql): 5-ti realistic DNA Labs ebong 5-ti Lab Technicians test data insert kora hoyeche.

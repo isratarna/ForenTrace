@@ -1,11 +1,13 @@
-use railway;
-CREATE TABLE roles (
+CREATE DATABASE IF NOT EXISTS forentrace_db;
+USE forentrace_db;
+
+CREATE TABLE IF NOT EXISTS roles (
     role_id INT AUTO_INCREMENT PRIMARY KEY,
     role_name VARCHAR(50) NOT NULL UNIQUE,
     description VARCHAR(255)
 );
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     user_id INT AUTO_INCREMENT PRIMARY KEY,
     role_id INT NOT NULL,
     officer_id INT NULL,
@@ -21,7 +23,7 @@ CREATE TABLE users (
         FOREIGN KEY (role_id)
         REFERENCES roles(role_id)
 );
-CREATE TABLE police_stations (
+CREATE TABLE IF NOT EXISTS police_stations (
     station_id INT AUTO_INCREMENT PRIMARY KEY,
     station_name VARCHAR(150) NOT NULL,
     district VARCHAR(100) NOT NULL,
@@ -160,8 +162,8 @@ CREATE TABLE IF NOT EXISTS dna_labs (
 
 CREATE TABLE IF NOT EXISTS lab_technicians (
     technician_id INT AUTO_INCREMENT PRIMARY KEY,
-    lab_id INT NOT NULL, --FK
-    user_id INT UNIQUE NULL, --FK 1 to 1 relation with users table
+    lab_id INT NOT NULL, -- FK
+    user_id INT UNIQUE NULL, -- FK 1 to 1 relation with users table
     first_name VARCHAR(50) NOT NULL,
     last_name VARCHAR(50) NOT NULL,
     designation VARCHAR(100) NOT NULL,
@@ -172,5 +174,5 @@ CREATE TABLE IF NOT EXISTS lab_technicians (
     FOREIGN KEY (lab_id) REFERENCES dna_labs(lab_id) ON DELETE RESTRICT ON UPDATE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL ON UPDATE CASCADE
 
-    --System user account delete hole technician delete hobe na, shudhu user_id null hoye jabe.
+    -- System user account delete hole technician delete hobe na, shudhu user_id null hoye jabe.
 );
