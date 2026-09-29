@@ -14,6 +14,8 @@ import {
   deleteCaseById as dbDeleteCase,
 } from '../models/caseModel.js'
 
+import pool from '../config/db.js'
+
 const ALLOWED_CASE_STATUSES = ['Active', 'Pending', 'Solved']
 const ALLOWED_PRIORITIES = ['High', 'Medium', 'Low']
 
@@ -176,12 +178,66 @@ async function validateReferences(personId, stationId, officerId, checkPerson = 
 export async function listCases(req, res) {
   try {
     const search = req.query.search?.trim() || req.query.q?.trim() || ''
-    const cases = await findAllCases({ search: search || undefined })
 
-    return res.status(200).json({
-      success: true,
-      cases: cases.map(formatCase),
-    })
+    // Base joined select (matches the shape returned elsewhere)
+    let sql = `
+      SELECT
+        cf.case_id,
+        cf.person_id,
+        cf.station_id,
+        cf.officer_id,
+        cf.report_date,
+        cf.case_status,
+        cf.priority,
+        cf.identified_date,
+        cf.case_notes,
+        CONCAT(mp.first_name, ' ', mp.last_name) AS missing_person_name,
+        ps.station_name,
+        CONCAT(o.first_name, ' ', o.last_name) AS officer_name,
+        o.badge_number AS officer_badge_number
+      FROM case_files cf
+      INNER JOIN missing_persons mp ON cf.person_id = mp.person_id
+      INNER JOIN police_stations ps ON cf.station_id = ps.station_id
+      INNER JOIN officers o ON cf.officer_id = o.officer_id
+      WHERE 1 = 1
+    `
+
+    const params = []
+
+    // Apply search filters (same fields used in model.findAllCases)
+    if (search) {
+      sql += `
+        AND (
+          cf.case_id = ?
+          OR CONCAT(mp.first_name, ' ', mp.last_name) LIKE ?
+          OR ps.station_name LIKE ?
+          OR CONCAT(o.first_name, ' ', o.last_name) LIKE ?
+          OR o.badge_number LIKE ?
+        )
+      `
+
+      const term = `%${search}%`
+      const searchId = Number.isInteger(Number(search)) ? Number(search) : 0
+      params.push(searchId, term, term, term, term)
+    }
+
+    // Row-level filtering by logged-in user's role
+    const userRole = req.user?.role
+    const userId = req.user?.id
+
+    if (userRole === 'Officer') {
+      // Only return cases assigned to this officer
+      sql += `\n      AND cf.officer_id = ?\n    `
+      params.push(userId)
+    } else if (userRole === 'Admin') {
+      // Admins can see all cases: no additional WHERE clause
+    }
+
+    sql += ' ORDER BY cf.case_id ASC'
+
+    const [rows] = await pool.execute(sql, params)
+
+    return res.status(200).json({ success: true, cases: rows.map(formatCase) })
   } catch (error) {
     console.error('List cases error:', error)
     return res.status(500).json({

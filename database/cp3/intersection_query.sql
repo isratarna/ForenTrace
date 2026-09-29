@@ -1,15 +1,31 @@
 -- ==============================================================================
 -- Issue 7: SQL INTERSECTION Query (Member 2)
--- Description: Finds Missing Persons who have BOTH a registered Case File 
---              AND at least one registered Family Member.
--- Method: Using standard MySQL intersection logic (IN subqueries).
+-- Description: Finds DNA labs that satisfy BOTH:
+--              Condition 1: Above average laboratory capacity (technician count)
+--              AND
+--              Condition 2: Currently has active technicians
+-- Method: Standard MySQL intersection logic using IN subqueries.
 -- ==============================================================================
 
-SELECT mp.person_id, mp.first_name, mp.last_name, mp.status
-FROM missing_persons mp
-WHERE mp.person_id IN (
-    SELECT person_id FROM case_files
+SELECT 
+    dl.lab_name AS 'Lab Name',
+    COUNT(lt.technician_id) AS 'Technician Count / Capacity'
+FROM dna_labs dl
+JOIN lab_technicians lt ON dl.lab_id = lt.lab_id
+WHERE dl.lab_id IN (
+    -- Condition 1: Labs with ABOVE AVERAGE capacity
+    SELECT lab_id 
+    FROM lab_technicians 
+    GROUP BY lab_id 
+    HAVING COUNT(technician_id) > (
+        -- Calculate overall average technicians per lab
+        SELECT COUNT(technician_id) / COUNT(DISTINCT lab_id) 
+        FROM lab_technicians
+    )
 )
-AND mp.person_id IN (
-    SELECT person_id FROM family_members
-);
+AND dl.lab_id IN (
+    -- Condition 2: Labs that CURRENTLY have active technicians
+    SELECT DISTINCT lab_id 
+    FROM lab_technicians
+)
+GROUP BY dl.lab_id, dl.lab_name;
