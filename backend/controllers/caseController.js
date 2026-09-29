@@ -277,13 +277,10 @@ export async function createCase(req, res) {
     const personId = parseId(readField(body, 'person_id', 'personId').value)
     const stationId = parseId(readField(body, 'station_id', 'stationId').value)
     const officerId = parseId(readField(body, 'officer_id', 'officerId').value)
-    const reportDate = normalizeDate(
-      readField(body, 'report_date', 'reportDate').value,
-      true
-    )
-    const caseStatus = normalizeText(
-      readField(body, 'case_status', 'caseStatus', 'status').value
-    )
+    // Stored procedure sets `report_date` (CURDATE()) and initial `case_status` ('Active').
+    // Do not require `report_date` or `case_status` from the client when creating via procedure.
+    const reportDate = normalizeDate(readField(body, 'report_date', 'reportDate').value)
+    const caseStatus = normalizeText(readField(body, 'case_status', 'caseStatus', 'status').value)
     const priority = normalizeText(readField(body, 'priority').value)
     const identifiedDate = normalizeDate(
       readField(body, 'identified_date', 'identifiedDate').value
@@ -292,14 +289,15 @@ export async function createCase(req, res) {
       readField(body, 'case_notes', 'caseNotes', 'notes').value
     )
 
-    if (!personId || !stationId || !officerId || !reportDate || !caseStatus || !priority) {
+    if (!personId || !stationId || !officerId || !priority) {
       return res.status(400).json({
         success: false,
-        message: 'Person ID, station ID, officer ID, report date, case status, and priority are required.',
+        message: 'Person ID, station ID, officer ID, and priority are required.',
       })
     }
 
-    if (!ALLOWED_CASE_STATUSES.includes(caseStatus)) {
+    // Only validate case status if the client provided one (normally the procedure sets it).
+    if (caseStatus && !ALLOWED_CASE_STATUSES.includes(caseStatus)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid case status.',
@@ -346,6 +344,8 @@ export async function createCase(req, res) {
       })
     }
 
+    // Note: the stored procedure handles insertion and sets report_date and case_status.
+    // Pass parameters expected by the procedure: person_id, station_id, officer_id, priority, case_notes
     const caseFile = await dbCreateCase({
       personId,
       stationId,

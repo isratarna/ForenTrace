@@ -340,7 +340,16 @@ export function CaseForm() {
     try {
       setSaving(true)
       setError('')
-      const created = await createCase(toPayload(form, true))
+      // The backend stored procedure only needs personId, stationId, officerId, priority, caseNotes.
+      // Ensure we pass the same shape the backend expects (camelCase keys are converted server-side).
+      const payload = {
+        person_id: Number(form.personId),
+        station_id: Number(form.stationId),
+        officer_id: Number(form.officerId),
+        priority: form.priority,
+        case_notes: form.notes.trim() || null,
+      }
+      const created = await createCase(payload)
       navigate(`/cases/${created.id}`)
     } catch (requestError) {
       setError(errorMessage(requestError, 'Failed to create the case.'))

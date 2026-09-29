@@ -239,25 +239,35 @@ export async function createCase({
   identifiedDate = null,
   caseNotes = null,
 }) {
-  const [result] = await pool.execute(
-    `
-    INSERT INTO case_files
-      (person_id, station_id, officer_id, report_date, case_status, priority, identified_date, case_notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    [
+  // Use the stored procedure `create_case` which inserts the case and updates the missing person.
+  // We need to use a single connection so that LAST_INSERT_ID() reflects the insert performed
+  // by the procedure on the same connection.
+  const connection = await pool.getConnection()
+  try {
+    await connection.beginTransaction()
+
+    // Call the stored procedure with the parameters expected by the DB procedure.
+    await connection.execute('CALL create_case(?, ?, ?, ?, ?)', [
       personId,
       stationId,
       officerId,
-      reportDate,
-      caseStatus,
       priority,
-      identifiedDate,
       caseNotes,
-    ]
-  )
+    ])
 
-  return findCaseById(result.insertId) // function jei result dey shetai abar return kore
+    const [rows] = await connection.execute('SELECT LAST_INSERT_ID() AS insertId')
+    const insertId = rows[0]?.insertId || rows[0]?.LAST_INSERT_ID() || null
+
+    await connection.commit()
+    connection.release()
+
+    if (!insertId) return null
+    return findCaseById(insertId)
+  } catch (err) {
+    try { await connection.rollback() } catch (e) { /* ignore */ }
+    connection.release()
+    throw err
+  }
 }
 
 export async function updateCaseById(id, {
