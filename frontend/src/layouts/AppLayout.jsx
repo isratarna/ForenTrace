@@ -15,7 +15,8 @@ const navByRole = {
     ['Lab Technicians', '/admin/technicians'],
     ['DNA Analytics', '/dna-analytics'],
     ['Users & Accounts', '/admin/users'],
-    ['Reports', '/reports']
+    ['Reports', '/reports'],
+    ['Labs Intersection', '/reports/labs-intersection']
   ],
   Officer: [
     ['Dashboard', '/officer/dashboard'],
@@ -24,13 +25,15 @@ const navByRole = {
     ['Investigation Cases', '/cases'],
     ['DNA Samples', '/dna-samples'],
     ['DNA Matches', '/dna-matches'],
-    ['Reports', '/reports']
+    ['Reports', '/reports'],
+    ['Labs Intersection', '/reports/labs-intersection']
   ],
   'Lab Technician': [
     ['Dashboard', '/lab/dashboard'],
     ['DNA Samples', '/dna-samples'],
     ['DNA Matches', '/dna-matches'],
-    ['Reports', '/reports']
+    ['Reports', '/reports'],
+    ['Labs Intersection', '/reports/labs-intersection']
   ],
 }
 
@@ -53,7 +56,7 @@ export default function AppLayout() {
         <div className="role-label">{role} portal</div>
         <nav>
           {navByRole[role]?.map(([label, path]) => (
-            <NavLink key={path} to={path} className="side-link">{label}</NavLink>
+            <NavLink key={path} to={path} end className="side-link">{label}</NavLink>
           ))}
         </nav>
         <div className="sidebar-bottom">

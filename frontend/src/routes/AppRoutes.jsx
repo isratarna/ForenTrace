@@ -17,6 +17,7 @@ import {
   MissingPersons,
 } from '../pages/MissingPersons'
 import { CaseDetails, CaseForm, Cases } from '../pages/Cases'
+import IntersectionReport from '../pages/IntersectionReport'
 
 import {
   DNAAnalysis,
@@ -288,6 +289,15 @@ export default function AppRoutes() {
               ]}
             >
               <Reports />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="reports/labs-intersection"
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Officer', 'Lab Technician']}>
+              <IntersectionReport />
             </ProtectedRoute>
           }
         />
