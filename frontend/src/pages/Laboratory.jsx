@@ -148,7 +148,8 @@ export function SampleForm() {
   const editing = Boolean(id)
   const nav = useNavigate()
   const [params] = useSearchParams()
-  const [form, setForm] = useState({ ...emptySampleForm, personId: params.get('personId') || '', collectionDate: today() })
+  // ?personId=&familyId= diye ashle (FamilyDnaPanel er "Register Sample") person + family pre-select thakbe
+  const [form, setForm] = useState({ ...emptySampleForm, personId: params.get('personId') || '', familyId: params.get('familyId') || '', collectionDate: today() })
   const [lookups, setLookups] = useState({ people: [], labs: [], technicians: [] })
   const [familyMembers, setFamilyMembers] = useState([])
   const [loading, setLoading] = useState(true)

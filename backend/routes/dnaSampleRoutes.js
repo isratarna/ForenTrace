@@ -6,14 +6,20 @@ import {
   createSample,
   updateSample,
   deleteSample,
+  getFamilyDna,
 } from '../controllers/dnaSampleController.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
 import { requireRole } from '../middleware/roleMiddleware.js'
 
 const router = express.Router()
 
+// Missing person er family member + reference sample info (Issue 2)
+// '/:id' er AGE rakhte hobe, noile 'family' ke id hishebe dhorbe
+// Technician family er contact info dekhbe na, tai shudhu Admin + Officer
+router.get('/family/:personId', requireAuth, requireRole('Admin', 'Officer'), getFamilyDna)
+
 // Admin, Officer, Lab Technician — tinjonei sample dekhte parbe (controller role onujayi data filter kore)
-router.get('/', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), listSamples)
+router.get('/',requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), listSamples)
 router.get('/:id', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), getSample)
 
 // Shudhu Admin ar Officer sample register/update/delete korte parbe

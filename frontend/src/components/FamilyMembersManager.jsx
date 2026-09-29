@@ -24,17 +24,22 @@ const initialFormState = {
   remarks: '',
 };
 
+// Family reference DNA form (Member 1 - Issue 2)
+// status pathano hoy na — backend shob notun sample 'Awaiting Analysis' diye shuru kore
 const initialDnaFormState = {
   lab_id: '',
   technician_id: '',
-  sample_type: 'Buccal Swab (Family Reference)',
+  sample_type: 'Buccal Swab',
   collection_date: new Date().toISOString().split('T')[0],
-  storage_location: 'Freezer-A1',
+  storage_location: '',
   remarks: '',
-  status: 'Collected',
 };
 
-export default function FamilyMembersManager({ personId = null, allowDnaRegistration = true }) {
+// Reference sample er jonno common sample type (DNA sample module er list er sathe mil)
+const FAMILY_SAMPLE_TYPES = ['Buccal Swab', 'Blood Sample', 'Hair Strand'];
+
+// onChanged: family add/edit/remove ba DNA register er por parent ke janay (FamilyDnaPanel refresh er jonno)
+export default function FamilyMembersManager({ personId = null, allowDnaRegistration = true, onChanged = () => {} }) {
   const navigate = useNavigate();
   const [members, setMembers] = useState([]);
   const [missingPersons, setMissingPersons] = useState([]);
@@ -170,6 +175,7 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
       setShowForm(false);
       setEditingId(null);
       fetchAllData();
+      onChanged(); // family DNA panel refresh
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Operation failed');
     }
@@ -184,6 +190,7 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
       await deleteFamilyMember(familyId);
       setSuccess('Family member removed successfully!');
       fetchAllData();
+      onChanged(); // family DNA panel refresh (member er sample o cascade e delete hoy)
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Failed to delete family member');
     }
@@ -206,9 +213,14 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
     setSuccess('');
 
     try {
-      await registerFamilyDnaSample(dnaTargetMember.family_id, dnaFormData);
-      setSuccess(`DNA Sample registered for ${dnaTargetMember.first_name} ${dnaTargetMember.last_name}!`);
+      // Faka technician '' na pathiye null pathai (backend optional id hishebe nibe)
+      const result = await registerFamilyDnaSample(dnaTargetMember.family_id, {
+        ...dnaFormData,
+        technician_id: dnaFormData.technician_id || null,
+      });
+      setSuccess(result.message || `DNA Sample registered for ${dnaTargetMember.first_name} ${dnaTargetMember.last_name}!`);
       setDnaTargetMember(null);
+      onChanged(); // notun reference sample panel e dekhabe
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Could not register DNA sample');
     }
@@ -455,21 +467,26 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
             <form onSubmit={handleRegisterDnaSubmit} className="row g-3">
               <div className="col-md-4">
                 <label className="form-label">Sample Type *</label>
-                <input
-                  type="text"
-                  className="form-control"
+                <select
+                  className="form-select"
                   value={dnaFormData.sample_type}
                   onChange={(e) => setDnaFormData({ ...dnaFormData, sample_type: e.target.value })}
                   required
-                />
+                >
+                  {FAMILY_SAMPLE_TYPES.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="col-md-4">
-                <label className="form-label">Assign DNA Lab</label>
+                <label className="form-label">Assign DNA Lab *</label>
                 <select
                   className="form-select"
                   value={dnaFormData.lab_id}
-                  onChange={(e) => setDnaFormData({ ...dnaFormData, lab_id: e.target.value })}
+                  // Lab change hole purono technician baad (onno lab er technician assign atkano)
+                  onChange={(e) => setDnaFormData({ ...dnaFormData, lab_id: e.target.value, technician_id: '' })}
+                  required
                 >
                   <option value="">-- Select Lab --</option>
                   {labs.map((lab) => (
@@ -486,9 +503,11 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
                   className="form-select"
                   value={dnaFormData.technician_id}
                   onChange={(e) => setDnaFormData({ ...dnaFormData, technician_id: e.target.value })}
+                  disabled={!dnaFormData.lab_id}
                 >
-                  <option value="">-- Select Technician --</option>
-                  {technicians.map((tech) => (
+                  <option value="">-- Not assigned --</option>
+                  {/* Shudhu selected lab er technician dekhabe */}
+                  {technicians.filter((tech) => String(tech.lab_id) === String(dnaFormData.lab_id)).map((tech) => (
                     <option key={tech.technician_id} value={tech.technician_id}>
                       {tech.first_name} {tech.last_name}
                     </option>
@@ -497,12 +516,13 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
               </div>
 
               <div className="col-md-4">
-                <label className="form-label">Collection Date</label>
+                <label className="form-label">Collection Date *</label>
                 <input
                   type="date"
                   className="form-control"
                   value={dnaFormData.collection_date}
                   onChange={(e) => setDnaFormData({ ...dnaFormData, collection_date: e.target.value })}
+                  required
                 />
               </div>
 

@@ -9,6 +9,10 @@ import {
   findLabForSample,
   technicianBelongsToLab,
   officerAssignedToPerson,
+  findFamilyMemberForSample,
+  createFamilySample as dbCreateFamilySample,
+  findFamilyDnaByPerson,
+  findFamilyDnaSummary,
 } from '../models/dnaSampleModel.js'
 
 // Sample er allowed status gulo (filter validate korar jonno)
@@ -346,6 +350,116 @@ export async function deleteSample(req, res) {
     return res.status(200).json({ success: true, message: 'DNA sample deleted successfully.' })
   } catch (error) {
     console.error('Delete DNA sample error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+// ---------- Family DNA Reference Integration (Member 1 - Issue 2) ----------
+
+// POST /api/family-members/:id/register-dna — family member theke reference DNA sample register
+// person_id ar family_id body theke na niye family member record theke neya hoy (vul link hobe na)
+export async function registerFamilySample(req, res) {
+  try {
+    const familyId = parseId(req.params.id)
+    if (!familyId) {
+      return res.status(400).json({ success: false, message: 'Invalid family member id.' })
+    }
+
+    const member = await findFamilyMemberForSample(familyId)
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Family member not found.' })
+    }
+
+    // Body er baki field (lab, technician, type, date...) nibo, kintu person/family jor kore family record theke
+    const { values, error } = readSampleBody({
+      ...(req.body || {}),
+      person_id: member.person_id,
+      family_id: member.family_id,
+    })
+    if (error) {
+      return res.status(400).json({ success: false, message: error })
+    }
+
+    // Lab/technician valid kina + Officer hole tar assigned case kina check
+    const referenceError = await validateReferences(values, req.session.user)
+    if (referenceError) {
+      return res.status(referenceError.status).json({ success: false, message: referenceError.message })
+    }
+
+    const sample = await dbCreateFamilySample(familyId, values)
+
+    return res.status(201).json({
+      success: true,
+      message: `Reference DNA sample registered for ${member.first_name} ${member.last_name}.`,
+      sample: formatSample(sample),
+    })
+  } catch (error) {
+    console.error('Register family DNA sample error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+// GET /api/dna-samples/family/:personId — missing person details page er family DNA info
+export async function getFamilyDna(req, res) {
+  try {
+    const personId = parseId(req.params.personId)
+    if (!personId) {
+      return res.status(400).json({ success: false, message: 'Invalid person id.' })
+    }
+
+    if (!(await findPersonForSample(personId))) {
+      return res.status(404).json({ success: false, message: 'Missing person not found.' })
+    }
+
+    // Officer shudhu nijer assigned case er family DNA info dekhte parbe
+    const user = req.session.user
+    if (user.role === 'Officer' && !(await officerAssignedToPerson(user.officerId, personId))) {
+      return res.status(403).json({ success: false, message: 'You can only view family DNA for your assigned cases.' })
+    }
+
+    const [rows, summary] = await Promise.all([
+      findFamilyDnaByPerson(personId),
+      findFamilyDnaSummary(personId),
+    ])
+
+    // LEFT JOIN er flat row gulo ke family member onujayi group kora (ek member er onek sample thakte pare)
+    const members = new Map()
+    for (const row of rows) {
+      if (!members.has(row.family_id)) {
+        members.set(row.family_id, {
+          familyId: row.family_id,
+          name: row.family_member_name,
+          relationship: row.relationship,
+          phone: row.phone,
+          samples: [],
+        })
+      }
+
+      if (row.sample_id) { // sample_id NULL mane ei member er ekhono kono sample nai
+        members.get(row.family_id).samples.push({
+          sampleId: row.sample_id,
+          sampleType: row.sample_type,
+          collectionDate: formatDate(row.collection_date),
+          status: row.sample_status,
+          analysisDate: formatDate(row.analysis_date),
+          dnaProfileCode: row.dna_profile_code || null,
+          labName: row.lab_name || null,
+        })
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      summary: {
+        totalFamilyMembers: Number(summary.total_family_members),
+        membersWithSample: Number(summary.members_with_sample),
+        totalReferenceSamples: Number(summary.total_reference_samples),
+        analyzedReferenceSamples: Number(summary.analyzed_reference_samples || 0), // SUM NULL hole 0
+      },
+      familyMembers: [...members.values()],
+    })
+  } catch (error) {
+    console.error('Get family DNA error:', error)
     return res.status(500).json({ success: false, message: 'Internal server error.' })
   }
 }

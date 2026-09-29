@@ -5,7 +5,6 @@ import {
     createFamilyMember,
     updateFamilyMemberById,
     deleteFamilyMemberById,
-    createFamilyDnaSample,
 } from '../models/familyMemberModel.js';
 
 export async function listFamilyMembers(req, res) {
@@ -97,25 +96,4 @@ export async function removeFamilyMember(req, res) {
     }
 }
 
-export async function registerDnaSampleFromFamily(req, res) {
-    try {
-        const { id } = req.params;
-        const existing = await findFamilyMemberById(id);
-
-        if (!existing) {
-            return res.status(404).json({ message: 'Family member not found' });
-        }
-
-        const sample = await createFamilyDnaSample(id, req.body);
-        res.status(201).json({
-            message: 'Family reference DNA sample registered successfully',
-            data: sample,
-        });
-    } catch (error) {
-        console.error('Error registering family DNA sample:', error);
-        res.status(500).json({
-            message: 'Failed to register DNA sample. Ensure dna_samples table is created by Member 1.',
-            error: error.message,
-        });
-    }
-}
+// Family DNA sample registration dnaSampleController.registerFamilySample e move kora hoyeche (Member 1 - Issue 2)

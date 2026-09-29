@@ -238,3 +238,93 @@ export async function officerAssignedToPerson(officerId, personId) {
 
   return rows.length > 0
 }
+
+// ---------- Family DNA Reference Integration (Member 1 - Issue 2) ----------
+// Query gulo database/sql/dna_samples.sql er 9-12 number section e test kora
+
+// Family member ke tar missing person (person_id) shoho khuje ber kora
+export async function findFamilyMemberForSample(familyId) {
+  const [rows] = await pool.execute(
+    `
+    SELECT family_id, person_id, first_name, last_name, relationship
+    FROM family_members
+    WHERE family_id = ?
+    LIMIT 1
+    `,
+    [familyId]
+  )
+
+  return rows[0] || null
+}
+
+// Family reference sample register — INSERT ... SELECT diye person_id family_members theke neya hoy,
+// tai sample shob somoy family member er missing person er sathei link hobe
+export async function createFamilySample(familyId, {
+  labId,
+  technicianId = null,
+  sampleType,
+  collectionDate,
+  storageLocation = null,
+  remarks = null,
+}) {
+  const [result] = await pool.execute(
+    `
+    INSERT INTO dna_samples
+      (person_id, family_id, lab_id, technician_id, sample_type, collection_date, storage_location, remarks, status)
+    SELECT fm.person_id, fm.family_id, ?, ?, ?, ?, ?, ?, 'Awaiting Analysis'
+    FROM family_members fm
+    WHERE fm.family_id = ?
+    `,
+    [labId, technicianId, sampleType, collectionDate, storageLocation, remarks, familyId]
+  )
+
+  if (!result.affectedRows) return null // family member na thakle kichu insert hoy na
+  return findSampleById(result.insertId)
+}
+
+// Ekta missing person er shob family member + tader reference sample (LEFT JOIN — sample na thakleo member ashbe)
+export async function findFamilyDnaByPerson(personId) {
+  const [rows] = await pool.execute(
+    `
+    SELECT
+      fm.family_id,
+      CONCAT(fm.first_name, ' ', fm.last_name) AS family_member_name,
+      fm.relationship,
+      fm.phone,
+      s.sample_id,
+      s.sample_type,
+      s.collection_date,
+      s.status AS sample_status,
+      s.analysis_date,
+      s.dna_profile_code,
+      dl.lab_name
+    FROM family_members fm
+    LEFT JOIN dna_samples s ON s.family_id = fm.family_id
+    LEFT JOIN dna_labs dl ON dl.lab_id = s.lab_id
+    WHERE fm.person_id = ?
+    ORDER BY fm.family_id ASC, s.sample_id ASC
+    `,
+    [personId]
+  )
+
+  return rows
+}
+
+// Family DNA coverage summary — koto jon member, koto jon sample diyeche, koto gula analyzed
+export async function findFamilyDnaSummary(personId) {
+  const [rows] = await pool.execute(
+    `
+    SELECT
+      COUNT(DISTINCT fm.family_id) AS total_family_members,
+      COUNT(DISTINCT s.family_id) AS members_with_sample,
+      COUNT(s.sample_id) AS total_reference_samples,
+      SUM(CASE WHEN s.status = 'Analyzed' THEN 1 ELSE 0 END) AS analyzed_reference_samples
+    FROM family_members fm
+    LEFT JOIN dna_samples s ON s.family_id = fm.family_id
+    WHERE fm.person_id = ?
+    `,
+    [personId]
+  )
+
+  return rows[0]
+}

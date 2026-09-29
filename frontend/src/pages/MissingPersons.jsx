@@ -7,6 +7,7 @@ import dnaService from '../services/dnaService'
 import SamplesTable from '../components/SamplesTable'
 import MatchesList from '../components/MatchesList'
 import FamilyMembersManager from '../components/FamilyMembersManager'
+import FamilyDnaPanel from '../components/FamilyDnaPanel' // Family DNA reference info (Member 1 - Issue 2)
 import { useAuth } from '../context/AuthContext'
 
 const STATUSES = ['Missing', 'Identified']
@@ -290,6 +291,9 @@ export function MissingPersonDetails() {
   // Tabbed details (Overview, Case, Family Members, DNA Samples, DNA Matches)
   const [activeTab, setActiveTab] = useState('overview')
 
+  // Family member / DNA register change hole FamilyDnaPanel reload korar jonno counter (Member 1 - Issue 2)
+  const [familyDnaRefresh, setFamilyDnaRefresh] = useState(0)
+
   // Case tab state
   const [caseData, setCaseData] = useState(null)
   const [caseLoading, setCaseLoading] = useState(false)
@@ -473,7 +477,10 @@ export function MissingPersonDetails() {
                 {activeTab === 'family' && (
                   <div>
                     <h5 className="mb-2">Family Members</h5>
-                    <FamilyMembersManager personId={person.id} allowDnaRegistration={false} />
+                    {/* Family theke reference DNA register ekhon ekhan thekei kora jay (Issue 2) */}
+                    <FamilyMembersManager personId={person.id} allowDnaRegistration onChanged={() => setFamilyDnaRefresh(count => count + 1)} />
+                    {/* Kon family member sample diyeche, tar status/profile code */}
+                    <FamilyDnaPanel personId={person.id} refreshKey={familyDnaRefresh} />
                   </div>
                 )}
 

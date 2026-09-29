@@ -157,46 +157,4 @@ export async function deleteFamilyMemberById(id) {
     return result.affectedRows;
 }
 
-export async function createFamilyDnaSample(familyId, sampleData) {
-    const member = await findFamilyMemberById(familyId);
-    if (!member) return null;
-
-    const {
-        lab_id = null,
-        technician_id = null,
-        sample_type = 'Buccal Swab (Family Reference)',
-        collection_date = new Date().toISOString().split('T')[0],
-        storage_location = null,
-        remarks = `Reference DNA sample from family member (${member.first_name} ${member.last_name})`,
-        status = 'Collected',
-    } = sampleData;
-
-    const [result] = await db.query(
-        `INSERT INTO dna_samples (
-      person_id, family_id, lab_id, technician_id,
-      sample_type, collection_date, storage_location, remarks, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-            member.person_id,
-            familyId,
-            lab_id,
-            technician_id,
-            sample_type,
-            collection_date,
-            storage_location,
-            remarks,
-            status,
-        ]
-    );
-
-    return {
-        sample_id: result.insertId,
-        person_id: member.person_id,
-        family_id: Number(familyId),
-        sample_type,
-        collection_date,
-        storage_location,
-        remarks,
-        status,
-    };
-}
+// Family DNA sample insert dnaSampleModel.createFamilySample e move kora hoyeche (Member 1 - Issue 2)

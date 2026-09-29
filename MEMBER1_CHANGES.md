@@ -14,7 +14,7 @@ This file records every change made for Member 1, phase by phase. Each phase mat
 | Phase | Issue | Status |
 |---|---|---|
 | 1 | Issue 1: DNA Sample Management Module | ✅ Done |
-| 2 | Issue 2: Family DNA Reference Integration | ⏳ Pending |
+| 2 | Issue 2: Family DNA Reference Integration | ✅ Done |
 | 3 | Issue 3: Laboratory DNA Analysis Workflow | ⏳ Pending |
 | 4 | Issue 4: DNA Matching Workflow | ⏳ Pending |
 | 5 | Issue 5: SQL Trigger (automatic identification update) | ⏳ Pending |
@@ -1611,4 +1611,894 @@ Admin can now open the register form, and there is a new edit route. Both match 
 
 ---
 
-<!-- Phase 2 onwards will be added below as each phase is completed. -->
+# Phase 2 — Issue 2: Family DNA Reference Integration
+
+## Goal
+
+Family members can give DNA reference samples, and those samples are linked correctly:
+
+```
+Family Member ──(family_id)──> DNA Sample ──(person_id)──> Missing Person
+```
+
+This phase adds three things:
+
+- family reference DNA registration, now validated and protected;
+- the link between a family member and their DNA sample;
+- family DNA information inside the Missing Person Details page.
+
+**Dependency:** this uses Member 2's `family_members` table and module, which were already in the repo.
+
+## Problems in the old code
+
+The earlier family "Register DNA" feature was written before the `dna_samples` table existed. `familyMemberModel.createFamilyDnaSample` and `familyMemberController.registerDnaSampleFromFamily` had these problems:
+
+- **No login required.** `POST /api/family-members/:id/register-dna` had no `requireAuth` or `requireRole`.
+- **Invalid status.** Samples were saved with `status = 'Collected'`, which is not one of the allowed statuses.
+- **No validation.** The lab could be empty, the technician could come from a different lab, and the date wasn't checked.
+- **No officer check.** Any officer could add a sample to any case.
+- **Nothing showed the result.** The Missing Person Details page never displayed which family members had given DNA.
+
+## Files changed
+
+| File | Type | What changed |
+|---|---|---|
+| `database/sql/dna_samples.sql` | Modified | New queries 9–13: family lookup, `INSERT ... SELECT` registration, family + samples LEFT JOIN, coverage summary |
+| `backend/models/dnaSampleModel.js` | Modified | Added `findFamilyMemberForSample`, `createFamilySample`, `findFamilyDnaByPerson`, `findFamilyDnaSummary` |
+| `backend/controllers/dnaSampleController.js` | Modified | Added `registerFamilySample`, `getFamilyDna` |
+| `backend/routes/dnaSampleRoutes.js` | Modified | Added `GET /api/dna-samples/family/:personId` |
+| `backend/routes/familyMemberRoutes.js` | Modified | `register-dna` now uses the new controller, with `requireAuth` + `requireRole('Admin','Officer')` |
+| `backend/controllers/familyMemberController.js` | Modified | Removed the old `registerDnaSampleFromFamily` (replaced) |
+| `backend/models/familyMemberModel.js` | Modified | Removed the old `createFamilyDnaSample` (replaced) |
+| `frontend/src/services/dnaService.js` | Modified | Added `getFamilyDnaByPerson` |
+| `frontend/src/components/FamilyDnaPanel.jsx` | New | "Family DNA References" panel |
+| `frontend/src/components/FamilyMembersManager.jsx` | Modified | Fixed the DNA form and added the `onChanged` callback |
+| `frontend/src/pages/MissingPersons.jsx` | Modified | Family tab: DNA registration enabled + `FamilyDnaPanel` |
+| `frontend/src/pages/Laboratory.jsx` | Modified | `SampleForm` accepts `?familyId=` to preselect the family member |
+
+## API endpoints
+
+| Method | Endpoint | Roles | Purpose |
+|---|---|---|---|
+| POST | `/api/family-members/:id/register-dna` | Admin, Officer | Register a reference sample for a family member (same URL as before, now validated) |
+| GET | `/api/dna-samples/family/:personId` | Admin, Officer | Family members of a missing person, their reference samples, and a summary |
+
+Lab Technicians get 403 on both endpoints because they should not see family contact details.
+
+## Design decisions
+
+- **`person_id` always comes from the family member's record.** The SQL is `INSERT ... SELECT fm.person_id, fm.family_id ... FROM family_members fm WHERE fm.family_id = ?`. The controller also overwrites any `person_id` / `family_id` sent in the body. So a family sample can never be linked to the wrong missing person.
+- **Same validation as Phase 1.** Registration reuses `readSampleBody` and `validateReferences`, so the lab must exist, the technician must belong to that lab, the date must be valid and not in the future, and an Officer must be assigned to the case.
+- **The URL did not change.** The frontend `familyMemberService.registerFamilyDnaSample` still calls `/family-members/:id/register-dna`. Only the handler behind it changed.
+- **LEFT JOIN in the family view.** Family members with no sample still appear, showing "No reference sample yet" and a **Register Sample** button.
+
+---
+
+## 2.1 `database/sql/dna_samples.sql` (modified: queries 9–13 added)
+
+| Query | What it does |
+|---|---|
+| 9 | Finds a family member together with their `person_id` (used before registering) |
+| 10 | **`INSERT ... SELECT`**: registers a reference sample and takes `person_id` from `family_members`. `@family_sample_id` stores the new id for cleanup |
+| 11 | Family members + their samples + lab name, using `LEFT JOIN` so members without samples still appear |
+| 12 | Coverage summary: `COUNT(DISTINCT fm.family_id)` gives total members, `COUNT(DISTINCT s.family_id)` gives members with a sample, and `SUM(CASE ...)` gives the analyzed count |
+| 13 | Deletes the test row so the seed data is unchanged |
+
+```sql
+-- =========================================================
+-- Family DNA Reference Integration (Member 1 - Issue 2)
+-- Link: Family Member ──(family_id)──> DNA Sample ──(person_id)──> Missing Person
+-- =========================================================
+
+-- 9. Family member er info ber kora (register er age — family ache kina ar kon person er)
+SELECT family_id, person_id, first_name, last_name, relationship
+FROM family_members
+WHERE family_id = 1
+LIMIT 1;
+
+
+-- 10. Register family reference DNA sample (INSERT ... SELECT)
+-- person_id hat diye na diye family_members theke SELECT kore neya hocche,
+-- tai family sample shob somoy thik missing person er sathe link hobe.
+INSERT INTO dna_samples (
+    person_id, family_id, lab_id, technician_id,
+    sample_type, collection_date, storage_location, remarks, status
+)
+SELECT
+    fm.person_id,               -- family member je missing person er, sample o tar
+    fm.family_id,               -- family member er sathe sample link
+    1,                          -- lab_id
+    2,                          -- technician_id
+    'Buccal Swab',
+    '2026-03-05',
+    'Cold Storage A-15',
+    'Second reference sample from father',
+    'Awaiting Analysis'
+FROM family_members fm
+WHERE fm.family_id = 1;
+
+-- Test row er id rakhlam jate sheshe delete kora jay
+SET @family_sample_id = LAST_INSERT_ID();
+
+
+-- 11. Missing person er shob family member + tader DNA reference sample (Missing Person Details page)
+-- LEFT JOIN dna_samples: jar sample nai shei family member o dekhabe (sample column gulo NULL ashbe)
+SELECT
+    fm.family_id,
+    CONCAT(fm.first_name, ' ', fm.last_name) AS family_member_name,
+    fm.relationship,
+    fm.phone,
+    s.sample_id,
+    s.sample_type,
+    s.collection_date,
+    s.status AS sample_status,
+    s.dna_profile_code,
+    dl.lab_name
+FROM family_members fm
+LEFT JOIN dna_samples s ON s.family_id = fm.family_id
+LEFT JOIN dna_labs dl ON dl.lab_id = s.lab_id
+WHERE fm.person_id = 1
+ORDER BY fm.family_id ASC, s.sample_id ASC;
+
+
+-- 12. Family DNA coverage summary (ekta missing person er jonno)
+-- Koto jon family member, koto jon sample diyeche, koto gula reference sample analyzed
+SELECT
+    COUNT(DISTINCT fm.family_id) AS total_family_members,
+    COUNT(DISTINCT s.family_id) AS members_with_sample,
+    COUNT(s.sample_id) AS total_reference_samples,
+    SUM(CASE WHEN s.status = 'Analyzed' THEN 1 ELSE 0 END) AS analyzed_reference_samples
+FROM family_members fm
+LEFT JOIN dna_samples s ON s.family_id = fm.family_id
+WHERE fm.person_id = 1;
+
+
+-- 13. Test row delete (seed data jeno thik thake)
+DELETE FROM dna_samples
+WHERE sample_id = @family_sample_id;
+```
+
+## 2.2 `backend/models/dnaSampleModel.js` (modified: Phase 2 functions added)
+
+| Function | What it does |
+|---|---|
+| `findFamilyMemberForSample(familyId)` | Returns the family member with their `person_id`, or `null` |
+| `createFamilySample(familyId, values)` | Runs query 10 (`INSERT ... SELECT`). Returns `null` if nothing was inserted, otherwise the joined sample row |
+| `findFamilyDnaByPerson(personId)` | Runs query 11 and returns flat rows (one row per member + sample pair) |
+| `findFamilyDnaSummary(personId)` | Runs query 12 and returns one row of counts |
+
+```js
+// ---------- Family DNA Reference Integration (Member 1 - Issue 2) ----------
+// Query gulo database/sql/dna_samples.sql er 9-12 number section e test kora
+
+// Family member ke tar missing person (person_id) shoho khuje ber kora
+export async function findFamilyMemberForSample(familyId) {
+  const [rows] = await pool.execute(
+    `
+    SELECT family_id, person_id, first_name, last_name, relationship
+    FROM family_members
+    WHERE family_id = ?
+    LIMIT 1
+    `,
+    [familyId]
+  )
+
+  return rows[0] || null
+}
+
+// Family reference sample register — INSERT ... SELECT diye person_id family_members theke neya hoy,
+// tai sample shob somoy family member er missing person er sathei link hobe
+export async function createFamilySample(familyId, {
+  labId,
+  technicianId = null,
+  sampleType,
+  collectionDate,
+  storageLocation = null,
+  remarks = null,
+}) {
+  const [result] = await pool.execute(
+    `
+    INSERT INTO dna_samples
+      (person_id, family_id, lab_id, technician_id, sample_type, collection_date, storage_location, remarks, status)
+    SELECT fm.person_id, fm.family_id, ?, ?, ?, ?, ?, ?, 'Awaiting Analysis'
+    FROM family_members fm
+    WHERE fm.family_id = ?
+    `,
+    [labId, technicianId, sampleType, collectionDate, storageLocation, remarks, familyId]
+  )
+
+  if (!result.affectedRows) return null // family member na thakle kichu insert hoy na
+  return findSampleById(result.insertId)
+}
+
+// Ekta missing person er shob family member + tader reference sample (LEFT JOIN — sample na thakleo member ashbe)
+export async function findFamilyDnaByPerson(personId) {
+  const [rows] = await pool.execute(
+    `
+    SELECT
+      fm.family_id,
+      CONCAT(fm.first_name, ' ', fm.last_name) AS family_member_name,
+      fm.relationship,
+      fm.phone,
+      s.sample_id,
+      s.sample_type,
+      s.collection_date,
+      s.status AS sample_status,
+      s.analysis_date,
+      s.dna_profile_code,
+      dl.lab_name
+    FROM family_members fm
+    LEFT JOIN dna_samples s ON s.family_id = fm.family_id
+    LEFT JOIN dna_labs dl ON dl.lab_id = s.lab_id
+    WHERE fm.person_id = ?
+    ORDER BY fm.family_id ASC, s.sample_id ASC
+    `,
+    [personId]
+  )
+
+  return rows
+}
+
+// Family DNA coverage summary — koto jon member, koto jon sample diyeche, koto gula analyzed
+export async function findFamilyDnaSummary(personId) {
+  const [rows] = await pool.execute(
+    `
+    SELECT
+      COUNT(DISTINCT fm.family_id) AS total_family_members,
+      COUNT(DISTINCT s.family_id) AS members_with_sample,
+      COUNT(s.sample_id) AS total_reference_samples,
+      SUM(CASE WHEN s.status = 'Analyzed' THEN 1 ELSE 0 END) AS analyzed_reference_samples
+    FROM family_members fm
+    LEFT JOIN dna_samples s ON s.family_id = fm.family_id
+    WHERE fm.person_id = ?
+    `,
+    [personId]
+  )
+
+  return rows[0]
+}
+```
+
+## 2.3 `backend/controllers/dnaSampleController.js` (modified: Phase 2 functions added)
+
+| Function | What it does |
+|---|---|
+| `registerFamilySample` | 1) checks the family id; 2) loads the family member (404 if missing); 3) merges the body with `person_id` / `family_id` **forced from the family record**; 4) `readSampleBody` validation; 5) `validateReferences` (lab, technician-in-lab, officer assigned); 6) inserts and returns 201 with a message naming the family member |
+| `getFamilyDna` | 1) checks the person id (400) and that the person exists (404); 2) an Officer must be assigned to the case (403); 3) loads rows and the summary in parallel; 4) **groups** the flat LEFT JOIN rows by `family_id` into `{ familyId, name, relationship, phone, samples: [] }`. A row with `sample_id = NULL` means that member has no sample; 5) converts SQL count strings to numbers |
+
+```js
+// ---------- Family DNA Reference Integration (Member 1 - Issue 2) ----------
+
+// POST /api/family-members/:id/register-dna — family member theke reference DNA sample register
+// person_id ar family_id body theke na niye family member record theke neya hoy (vul link hobe na)
+export async function registerFamilySample(req, res) {
+  try {
+    const familyId = parseId(req.params.id)
+    if (!familyId) {
+      return res.status(400).json({ success: false, message: 'Invalid family member id.' })
+    }
+
+    const member = await findFamilyMemberForSample(familyId)
+    if (!member) {
+      return res.status(404).json({ success: false, message: 'Family member not found.' })
+    }
+
+    // Body er baki field (lab, technician, type, date...) nibo, kintu person/family jor kore family record theke
+    const { values, error } = readSampleBody({
+      ...(req.body || {}),
+      person_id: member.person_id,
+      family_id: member.family_id,
+    })
+    if (error) {
+      return res.status(400).json({ success: false, message: error })
+    }
+
+    // Lab/technician valid kina + Officer hole tar assigned case kina check
+    const referenceError = await validateReferences(values, req.session.user)
+    if (referenceError) {
+      return res.status(referenceError.status).json({ success: false, message: referenceError.message })
+    }
+
+    const sample = await dbCreateFamilySample(familyId, values)
+
+    return res.status(201).json({
+      success: true,
+      message: `Reference DNA sample registered for ${member.first_name} ${member.last_name}.`,
+      sample: formatSample(sample),
+    })
+  } catch (error) {
+    console.error('Register family DNA sample error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+// GET /api/dna-samples/family/:personId — missing person details page er family DNA info
+export async function getFamilyDna(req, res) {
+  try {
+    const personId = parseId(req.params.personId)
+    if (!personId) {
+      return res.status(400).json({ success: false, message: 'Invalid person id.' })
+    }
+
+    if (!(await findPersonForSample(personId))) {
+      return res.status(404).json({ success: false, message: 'Missing person not found.' })
+    }
+
+    // Officer shudhu nijer assigned case er family DNA info dekhte parbe
+    const user = req.session.user
+    if (user.role === 'Officer' && !(await officerAssignedToPerson(user.officerId, personId))) {
+      return res.status(403).json({ success: false, message: 'You can only view family DNA for your assigned cases.' })
+    }
+
+    const [rows, summary] = await Promise.all([
+      findFamilyDnaByPerson(personId),
+      findFamilyDnaSummary(personId),
+    ])
+
+    // LEFT JOIN er flat row gulo ke family member onujayi group kora (ek member er onek sample thakte pare)
+    const members = new Map()
+    for (const row of rows) {
+      if (!members.has(row.family_id)) {
+        members.set(row.family_id, {
+          familyId: row.family_id,
+          name: row.family_member_name,
+          relationship: row.relationship,
+          phone: row.phone,
+          samples: [],
+        })
+      }
+
+      if (row.sample_id) { // sample_id NULL mane ei member er ekhono kono sample nai
+        members.get(row.family_id).samples.push({
+          sampleId: row.sample_id,
+          sampleType: row.sample_type,
+          collectionDate: formatDate(row.collection_date),
+          status: row.sample_status,
+          analysisDate: formatDate(row.analysis_date),
+          dnaProfileCode: row.dna_profile_code || null,
+          labName: row.lab_name || null,
+        })
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      summary: {
+        totalFamilyMembers: Number(summary.total_family_members),
+        membersWithSample: Number(summary.members_with_sample),
+        totalReferenceSamples: Number(summary.total_reference_samples),
+        analyzedReferenceSamples: Number(summary.analyzed_reference_samples || 0), // SUM NULL hole 0
+      },
+      familyMembers: [...members.values()],
+    })
+  } catch (error) {
+    console.error('Get family DNA error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+```
+
+## 2.4 `backend/routes/dnaSampleRoutes.js` (modified)
+
+`/family/:personId` is placed **before** `/:id`. Otherwise Express would treat the word `family` as a sample id.
+
+```diff
+@@ -6,14 +6,20 @@ import {
+   createSample,
+   updateSample,
+   deleteSample,
++  getFamilyDna,
+ } from '../controllers/dnaSampleController.js'
+ import { requireAuth } from '../middleware/authMiddleware.js'
+ import { requireRole } from '../middleware/roleMiddleware.js'
+ 
+ const router = express.Router()
+ 
++// Missing person er family member + reference sample info (Issue 2)
++// '/:id' er AGE rakhte hobe, noile 'family' ke id hishebe dhorbe
++// Technician family er contact info dekhbe na, tai shudhu Admin + Officer
++router.get('/family/:personId', requireAuth, requireRole('Admin', 'Officer'), getFamilyDna)
++
+ // Admin, Officer, Lab Technician — tinjonei sample dekhte parbe (controller role onujayi data filter kore)
+-router.get('/', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), listSamples)
++router.get('/',requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), listSamples)
+ router.get('/:id', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), getSample)
+ 
+ // Shudhu Admin ar Officer sample register/update/delete korte parbe
+```
+
+## 2.5 `backend/routes/familyMemberRoutes.js` (modified)
+
+The URL stays the same, but it now points to the validated `registerFamilySample` and is protected with `requireAuth` + `requireRole('Admin', 'Officer')`.
+
+```diff
+@@ -6,8 +6,11 @@ import {
+     addFamilyMember,
+     editFamilyMember,
+     removeFamilyMember,
+-    registerDnaSampleFromFamily,
+ } from '../controllers/familyMemberController.js';
++// Family DNA registration ekhon DNA Sample module (Member 1 - Issue 2) handle kore — validation + auth shoho
++import { registerFamilySample } from '../controllers/dnaSampleController.js';
++import { requireAuth } from '../middleware/authMiddleware.js';
++import { requireRole } from '../middleware/roleMiddleware.js';
+ 
+ const router = express.Router();
+ 
+@@ -29,7 +32,8 @@ router.put('/:id', editFamilyMember);
+ // Remove family member
+ router.delete('/:id', removeFamilyMember);
+ 
+-// Register DNA sample from family member
+-router.post('/:id/register-dna', registerDnaSampleFromFamily);
++// Register DNA sample from family member (Member 1 - Issue 2)
++// Login lagbe, shudhu Admin/Officer; person_id family record theke ashe, status 'Awaiting Analysis'
++router.post('/:id/register-dna', requireAuth, requireRole('Admin', 'Officer'), registerFamilySample);
+ 
+ export default router;
+\ No newline at end of file
+```
+
+## 2.6 `backend/controllers/familyMemberController.js` and `backend/models/familyMemberModel.js` (modified: old code removed)
+
+The old unvalidated functions were removed and replaced with a comment pointing to the new location. The rest of Member 2's family CRUD is unchanged. I checked that `GET /api/family-members/1` still works.
+
+```diff
+@@ -5,7 +5,6 @@ import {
+     createFamilyMember,
+     updateFamilyMemberById,
+     deleteFamilyMemberById,
+-    createFamilyDnaSample,
+ } from '../models/familyMemberModel.js';
+ 
+ export async function listFamilyMembers(req, res) {
+@@ -97,25 +96,4 @@ export async function removeFamilyMember(req, res) {
+     }
+ }
+ 
+-export async function registerDnaSampleFromFamily(req, res) {
+-    try {
+-        const { id } = req.params;
+-        const existing = await findFamilyMemberById(id);
+-
+-        if (!existing) {
+-            return res.status(404).json({ message: 'Family member not found' });
+-        }
+-
+-        const sample = await createFamilyDnaSample(id, req.body);
+-        res.status(201).json({
+-            message: 'Family reference DNA sample registered successfully',
+-            data: sample,
+-        });
+-    } catch (error) {
+-        console.error('Error registering family DNA sample:', error);
+-        res.status(500).json({
+-            message: 'Failed to register DNA sample. Ensure dna_samples table is created by Member 1.',
+-            error: error.message,
+-        });
+-    }
+-}
+\ No newline at end of file
++// Family DNA sample registration dnaSampleController.registerFamilySample e move kora hoyeche (Member 1 - Issue 2)
+\ No newline at end of file
+```
+
+```diff
+@@ -157,46 +157,4 @@ export async function deleteFamilyMemberById(id) {
+     return result.affectedRows;
+ }
+ 
+-export async function createFamilyDnaSample(familyId, sampleData) {
+-    const member = await findFamilyMemberById(familyId);
+-    if (!member) return null;
+-
+-    const {
+-        lab_id = null,
+-        technician_id = null,
+-        sample_type = 'Buccal Swab (Family Reference)',
+-        collection_date = new Date().toISOString().split('T')[0],
+-        storage_location = null,
+-        remarks = `Reference DNA sample from family member (${member.first_name} ${member.last_name})`,
+-        status = 'Collected',
+-    } = sampleData;
+-
+-    const [result] = await db.query(
+-        `INSERT INTO dna_samples (
+-      person_id, family_id, lab_id, technician_id,
+-      sample_type, collection_date, storage_location, remarks, status
+-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+-        [
+-            member.person_id,
+-            familyId,
+-            lab_id,
+-            technician_id,
+-            sample_type,
+-            collection_date,
+-            storage_location,
+-            remarks,
+-            status,
+-        ]
+-    );
+-
+-    return {
+-        sample_id: result.insertId,
+-        person_id: member.person_id,
+-        family_id: Number(familyId),
+-        sample_type,
+-        collection_date,
+-        storage_location,
+-        remarks,
+-        status,
+-    };
+-}
+\ No newline at end of file
++// Family DNA sample insert dnaSampleModel.createFamilySample e move kora hoyeche (Member 1 - Issue 2)
+\ No newline at end of file
+```
+
+---
+
+## 2.7 `frontend/src/services/dnaService.js` (modified)
+
+Added `getFamilyDnaByPerson(personId)`, which returns `{ summary, familyMembers }`.
+
+```diff
+@@ -64,6 +64,16 @@ export async function getSamplesByCase(caseId) {
+   return getSamples({ case_id: caseId })
+ }
+ 
++// Missing person er family member + tader reference DNA sample (Issue 2)
++// Response: { summary: {...}, familyMembers: [{ familyId, name, relationship, phone, samples: [...] }] }
++export async function getFamilyDnaByPerson(personId) {
++  const response = await api.get(`/dna-samples/family/${personId}`)
++  return {
++    summary: response.data.summary,
++    familyMembers: response.data.familyMembers ?? [],
++  }
++}
++
+ // ---------- Lab lookups (sample form er dropdown er jonno) ----------
+ 
+ // Shob DNA lab (GET /api/labs → { success, data })
+@@ -105,6 +115,7 @@ export default {
+   deleteSample,
+   getSamplesByPerson,
+   getSamplesByCase,
++  getFamilyDnaByPerson,
+   getLabs,
+   getTechnicians,
+   getMatchesByPerson,
+```
+
+## 2.8 `frontend/src/components/FamilyDnaPanel.jsx` (new)
+
+A "Family DNA References" card shown on the missing person's Family tab.
+
+| Part | What it does |
+|---|---|
+| Props | `personId`: whose family to show. `refreshKey`: when this number changes, the data reloads |
+| `useEffect` | Calls `getFamilyDnaByPerson` and uses a `mounted` flag so state isn't set after the component unmounts |
+| Summary line | Family members / members with a reference sample / reference samples / analyzed |
+| Table | One row per sample (a member with 2 samples gets 2 rows, and the name only shows on the first). Each sample id links to `/dna-samples/:id`. Status is shown with `StatusBadge` |
+| No-sample row | "No reference sample yet" + a **Register Sample** button linking to `/dna-samples/new?personId=X&familyId=Y` |
+
+```jsx
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { StatusBadge } from './Ui'
+import { getFamilyDnaByPerson } from '../services/dnaService'
+
+// Missing person details page e family DNA reference info dekhay (Member 1 - Issue 2)
+// Family Member ──> DNA Sample ──> Missing Person link ta ekhane visible hoy
+// refreshKey change hole data abar load hoy (family add/remove ba DNA register er por)
+export default function FamilyDnaPanel({ personId, refreshKey = 0 }) {
+  const [data, setData] = useState({ summary: null, familyMembers: [] })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!personId) return
+    let mounted = true
+    setLoading(true)
+    setError('')
+    getFamilyDnaByPerson(personId)
+      .then(result => { if (mounted) setData(result) })
+      .catch(requestError => { if (mounted) setError(requestError.response?.data?.message || 'Failed to load family DNA information.') })
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [personId, refreshKey])
+
+  const { summary, familyMembers } = data
+
+  return (
+    <div className="card mt-4">
+      <div className="card-header bg-white"><strong>Family DNA References</strong></div>
+      <div className="card-body">
+        {loading && <div className="text-secondary">Loading family DNA information...</div>}
+        {error && <div className="alert alert-danger mb-0">{error}</div>}
+
+        {!loading && !error && summary && (
+          <>
+            {/* Summary: koto jon family member sample diyeche */}
+            <div className="d-flex flex-wrap gap-3 mb-3 small">
+              <span>Family members: <b>{summary.totalFamilyMembers}</b></span>
+              <span>Members with reference sample: <b>{summary.membersWithSample}</b></span>
+              <span>Reference samples: <b>{summary.totalReferenceSamples}</b></span>
+              <span>Analyzed: <b>{summary.analyzedReferenceSamples}</b></span>
+            </div>
+
+            {!familyMembers.length ? (
+              <div className="alert alert-secondary mb-0">No family members registered yet.</div>
+            ) : (
+              <div className="table-responsive">
+                <table className="table table-sm align-middle mb-0">
+                  <thead><tr><th>Family Member</th><th>Relationship</th><th>Sample</th><th>Type</th><th>Lab</th><th>Collected</th><th>DNA Profile</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {familyMembers.map(member => member.samples.length ? (
+                      // Ek member er ekadhik sample thakle proti sample alada row te
+                      member.samples.map((sample, index) => (
+                        <tr key={`${member.familyId}-${sample.sampleId}`}>
+                          <td className="fw-semibold">{index === 0 ? member.name : ''}</td>
+                          <td>{index === 0 ? member.relationship : ''}</td>
+                          <td><Link to={`/dna-samples/${sample.sampleId}`}>#{sample.sampleId}</Link></td>
+                          <td>{sample.sampleType}</td>
+                          <td>{sample.labName || '—'}</td>
+                          <td>{sample.collectionDate}</td>
+                          <td>{sample.dnaProfileCode || '—'}</td>
+                          <td><StatusBadge value={sample.status}/></td>
+                        </tr>
+                      ))
+                    ) : (
+                      // Sample nai — register korar shortcut link (form e person + family pre-selected thakbe)
+                      <tr key={member.familyId}>
+                        <td className="fw-semibold">{member.name}</td>
+                        <td>{member.relationship}</td>
+                        <td colSpan="5" className="text-secondary">No reference sample yet</td>
+                        <td><Link className="btn btn-sm btn-outline-primary" to={`/dna-samples/new?personId=${personId}&familyId=${member.familyId}`}>Register Sample</Link></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+```
+
+## 2.9 `frontend/src/components/FamilyMembersManager.jsx` (modified)
+
+| Change | Why |
+|---|---|
+| Removed `status: 'Collected'` from `initialDnaFormState` | The backend sets `Awaiting Analysis` |
+| `sample_type` is a select (`FAMILY_SAMPLE_TYPES`) instead of free text | Keeps sample types consistent |
+| DNA Lab is required, and changing it clears the technician | The backend requires a lab, and a technician must belong to that lab |
+| The technician list only shows the selected lab's technicians, and is disabled until a lab is chosen | Stops a user from picking a technician from another lab |
+| Collection Date is required | The backend requires a valid date |
+| An empty technician is sent as `null` | The backend reads it as optional |
+| The success message comes from the backend | Names the family member |
+| New `onChanged` prop, called after add/edit/remove/register | Lets the parent refresh `FamilyDnaPanel` |
+
+```diff
+@@ -24,17 +24,22 @@ const initialFormState = {
+   remarks: '',
+ };
+ 
++// Family reference DNA form (Member 1 - Issue 2)
++// status pathano hoy na — backend shob notun sample 'Awaiting Analysis' diye shuru kore
+ const initialDnaFormState = {
+   lab_id: '',
+   technician_id: '',
+-  sample_type: 'Buccal Swab (Family Reference)',
++  sample_type: 'Buccal Swab',
+   collection_date: new Date().toISOString().split('T')[0],
+-  storage_location: 'Freezer-A1',
++  storage_location: '',
+   remarks: '',
+-  status: 'Collected',
+ };
+ 
+-export default function FamilyMembersManager({ personId = null, allowDnaRegistration = true }) {
++// Reference sample er jonno common sample type (DNA sample module er list er sathe mil)
++const FAMILY_SAMPLE_TYPES = ['Buccal Swab', 'Blood Sample', 'Hair Strand'];
++
++// onChanged: family add/edit/remove ba DNA register er por parent ke janay (FamilyDnaPanel refresh er jonno)
++export default function FamilyMembersManager({ personId = null, allowDnaRegistration = true, onChanged = () => {} }) {
+   const navigate = useNavigate();
+   const [members, setMembers] = useState([]);
+   const [missingPersons, setMissingPersons] = useState([]);
+@@ -170,6 +175,7 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
+       setShowForm(false);
+       setEditingId(null);
+       fetchAllData();
++      onChanged(); // family DNA panel refresh
+     } catch (err) {
+       setError(err.response?.data?.message || err.message || 'Operation failed');
+     }
+@@ -184,6 +190,7 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
+       await deleteFamilyMember(familyId);
+       setSuccess('Family member removed successfully!');
+       fetchAllData();
++      onChanged(); // family DNA panel refresh (member er sample o cascade e delete hoy)
+     } catch (err) {
+       setError(err.response?.data?.message || err.message || 'Failed to delete family member');
+     }
+@@ -206,9 +213,14 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
+     setSuccess('');
+ 
+     try {
+-      await registerFamilyDnaSample(dnaTargetMember.family_id, dnaFormData);
+-      setSuccess(`DNA Sample registered for ${dnaTargetMember.first_name} ${dnaTargetMember.last_name}!`);
++      // Faka technician '' na pathiye null pathai (backend optional id hishebe nibe)
++      const result = await registerFamilyDnaSample(dnaTargetMember.family_id, {
++        ...dnaFormData,
++        technician_id: dnaFormData.technician_id || null,
++      });
++      setSuccess(result.message || `DNA Sample registered for ${dnaTargetMember.first_name} ${dnaTargetMember.last_name}!`);
+       setDnaTargetMember(null);
++      onChanged(); // notun reference sample panel e dekhabe
+     } catch (err) {
+       setError(err.response?.data?.message || err.message || 'Could not register DNA sample');
+     }
+@@ -455,21 +467,26 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
+             <form onSubmit={handleRegisterDnaSubmit} className="row g-3">
+               <div className="col-md-4">
+                 <label className="form-label">Sample Type *</label>
+-                <input
+-                  type="text"
+-                  className="form-control"
++                <select
++                  className="form-select"
+                   value={dnaFormData.sample_type}
+                   onChange={(e) => setDnaFormData({ ...dnaFormData, sample_type: e.target.value })}
+                   required
+-                />
++                >
++                  {FAMILY_SAMPLE_TYPES.map((type) => (
++                    <option key={type} value={type}>{type}</option>
++                  ))}
++                </select>
+               </div>
+ 
+               <div className="col-md-4">
+-                <label className="form-label">Assign DNA Lab</label>
++                <label className="form-label">Assign DNA Lab *</label>
+                 <select
+                   className="form-select"
+                   value={dnaFormData.lab_id}
+-                  onChange={(e) => setDnaFormData({ ...dnaFormData, lab_id: e.target.value })}
++                  // Lab change hole purono technician baad (onno lab er technician assign atkano)
++                  onChange={(e) => setDnaFormData({ ...dnaFormData, lab_id: e.target.value, technician_id: '' })}
++                  required
+                 >
+                   <option value="">-- Select Lab --</option>
+                   {labs.map((lab) => (
+@@ -486,9 +503,11 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
+                   className="form-select"
+                   value={dnaFormData.technician_id}
+                   onChange={(e) => setDnaFormData({ ...dnaFormData, technician_id: e.target.value })}
++                  disabled={!dnaFormData.lab_id}
+                 >
+-                  <option value="">-- Select Technician --</option>
+-                  {technicians.map((tech) => (
++                  <option value="">-- Not assigned --</option>
++                  {/* Shudhu selected lab er technician dekhabe */}
++                  {technicians.filter((tech) => String(tech.lab_id) === String(dnaFormData.lab_id)).map((tech) => (
+                     <option key={tech.technician_id} value={tech.technician_id}>
+                       {tech.first_name} {tech.last_name}
+                     </option>
+@@ -497,12 +516,13 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
+               </div>
+ 
+               <div className="col-md-4">
+-                <label className="form-label">Collection Date</label>
++                <label className="form-label">Collection Date *</label>
+                 <input
+                   type="date"
+                   className="form-control"
+                   value={dnaFormData.collection_date}
+                   onChange={(e) => setDnaFormData({ ...dnaFormData, collection_date: e.target.value })}
++                  required
+                 />
+               </div>
+ 
+```
+
+## 2.10 `frontend/src/pages/MissingPersons.jsx` (modified)
+
+On the Family Members tab of Missing Person Details:
+
+- `allowDnaRegistration` is now on, so "Register DNA" works from this page;
+- `FamilyDnaPanel` is shown under the family list;
+- the `familyDnaRefresh` counter increases through `onChanged`, which makes the panel reload.
+
+```diff
+@@ -7,6 +7,7 @@ import dnaService from '../services/dnaService'
+ import SamplesTable from '../components/SamplesTable'
+ import MatchesList from '../components/MatchesList'
+ import FamilyMembersManager from '../components/FamilyMembersManager'
++import FamilyDnaPanel from '../components/FamilyDnaPanel' // Family DNA reference info (Member 1 - Issue 2)
+ import { useAuth } from '../context/AuthContext'
+ 
+ const STATUSES = ['Missing', 'Identified']
+@@ -290,6 +291,9 @@ export function MissingPersonDetails() {
+   // Tabbed details (Overview, Case, Family Members, DNA Samples, DNA Matches)
+   const [activeTab, setActiveTab] = useState('overview')
+ 
++  // Family member / DNA register change hole FamilyDnaPanel reload korar jonno counter (Member 1 - Issue 2)
++  const [familyDnaRefresh, setFamilyDnaRefresh] = useState(0)
++
+   // Case tab state
+   const [caseData, setCaseData] = useState(null)
+   const [caseLoading, setCaseLoading] = useState(false)
+@@ -473,7 +477,10 @@ export function MissingPersonDetails() {
+                 {activeTab === 'family' && (
+                   <div>
+                     <h5 className="mb-2">Family Members</h5>
+-                    <FamilyMembersManager personId={person.id} allowDnaRegistration={false} />
++                    {/* Family theke reference DNA register ekhon ekhan thekei kora jay (Issue 2) */}
++                    <FamilyMembersManager personId={person.id} allowDnaRegistration onChanged={() => setFamilyDnaRefresh(count => count + 1)} />
++                    {/* Kon family member sample diyeche, tar status/profile code */}
++                    <FamilyDnaPanel personId={person.id} refreshKey={familyDnaRefresh} />
+                   </div>
+                 )}
+ 
+```
+
+## 2.11 `frontend/src/pages/Laboratory.jsx` (modified)
+
+`SampleForm` now also reads `?familyId=` from the URL. This makes the panel's "Register Sample" button open the form with both the person and the family member already selected. The family id isn't cleared on load, because it's only cleared when the user changes the person.
+
+```diff
+@@ -148,7 +148,8 @@ export function SampleForm() {
+   const editing = Boolean(id)
+   const nav = useNavigate()
+   const [params] = useSearchParams()
+-  const [form, setForm] = useState({ ...emptySampleForm, personId: params.get('personId') || '', collectionDate: today() })
++  // ?personId=&familyId= diye ashle (FamilyDnaPanel er "Register Sample") person + family pre-select thakbe
++  const [form, setForm] = useState({ ...emptySampleForm, personId: params.get('personId') || '', familyId: params.get('familyId') || '', collectionDate: today() })
+   const [lookups, setLookups] = useState({ people: [], labs: [], technicians: [] })
+   const [familyMembers, setFamilyMembers] = useState([])
+   const [loading, setLoading] = useState(true)
+```
+
+---
+
+## Phase 2 testing
+
+**SQL:** queries 9–13 ran on local MySQL. The `INSERT ... SELECT` correctly took `person_id = 1` from family member 1. The LEFT JOIN returned members with and without samples. The summary returned 2 members, 2 with a sample, 1 analyzed. The test row was deleted.
+
+**API:** tested with curl, logged in as Admin, Officer 1 (case 1 = John Doe), Officer 2 (case 2 = Jane Smith) and Technician 1:
+
+| Test | Result |
+|---|---|
+| Register with no login | 401 (before Phase 2 this was allowed) |
+| Admin `GET /dna-samples/family/1` | Summary {2 members, 2 with sample, 1 analyzed}; Rafiqul #2 Analyzed, Salma #3 Awaiting |
+| Admin `GET /dna-samples/family/3` (no family) | Summary with zeros, empty list |
+| Officer 1 → person 1 / person 2 | 200 / 403 "You can only view family DNA for your assigned cases." |
+| Technician → family DNA | 403 Access denied |
+| Unknown person / non-numeric id | 404 / 400 |
+| Officer 1 registers a sample for family 1 | 201 "Reference DNA sample registered for Rafiqul Islam.", status Awaiting Analysis, source Family Reference |
+| Body tries `personId: 2, familyId: 3` on family 1 | Ignored. The sample was linked to family 1 / person 1 |
+| Officer 1 registers for family 3 (another officer's case) | 403 |
+| Officer 2 registers for family 3 (own case) | 201 |
+| Technician from another lab / no lab / unknown family | 400 / 400 / 404 |
+| Technician tries to register | 403 |
+| Family view after registering | Counts and sample lists updated |
+| Member 2's `GET /family-members/1` | Still works |
+
+The test samples and users were deleted afterwards.
+
+**Frontend:** `oxlint` found no warnings in the new code. It reported 5 existing warnings in Member 2's lines that I didn't change. `vite build` succeeded. The pages were not clicked through in a browser.
+
+## Known gaps after Phase 2
+
+- The technician's **Analyze** button still opens the old mock `DNAAnalysis` page (Phase 3).
+- The Matches pages are still mock (Phase 4).
+
+---
+
+<!-- Phase 3 onwards will be added below as each phase is completed. -->

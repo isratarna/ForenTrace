@@ -180,3 +180,76 @@ SELECT technician_id FROM lab_technicians WHERE technician_id = 1 AND lab_id = 1
 
 -- 8c. Officer ki ei missing person er case e assigned? (officer_id = 1, person_id = 1)
 SELECT case_id FROM case_files WHERE officer_id = 1 AND person_id = 1 LIMIT 1;
+
+
+-- =========================================================
+-- Family DNA Reference Integration (Member 1 - Issue 2)
+-- Link: Family Member ──(family_id)──> DNA Sample ──(person_id)──> Missing Person
+-- =========================================================
+
+-- 9. Family member er info ber kora (register er age — family ache kina ar kon person er)
+SELECT family_id, person_id, first_name, last_name, relationship
+FROM family_members
+WHERE family_id = 1
+LIMIT 1;
+
+
+-- 10. Register family reference DNA sample (INSERT ... SELECT)
+-- person_id hat diye na diye family_members theke SELECT kore neya hocche,
+-- tai family sample shob somoy thik missing person er sathe link hobe.
+INSERT INTO dna_samples (
+    person_id, family_id, lab_id, technician_id,
+    sample_type, collection_date, storage_location, remarks, status
+)
+SELECT
+    fm.person_id,               -- family member je missing person er, sample o tar
+    fm.family_id,               -- family member er sathe sample link
+    1,                          -- lab_id
+    2,                          -- technician_id
+    'Buccal Swab',
+    '2026-03-05',
+    'Cold Storage A-15',
+    'Second reference sample from father',
+    'Awaiting Analysis'
+FROM family_members fm
+WHERE fm.family_id = 1;
+
+-- Test row er id rakhlam jate sheshe delete kora jay
+SET @family_sample_id = LAST_INSERT_ID();
+
+
+-- 11. Missing person er shob family member + tader DNA reference sample (Missing Person Details page)
+-- LEFT JOIN dna_samples: jar sample nai shei family member o dekhabe (sample column gulo NULL ashbe)
+SELECT
+    fm.family_id,
+    CONCAT(fm.first_name, ' ', fm.last_name) AS family_member_name,
+    fm.relationship,
+    fm.phone,
+    s.sample_id,
+    s.sample_type,
+    s.collection_date,
+    s.status AS sample_status,
+    s.dna_profile_code,
+    dl.lab_name
+FROM family_members fm
+LEFT JOIN dna_samples s ON s.family_id = fm.family_id
+LEFT JOIN dna_labs dl ON dl.lab_id = s.lab_id
+WHERE fm.person_id = 1
+ORDER BY fm.family_id ASC, s.sample_id ASC;
+
+
+-- 12. Family DNA coverage summary (ekta missing person er jonno)
+-- Koto jon family member, koto jon sample diyeche, koto gula reference sample analyzed
+SELECT
+    COUNT(DISTINCT fm.family_id) AS total_family_members,
+    COUNT(DISTINCT s.family_id) AS members_with_sample,
+    COUNT(s.sample_id) AS total_reference_samples,
+    SUM(CASE WHEN s.status = 'Analyzed' THEN 1 ELSE 0 END) AS analyzed_reference_samples
+FROM family_members fm
+LEFT JOIN dna_samples s ON s.family_id = fm.family_id
+WHERE fm.person_id = 1;
+
+
+-- 13. Test row delete (seed data jeno thik thake)
+DELETE FROM dna_samples
+WHERE sample_id = @family_sample_id;
