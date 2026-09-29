@@ -15,7 +15,7 @@ This file records every change made for Member 1, phase by phase. Each phase mat
 |---|---|---|
 | 1 | Issue 1: DNA Sample Management Module | ✅ Done |
 | 2 | Issue 2: Family DNA Reference Integration | ✅ Done |
-| 3 | Issue 3: Laboratory DNA Analysis Workflow | ⏳ Pending |
+| 3 | Issue 3: Laboratory DNA Analysis Workflow | ✅ Done |
 | 4 | Issue 4: DNA Matching Workflow | ⏳ Pending |
 | 5 | Issue 5: SQL Trigger (automatic identification update) | ⏳ Pending |
 | 6 | Issue 6: SQL UNION Report | ⏳ Pending |
@@ -2501,4 +2501,736 @@ The test samples and users were deleted afterwards.
 
 ---
 
-<!-- Phase 3 onwards will be added below as each phase is completed. -->
+# Phase 3 — Issue 3: Laboratory DNA Analysis Workflow
+
+## Goal
+
+Lab technicians can finish the DNA processing workflow. This phase adds:
+
+- a real **Lab Sample Analysis page**;
+- a **technician sample view** with lab queue counts;
+- **DNA profile updates**.
+
+A technician can update **only** these four fields:
+
+| Field | Column |
+|---|---|
+| DNA profile code | `dna_profile_code` |
+| Analysis date | `analysis_date` |
+| Laboratory remarks | `remarks` |
+| Analysis status | `status` |
+
+A technician **cannot** change investigation information (missing person, family member, lab, sample type, collection date, storage location).
+
+## Files changed
+
+| File | Type | What changed |
+|---|---|---|
+| `database/sql/dna_samples.sql` | Modified | Queries 14–20: technician lookup, analysis queue, lab summary, analysis-only UPDATE |
+| `backend/models/dnaSampleModel.js` | Modified | Added `findTechnicianForUser`, `findLabSampleSummary`, `updateSampleAnalysis` |
+| `backend/controllers/dnaSampleController.js` | Modified | Added `updateAnalysis`, `getLabSummary` |
+| `backend/routes/dnaSampleRoutes.js` | Modified | Added `PUT /:id/analysis` and `GET /lab/summary` (Lab Technician only) |
+| `frontend/src/services/dnaService.js` | Modified | Added `updateSampleAnalysis`, `getLabSummary` |
+| `frontend/src/pages/Laboratory.jsx` | Modified | Rewrote `DNAAnalysis` (real API), added lab queue cards to `Samples`, updated the Analyze buttons |
+
+## API endpoints
+
+| Method | Endpoint | Roles | Purpose |
+|---|---|---|---|
+| PUT | `/api/dna-samples/:id/analysis` | Lab Technician | Update only the analysis fields of a sample in the technician's own lab |
+| GET | `/api/dna-samples/lab/summary` | Lab Technician | Sample counts by status for the technician's lab |
+
+Admin and Officer get **403** on both endpoints. Admin and Officer still use `PUT /api/dna-samples/:id` for collection info, and that endpoint gives Technicians **403**. So the two update paths are fully separate.
+
+## Analysis rules (enforced in the backend)
+
+| Rule | Error |
+|---|---|
+| The body contains any investigation field (`personId`, `labId`, `sampleType`, `collectionDate`, ...) | 400 "Lab technicians can only update analysis fields ..." |
+| No `lab_technicians` row is linked to the logged-in user | 403 "No technician profile is linked to this account." |
+| The sample is not in the technician's lab | 404 (the query is scoped, and the UPDATE also has `AND lab_id = ?`) |
+| `status` is not one of the allowed statuses | 400 |
+| `Analyzed` without a profile code **and** an analysis date | 400 |
+| Profile code is not 6–50 letters, numbers or hyphens | 400 (the code is saved in **UPPERCASE**) |
+| Analysis date is in the future or before the collection date | 400 |
+| `Rejected` without remarks (a reason) | 400 |
+
+## Design decisions
+
+- **Separate endpoint instead of role checks inside one PUT.** The route guard itself (`requireRole('Lab Technician')`) makes the "technician updates analysis only" rule clear.
+- **Rejecting instead of ignoring.** If a technician sends investigation fields, the whole request fails with a clear message. This makes the rule visible instead of silently dropping data.
+- **Auto-assign technician:** `technician_id = COALESCE(technician_id, ?)`. If no technician was assigned when the sample was registered, the technician who analyzes it is recorded. An existing assignment is never overwritten.
+- **Checking the lab twice:** the sample lookup is scoped to the technician's lab, and the `UPDATE ... WHERE sample_id = ? AND lab_id = ?` checks the lab again in the database.
+- **Technician lookup handles both links:** `lab_technicians.user_id = ?` **or** `lab_technicians.technician_id = users.technician_id`. The codebase uses both ways of linking a technician to a user.
+- **Partial updates and corrections:** fields not sent keep their current value. Technicians can open **Update Analysis** on an already analyzed sample to fix mistakes.
+
+---
+
+## 3.1 `database/sql/dna_samples.sql` (modified: queries 14–20 added)
+
+| Query | What it does |
+|---|---|
+| 14 | Finds the logged-in user's technician profile and lab (`user_id = ? OR technician_id = ?`) |
+| 15 | Technician's analysis queue: own lab's samples in `Awaiting Analysis` / `In Analysis`, oldest first |
+| 16 | Lab workload summary: `COUNT` + `SUM(CASE WHEN status = ...)` per status, with `LEFT JOIN` so a lab with 0 samples still returns a row |
+| 17 | Inserts a test sample so the seed data isn't changed |
+| 18 | **Analysis-only UPDATE**: sets profile code, date, remarks and status, uses `COALESCE` to auto-assign the technician, and has `AND lab_id = ?` as a lab guard |
+| 19 | Checks the result |
+| 20 | Deletes the test sample |
+
+```sql
+-- =========================================================
+-- Laboratory DNA Analysis Workflow (Member 1 - Issue 3)
+-- Technician shudhu analysis field update korte parbe:
+--   dna_profile_code, analysis_date, remarks (laboratory remarks), status
+-- Investigation info (person, family, lab, collection data) technician change korte parbe na.
+-- =========================================================
+
+-- 14. Logged-in user er technician profile + lab ber kora (user_id = 2 ba technician_id = 1)
+SELECT lt.technician_id, lt.lab_id, dl.lab_name
+FROM lab_technicians lt
+INNER JOIN dna_labs dl ON dl.lab_id = lt.lab_id
+WHERE lt.user_id = 2 OR lt.technician_id = 1
+LIMIT 1;
+
+
+-- 15. Technician er analysis queue: nijer lab er je sample gulo ekhono analysis baki
+SELECT
+    s.sample_id,
+    s.sample_type,
+    s.collection_date,
+    s.status,
+    CONCAT(lt.first_name, ' ', lt.last_name) AS technician_name
+FROM dna_samples s
+LEFT JOIN lab_technicians lt ON lt.technician_id = s.technician_id
+WHERE s.lab_id = 1
+  AND s.status IN ('Awaiting Analysis', 'In Analysis')
+ORDER BY s.collection_date ASC;   -- purono sample age (first come first serve)
+
+
+-- 16. Lab workload summary (technician er Samples page er card): status onujayi count
+SELECT
+    dl.lab_id,
+    dl.lab_name,
+    COUNT(s.sample_id) AS total_samples,
+    SUM(CASE WHEN s.status = 'Awaiting Analysis' THEN 1 ELSE 0 END) AS awaiting_analysis,
+    SUM(CASE WHEN s.status = 'In Analysis' THEN 1 ELSE 0 END) AS in_analysis,
+    SUM(CASE WHEN s.status = 'Analyzed' THEN 1 ELSE 0 END) AS analyzed,
+    SUM(CASE WHEN s.status = 'Rejected' THEN 1 ELSE 0 END) AS rejected
+FROM dna_labs dl
+LEFT JOIN dna_samples s ON s.lab_id = dl.lab_id
+WHERE dl.lab_id = 1
+GROUP BY dl.lab_id, dl.lab_name;
+
+
+-- 17. Analysis test er jonno ekta test sample (seed data nosto na korar jonno)
+INSERT INTO dna_samples (person_id, family_id, lab_id, technician_id, sample_type, collection_date, storage_location, status)
+VALUES (1, NULL, 1, NULL, 'Hair Strand', '2026-03-02', 'Evidence Room A-07', 'Awaiting Analysis');
+SET @analysis_sample_id = LAST_INSERT_ID();
+
+
+-- 18. Technician analysis update (UPDATE — shudhu analysis column)
+-- technician_id NULL thakle je technician analysis korlo take assign kora hoy (COALESCE)
+-- WHERE e lab_id check: technician shudhu nijer lab er sample update korte parbe
+UPDATE dna_samples
+SET
+    dna_profile_code = 'DNA7F2A91C5',
+    analysis_date = '2026-03-06',
+    remarks = 'STR profile generated successfully',
+    status = 'Analyzed',
+    technician_id = COALESCE(technician_id, 1)
+WHERE sample_id = @analysis_sample_id
+  AND lab_id = 1;
+
+
+-- 19. Update er por result check
+SELECT sample_id, person_id, lab_id, technician_id, dna_profile_code, analysis_date, remarks, status
+FROM dna_samples
+WHERE sample_id = @analysis_sample_id;
+
+
+-- 20. Test sample delete
+DELETE FROM dna_samples
+WHERE sample_id = @analysis_sample_id;
+```
+
+## 3.2 `backend/models/dnaSampleModel.js` (modified: Phase 3 functions added)
+
+| Function | What it does |
+|---|---|
+| `findTechnicianForUser(user)` | Runs query 14 using `session.userId` / `session.technicianId`. Returns `{ technician_id, lab_id, lab_name }` or `null` |
+| `findLabSampleSummary(labId)` | Runs query 16 and returns one row of status counts |
+| `updateSampleAnalysis(id, labId, technicianId, values)` | Runs query 18. Returns `null` if no row matched (wrong lab), otherwise the updated joined sample |
+
+```js
+// ---------- Laboratory DNA Analysis Workflow (Member 1 - Issue 3) ----------
+// Query gulo database/sql/dna_samples.sql er 14-18 number section e test kora
+
+// Logged-in technician er profile + lab ber kora (users.technician_id ba lab_technicians.user_id — je kono link diye)
+export async function findTechnicianForUser(user) {
+  const [rows] = await pool.execute(
+    `
+    SELECT lt.technician_id, lt.lab_id, dl.lab_name
+    FROM lab_technicians lt
+    INNER JOIN dna_labs dl ON dl.lab_id = lt.lab_id
+    WHERE lt.user_id = ? OR lt.technician_id = ?
+    LIMIT 1
+    `,
+    [user?.userId ?? 0, user?.technicianId ?? 0]
+  )
+
+  return rows[0] || null
+}
+
+// Technician er lab er workload summary — status onujayi koto sample
+export async function findLabSampleSummary(labId) {
+  const [rows] = await pool.execute(
+    `
+    SELECT
+      dl.lab_id,
+      dl.lab_name,
+      COUNT(s.sample_id) AS total_samples,
+      SUM(CASE WHEN s.status = 'Awaiting Analysis' THEN 1 ELSE 0 END) AS awaiting_analysis,
+      SUM(CASE WHEN s.status = 'In Analysis' THEN 1 ELSE 0 END) AS in_analysis,
+      SUM(CASE WHEN s.status = 'Analyzed' THEN 1 ELSE 0 END) AS analyzed,
+      SUM(CASE WHEN s.status = 'Rejected' THEN 1 ELSE 0 END) AS rejected
+    FROM dna_labs dl
+    LEFT JOIN dna_samples s ON s.lab_id = dl.lab_id
+    WHERE dl.lab_id = ?
+    GROUP BY dl.lab_id, dl.lab_name
+    `,
+    [labId]
+  )
+
+  return rows[0] || null
+}
+
+// Technician analysis update — SHUDHU analysis column (profile code, analysis date, remarks, status)
+// technician_id NULL thakle je technician analysis korlo take assign kora hoy (COALESCE)
+// WHERE e lab_id: technician onno lab er sample update korte parbe na (database level e o protection)
+export async function updateSampleAnalysis(id, labId, technicianId, {
+  dnaProfileCode = null,
+  analysisDate = null,
+  remarks = null,
+  status,
+}) {
+  const [result] = await pool.execute(
+    `
+    UPDATE dna_samples
+    SET dna_profile_code = ?,
+        analysis_date = ?,
+        remarks = ?,
+        status = ?,
+        technician_id = COALESCE(technician_id, ?)
+    WHERE sample_id = ?
+      AND lab_id = ?
+    `,
+    [dnaProfileCode, analysisDate, remarks, status, technicianId, id, labId]
+  )
+
+  if (!result.affectedRows) return null
+  return findSampleById(id)
+}
+```
+
+## 3.3 `backend/controllers/dnaSampleController.js` (modified: Phase 3 functions added)
+
+| Part | What it does |
+|---|---|
+| `INVESTIGATION_FIELDS` | Field names a technician may **not** send (both snake_case and camelCase) |
+| `PROFILE_CODE_PATTERN` | `/^[A-Z0-9-]{6,50}$/` — the profile code format. Phase 4 compares these codes as strings |
+| `updateAnalysis` | 1) checks the id; 2) rejects investigation fields; 3) finds the technician profile (403); 4) loads the sample within scope (404); 5) merges the body with current values (partial update); 6) validates status, profile code, dates and remarks; 7) applies the `Analyzed` / `Rejected` rules; 8) runs the lab-guarded update |
+| `getLabSummary` | Finds the technician's lab, loads the counts, and converts `SUM()` strings or NULL into numbers |
+
+```js
+// ---------- Laboratory DNA Analysis Workflow (Member 1 - Issue 3) ----------
+
+// Ei field gulo investigation info — technician egulo pathale request reject hobe
+const INVESTIGATION_FIELDS = [
+  'person_id', 'personId', 'family_id', 'familyId', 'lab_id', 'labId',
+  'technician_id', 'technicianId', 'sample_type', 'sampleType',
+  'collection_date', 'collectionDate', 'storage_location', 'storageLocation',
+]
+
+// DNA profile code format: boro hater letter, number ar hyphen, 6-50 character (jemon DNA7F2A91C4)
+const PROFILE_CODE_PATTERN = /^[A-Z0-9-]{6,50}$/
+
+// PUT /api/dna-samples/:id/analysis — technician er analysis update
+export async function updateAnalysis(req, res) {
+  try {
+    const id = parseId(req.params.id)
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Invalid sample id.' })
+    }
+
+    // Technician investigation info change korte parbe na — egulo pathale shorashori reject
+    const body = req.body || {}
+    const forbidden = INVESTIGATION_FIELDS.filter(name => Object.prototype.hasOwnProperty.call(body, name))
+    if (forbidden.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Lab technicians can only update analysis fields (DNA profile code, analysis date, remarks, status).',
+      })
+    }
+
+    // Logged-in user er technician profile na thakle kon lab er sample ta bojha jabe na
+    const technician = await findTechnicianForUser(req.session.user)
+    if (!technician) {
+      return res.status(403).json({ success: false, message: 'No technician profile is linked to this account.' })
+    }
+
+    // Scope shoho sample load — onno lab er sample hole 404
+    const existing = await findSampleById(id, req.session.user)
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'DNA sample not found.' })
+    }
+
+    // Partial update: je field pathano hoyni sheta existing value theke
+    const statusField = readField(body, 'status')
+    const profileField = readField(body, 'dna_profile_code', 'dnaProfileCode')
+    const dateField = readField(body, 'analysis_date', 'analysisDate')
+    const remarksField = readField(body, 'remarks')
+
+    const status = statusField.provided ? normalizeText(statusField.value) : existing.status
+    const rawProfile = profileField.provided ? profileField.value : existing.dna_profile_code
+    const dnaProfileCode = typeof rawProfile === 'string' && rawProfile.trim() ? rawProfile.trim().toUpperCase() : null // uppercase e store
+    const rawDate = dateField.provided ? dateField.value : formatDate(existing.analysis_date)
+    const analysisDate = rawDate ? normalizeDate(rawDate) : null
+    const remarks = remarksField.provided ? normalizeOptionalText(remarksField.value) : existing.remarks
+
+    if (!SAMPLE_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid analysis status.' })
+    }
+
+    if (profileField.provided && profileField.value !== null && typeof profileField.value !== 'string') {
+      return res.status(400).json({ success: false, message: 'DNA profile code must be text.' })
+    }
+
+    if (dnaProfileCode && !PROFILE_CODE_PATTERN.test(dnaProfileCode)) {
+      return res.status(400).json({
+        success: false,
+        message: 'DNA profile code must be 6-50 characters using letters, numbers, or hyphens.',
+      })
+    }
+
+    if (analysisDate === undefined) {
+      return res.status(400).json({ success: false, message: 'Invalid analysis date.' })
+    }
+
+    if (remarks === undefined) {
+      return res.status(400).json({ success: false, message: 'Remarks must be text.' })
+    }
+
+    // Analysis date collection date er age ba bhobishhote hote parbe na
+    if (analysisDate) {
+      if (analysisDate > formatDate(new Date())) {
+        return res.status(400).json({ success: false, message: 'Analysis date cannot be in the future.' })
+      }
+      if (analysisDate < formatDate(existing.collection_date)) {
+        return res.status(400).json({ success: false, message: 'Analysis date cannot be before the collection date.' })
+      }
+    }
+
+    // Status onujayi rule:
+    // Analyzed hole profile code + analysis date lagbe, Rejected hole karon (remarks) lagbe
+    if (status === 'Analyzed' && (!dnaProfileCode || !analysisDate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'DNA profile code and analysis date are required to mark a sample as Analyzed.',
+      })
+    }
+
+    if (status === 'Rejected' && !remarks) {
+      return res.status(400).json({ success: false, message: 'Remarks are required when rejecting a sample.' })
+    }
+
+    const sample = await dbUpdateSampleAnalysis(id, technician.lab_id, technician.technician_id, {
+      dnaProfileCode,
+      analysisDate,
+      remarks,
+      status,
+    })
+
+    if (!sample) {
+      return res.status(404).json({ success: false, message: 'DNA sample not found.' })
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'DNA analysis updated successfully.',
+      sample: formatSample(sample),
+    })
+  } catch (error) {
+    console.error('Update DNA analysis error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+// GET /api/dna-samples/lab/summary — technician er lab er workload count
+export async function getLabSummary(req, res) {
+  try {
+    const technician = await findTechnicianForUser(req.session.user)
+    if (!technician) {
+      return res.status(403).json({ success: false, message: 'No technician profile is linked to this account.' })
+    }
+
+    const summary = await findLabSampleSummary(technician.lab_id)
+
+    // SUM() string/NULL ashe, tai Number e convert
+    return res.status(200).json({
+      success: true,
+      summary: {
+        labId: summary.lab_id,
+        labName: summary.lab_name,
+        totalSamples: Number(summary.total_samples),
+        awaitingAnalysis: Number(summary.awaiting_analysis || 0),
+        inAnalysis: Number(summary.in_analysis || 0),
+        analyzed: Number(summary.analyzed || 0),
+        rejected: Number(summary.rejected || 0),
+      },
+    })
+  } catch (error) {
+    console.error('Get lab summary error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+```
+
+## 3.4 `backend/routes/dnaSampleRoutes.js` (modified)
+
+`/lab/summary` goes **before** `/:id` (otherwise `lab` would be treated as an id). `/:id/analysis` is guarded with `requireRole('Lab Technician')`.
+
+```diff
+@@ -7,6 +7,8 @@ import {
+   updateSample,
+   deleteSample,
+   getFamilyDna,
++  updateAnalysis,
++  getLabSummary,
+ } from '../controllers/dnaSampleController.js'
+ import { requireAuth } from '../middleware/authMiddleware.js'
+ import { requireRole } from '../middleware/roleMiddleware.js'
+@@ -18,14 +20,19 @@ const router = express.Router()
+ // Technician family er contact info dekhbe na, tai shudhu Admin + Officer
+ router.get('/family/:personId', requireAuth, requireRole('Admin', 'Officer'), getFamilyDna)
+ 
++// Technician er nijer lab er workload summary (Issue 3) — eta o '/:id' er AGE
++router.get('/lab/summary', requireAuth, requireRole('Lab Technician'), getLabSummary)
++
+ // Admin, Officer, Lab Technician — tinjonei sample dekhte parbe (controller role onujayi data filter kore)
+ router.get('/',requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), listSamples)
+ router.get('/:id', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), getSample)
+ 
+ // Shudhu Admin ar Officer sample register/update/delete korte parbe
+-// (Technician er analysis update Issue 3 e alada route e hobe)
+ router.post('/', requireAuth, requireRole('Admin', 'Officer'), createSample)
+ router.put('/:id', requireAuth, requireRole('Admin', 'Officer'), updateSample)
+ router.delete('/:id', requireAuth, requireRole('Admin', 'Officer'), deleteSample)
+ 
++// Laboratory analysis update (Issue 3) — shudhu Lab Technician, shudhu analysis field
++router.put('/:id/analysis', requireAuth, requireRole('Lab Technician'), updateAnalysis)
++
+ export default router
+```
+
+---
+
+## 3.5 `frontend/src/services/dnaService.js` (modified)
+
+```diff
+@@ -64,6 +64,18 @@ export async function getSamplesByCase(caseId) {
+   return getSamples({ case_id: caseId })
+ }
+ 
++// Lab technician er analysis update — shudhu { status, dnaProfileCode, analysisDate, remarks } (Issue 3)
++export async function updateSampleAnalysis(id, data) {
++  const response = await api.put(`/dna-samples/${id}/analysis`, data)
++  return response.data.sample
++}
++
++// Technician er nijer lab er workload summary (Awaiting / In Analysis / Analyzed / Rejected count)
++export async function getLabSummary() {
++  const response = await api.get('/dna-samples/lab/summary')
++  return response.data.summary
++}
++
+ // Missing person er family member + tader reference DNA sample (Issue 2)
+ // Response: { summary: {...}, familyMembers: [{ familyId, name, relationship, phone, samples: [...] }] }
+ export async function getFamilyDnaByPerson(personId) {
+@@ -116,6 +128,8 @@ export default {
+   getSamplesByPerson,
+   getSamplesByCase,
+   getFamilyDnaByPerson,
++  updateSampleAnalysis,
++  getLabSummary,
+   getLabs,
+   getTechnicians,
+   getMatchesByPerson,
+```
+
+## 3.6 `frontend/src/pages/Laboratory.jsx` (modified)
+
+| Change | What it does |
+|---|---|
+| `ANALYSIS_STATUSES` | Statuses a technician can choose: In Analysis, Analyzed, Rejected |
+| `isPendingAnalysis(sample)` | True for `Awaiting Analysis` or `In Analysis` |
+| `Samples()` | For technicians, loads `getLabSummary()` along with the list and shows **4 queue cards** (Awaiting / In Analysis / Analyzed / Rejected). The subtitle names the lab. The **Analyze** button appears for Awaiting **and** In Analysis samples |
+| `SampleDetails()` | Technicians see **Analyze Sample** (pending) or **Update Analysis** (already analyzed/rejected) |
+| `DNAAnalysis()` | **Rewritten.** It used to read mock `DataContext` data. Now it loads the sample from the API (404 if it belongs to another lab) and shows the collection data in a **read-only** card. The form has the 4 analysis fields and fills in existing values for corrections. Profile code and date are required when the status is Analyzed, and remarks are required when Rejected; the backend enforces the same rules. It sends **only** `{ status, analysisDate, dnaProfileCode, remarks }`, shows backend errors, and goes to the sample details page after saving |
+
+```diff
+@@ -1,16 +1,18 @@
+ import { useCallback, useEffect, useMemo, useState } from 'react'
+ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+-import { PageHeader, SearchFilters, StatusBadge, TableAction } from '../components/Ui'
++import { MetricCard, PageHeader, SearchFilters, StatusBadge, TableAction } from '../components/Ui'
+ import { useData } from '../data/DataContext'
+ import { useAuth } from '../context/AuthContext'
+ import {
+   createSample,
+   deleteSample,
+   getLabs,
++  getLabSummary,
+   getSampleById,
+   getSamples,
+   getTechnicians,
+   updateSample,
++  updateSampleAnalysis,
+ } from '../services/dnaService'
+ import { getMissingPersons } from '../services/missingPersonService'
+ import { getFamilyMembersByPerson } from '../services/familyMemberService'
+@@ -30,6 +32,11 @@ const errorMessage = (error, fallback) => error.response?.data?.message || fallb
+ const today = () => new Date().toISOString().slice(0, 10)
+ const emptySampleForm = { personId: '', familyId: '', labId: '', technicianId: '', sampleType: '', collectionDate: '', storageLocation: '', remarks: '' }
+ 
++// Technician je status gulo set korte pare (Issue 3) — 'Awaiting Analysis' e ferot jawa lage na
++const ANALYSIS_STATUSES = ['In Analysis', 'Analyzed', 'Rejected']
++// Ei status e thakle sample ekhono "analyze" korar baki
++const isPendingAnalysis = sample => sample.status === 'Awaiting Analysis' || sample.status === 'In Analysis'
++
+ // Sample ta kar — family reference hole family member er naam + relationship, noile missing person
+ const sampleProvider = sample => sample.familyMemberName ? `${sample.familyMemberName} (${sample.familyRelationship})` : sample.personName
+ 
+@@ -58,19 +65,26 @@ export function Samples() {
+   const [deletingId, setDeletingId] = useState(null)
+   const [query, setQuery] = useState('')
+   const [filters, setFilters] = useState({ status: '', source: '' })
++  const [labSummary, setLabSummary] = useState(null) // technician er lab workload (Issue 3)
++  const isTechnician = role === 'Lab Technician'
+ 
+-  // Backend theke sample list load kora
++  // Backend theke sample list (+ technician hole lab summary) load kora
+   const refreshSamples = useCallback(async () => {
+     try {
+       setLoading(true)
+       setError('')
+-      setSamples(await getSamples(linkedPerson ? { person_id: linkedPerson } : {}))
++      const [rows, summary] = await Promise.all([
++        getSamples(linkedPerson ? { person_id: linkedPerson } : {}),
++        isTechnician ? getLabSummary() : Promise.resolve(null),
++      ])
++      setSamples(rows)
++      setLabSummary(summary)
+     } catch (requestError) {
+       setError(errorMessage(requestError, 'Failed to load DNA samples.'))
+     } finally {
+       setLoading(false)
+     }
+-  }, [linkedPerson])
++  }, [linkedPerson, isTechnician])
+ 
+   useEffect(() => { refreshSamples() }, [refreshSamples])
+ 
+@@ -101,10 +115,19 @@ export function Samples() {
+     <>
+       <PageHeader
+         title="DNA Samples"
+-        subtitle={linkedPerson ? 'Samples linked to the selected missing person.' : role === 'Lab Technician' ? 'DNA sample records assigned to your laboratory.' : role === 'Officer' ? 'DNA samples for your assigned investigation cases.' : 'DNA sample collection and analysis records.'}
++        subtitle={linkedPerson ? 'Samples linked to the selected missing person.' : isTechnician ? `DNA sample records assigned to ${labSummary?.labName || 'your laboratory'}.` : role === 'Officer' ? 'DNA samples for your assigned investigation cases.' : 'DNA sample collection and analysis records.'}
+         action={canManage ? <Link to={`/dna-samples/new${linkedPerson ? `?personId=${linkedPerson}` : ''}`} className="btn btn-primary">Register DNA Sample</Link> : null}
+       />
+       {error && <div className="alert alert-danger" role="alert">{error}</div>}
++      {/* Technician er lab queue summary card (Issue 3 — technician sample view) */}
++      {labSummary && (
++        <div className="row g-3 mb-4">
++          <div className="col-sm-6 col-xl-3"><MetricCard label="Awaiting Analysis" value={labSummary.awaitingAnalysis} hint="Queued in your lab" tone="warning"/></div>
++          <div className="col-sm-6 col-xl-3"><MetricCard label="In Analysis" value={labSummary.inAnalysis} hint="Currently being processed"/></div>
++          <div className="col-sm-6 col-xl-3"><MetricCard label="Analyzed" value={labSummary.analyzed} hint="DNA profiles recorded" tone="success"/></div>
++          <div className="col-sm-6 col-xl-3"><MetricCard label="Rejected" value={labSummary.rejected} hint="Unusable samples"/></div>
++        </div>
++      )}
+       <SearchFilters onSearchChange={setQuery} onClear={() => setFilters({ status: '', source: '' })}>
+         <Filter label="State" value={filters.status} values={SAMPLE_STATUSES} onChange={status => setFilters({ ...filters, status })}/>
+         <Filter label="Source" value={filters.source} values={SAMPLE_SOURCES} onChange={source => setFilters({ ...filters, source })}/>
+@@ -127,7 +150,7 @@ export function Samples() {
+                   <td><StatusBadge value={item.status}/></td>
+                   <td className="text-nowrap">
+                     <TableAction to={`/dna-samples/${item.id}`}/>
+-                    {role === 'Lab Technician' && item.status === 'Awaiting Analysis' && <Link className="btn btn-sm btn-primary ms-1" to={`/lab/analysis/${item.id}`}>Analyze</Link>}
++                    {isTechnician && isPendingAnalysis(item) && <Link className="btn btn-sm btn-primary ms-1" to={`/lab/analysis/${item.id}`}>Analyze</Link>}
+                     {canManage && <Link className="btn btn-sm btn-outline-secondary ms-1" to={`/dna-samples/${item.id}/edit`}>Edit</Link>}
+                     {canManage && <button type="button" className="btn btn-sm btn-outline-danger ms-1" disabled={deletingId === item.id} onClick={() => remove(item)}>{deletingId === item.id ? 'Deleting...' : 'Delete'}</button>}
+                   </td>
+@@ -313,7 +336,8 @@ export function SampleDetails() {
+         title={`DNA Sample #${sample.id}`}
+         subtitle="DNA sample record"
+         action={<>
+-          {isTechnician && sample.status === 'Awaiting Analysis' && <Link className="btn btn-primary" to={`/lab/analysis/${sample.id}`}>Analyze Sample</Link>}
++          {/* Pending hole "Analyze", already analyzed/rejected hole correction er jonno "Update Analysis" */}
++          {isTechnician && <Link className="btn btn-primary" to={`/lab/analysis/${sample.id}`}>{isPendingAnalysis(sample) ? 'Analyze Sample' : 'Update Analysis'}</Link>}
+           {canManage && <Link className="btn btn-outline-secondary" to={`/dna-samples/${sample.id}/edit`}>Edit</Link>}
+           {canManage && <button type="button" className="btn btn-outline-danger" onClick={remove}>Delete</button>}
+         </>}
+@@ -353,8 +377,109 @@ export function SampleDetails() {
+   )
+ }
+ 
++// Lab Sample Analysis page (Member 1 - Issue 3)
++// Technician shudhu analysis info (status, analysis date, DNA profile code, laboratory remarks) update kore
++// Collection/investigation info read-only — backend o egulo pathale reject kore
+ export function DNAAnalysis() {
+-  const { id } = useParams(); const { data, updateSample } = useData(); const { user } = useAuth(); const sample = data.samples.find(item => item.id === id); const nav = useNavigate(); const [form, setForm] = useState({ analysis: '', profile: '', remarks: sample?.remarks || '' }); if (!sample) return <NotFound label="DNA sample"/>; if (sample.lab !== technicianLab(user, data)) return <AccessDenied/>; if (sample.status !== 'Awaiting Analysis') return <div className="alert alert-info">This sample has already been analyzed.</div>; const change = event => setForm({ ...form, [event.target.name]: event.target.value }); return <><PageHeader title={`Analyze ${sample.id}`} subtitle="Record analysis for this selected sample. Collection data remains read-only."/><div className="row g-4"><div className="col-lg-4"><Card title="Sample information"><p><span className="text-secondary d-block small">Source / provider</span>{sample.source} — {sampleOwner(sample, data)}</p><p><span className="text-secondary d-block small">Sample type</span>{sample.type}</p><p className="mb-0"><span className="text-secondary d-block small">Associated lab</span>{sample.lab}</p></Card></div><div className="col-lg-8"><form className="card" onSubmit={event => { event.preventDefault(); updateSample(sample.id, { ...form, status: 'Analyzed' }); nav(`/dna-samples/${sample.id}`) }}><div className="card-header bg-white"><strong>Analysis information</strong></div><div className="card-body"><div className="row g-3"><Field label="Analysis Date" name="analysis" type="date" required value={form.analysis} onChange={change}/><Field label="DNA Profile Code" name="profile" required value={form.profile} onChange={change}/><div className="col-12"><label className="form-label">Laboratory Remarks</label><textarea name="remarks" value={form.remarks} onChange={change} className="form-control" rows="6" required/></div></div></div><div className="card-footer bg-white text-end"><Link to={`/dna-samples/${sample.id}`} className="btn btn-light me-2">Cancel</Link><button className="btn btn-primary">Mark Analysis Complete</button></div></form></div></div></>
++  const { id } = useParams()
++  const nav = useNavigate()
++  const [sample, setSample] = useState(null)
++  const [form, setForm] = useState({ status: 'Analyzed', analysisDate: today(), dnaProfileCode: '', remarks: '' })
++  const [loading, setLoading] = useState(true)
++  const [saving, setSaving] = useState(false)
++  const [error, setError] = useState('')
++
++  // Sample load — onno lab er sample hole backend 404 dey
++  useEffect(() => {
++    let mounted = true
++    getSampleById(id)
++      .then(row => {
++        if (!mounted) return
++        setSample(row)
++        // Age theke analysis info thakle sheta diye form fill (correction er jonno)
++        setForm({
++          status: ANALYSIS_STATUSES.includes(row.status) ? row.status : 'Analyzed',
++          analysisDate: row.analysisDate || today(),
++          dnaProfileCode: row.dnaProfileCode || '',
++          remarks: row.remarks || '',
++        })
++      })
++      .catch(requestError => { if (mounted) setError(errorMessage(requestError, 'Failed to load the DNA sample.')) })
++      .finally(() => { if (mounted) setLoading(false) })
++    return () => { mounted = false }
++  }, [id])
++
++  const change = event => setForm({ ...form, [event.target.name]: event.target.value })
++
++  const submit = async event => {
++    event.preventDefault()
++    try {
++      setSaving(true)
++      setError('')
++      // Shudhu 4 ta analysis field pathano hocche — investigation field kokhono na
++      await updateSampleAnalysis(id, {
++        status: form.status,
++        analysisDate: form.analysisDate || null,
++        dnaProfileCode: form.dnaProfileCode.trim() || null,
++        remarks: form.remarks.trim() || null,
++      })
++      nav(`/dna-samples/${id}`)
++    } catch (requestError) {
++      setError(errorMessage(requestError, 'Failed to save the analysis.'))
++    } finally {
++      setSaving(false)
++    }
++  }
++
++  if (loading) return <div className="card"><div className="card-body text-center text-secondary py-4">Loading DNA sample...</div></div>
++  if (!sample) return <div className="alert alert-warning">{error || 'This DNA sample could not be found.'}</div>
++
++  const needsProfile = form.status === 'Analyzed' // Analyzed hole profile code + date lagbe
++  const needsRemarks = form.status === 'Rejected' // Rejected hole karon lagbe
++
++  return (
++    <>
++      <PageHeader title={`Analyze Sample #${sample.id}`} subtitle="Record the laboratory analysis for this sample. Collection data remains read-only."/>
++      {error && <div className="alert alert-danger" role="alert">{error}</div>}
++      <div className="row g-4">
++        <div className="col-lg-4">
++          {/* Read-only collection info — technician edit korte parbe na */}
++          <Card title="Sample information (read-only)">
++            <p><span className="text-secondary d-block small">Source / provider</span>{sample.source} — {sampleProvider(sample)}</p>
++            <p><span className="text-secondary d-block small">Sample type</span>{sample.sampleType}</p>
++            <p><span className="text-secondary d-block small">Collection date</span>{sample.collectionDate}</p>
++            <p><span className="text-secondary d-block small">Storage location</span>{sample.storageLocation || '—'}</p>
++            <p><span className="text-secondary d-block small">Assigned lab / technician</span>{sample.labName || '—'} / {sample.technicianName || 'Not assigned'}</p>
++            <p className="mb-0"><span className="text-secondary d-block small">Current status</span><StatusBadge value={sample.status}/></p>
++          </Card>
++        </div>
++        <div className="col-lg-8">
++          <form className="card" onSubmit={submit}>
++            <div className="card-header bg-white"><strong>Analysis information</strong></div>
++            <div className="card-body">
++              <div className="row g-3">
++                <Field label="Analysis Status" name="status" select required value={form.status} onChange={change} options={ANALYSIS_STATUSES}/>
++                <Field label="Analysis Date" name="analysisDate" type="date" required={needsProfile} value={form.analysisDate} onChange={change}/>
++                <div className="col-md-6">
++                  <label className="form-label">DNA Profile Code</label>
++                  <input name="dnaProfileCode" className="form-control text-uppercase" value={form.dnaProfileCode} onChange={change} required={needsProfile} placeholder="e.g. DNA7F2A91C4" pattern="[A-Za-z0-9\-]{6,50}" title="6-50 letters, numbers, or hyphens"/>
++                  <small className="text-secondary">Required when the status is Analyzed.</small>
++                </div>
++                <div className="col-12">
++                  <label className="form-label">Laboratory Remarks</label>
++                  <textarea name="remarks" value={form.remarks} onChange={change} className="form-control" rows="5" required={needsRemarks} placeholder={needsRemarks ? 'Reason for rejecting the sample' : 'Extraction method, quality notes, etc.'}/>
++                </div>
++              </div>
++            </div>
++            <div className="card-footer bg-white text-end">
++              <Link to={`/dna-samples/${sample.id}`} className="btn btn-light me-2">Cancel</Link>
++              <button className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save Analysis'}</button>
++            </div>
++          </form>
++        </div>
++      </div>
++    </>
++  )
+ }
+ 
+ export function Matches() {
+```
+
+---
+
+## Phase 3 testing
+
+**SQL:** queries 14–20 ran on local MySQL. The technician lookup returned lab 1. The queue returned sample 3. The summary returned {3 total, 1 awaiting, 2 analyzed}. The analysis UPDATE auto-assigned technician 1 through `COALESCE`. The test row was deleted.
+
+**API:** tested with curl. Test users: Admin, Officer 1, Technician 1 (linked through `users.technician_id`, lab 1), Technician 2 (linked through `lab_technicians.user_id`, lab 2) and a technician account with no profile. For the tests, Officer 1 registered a new lab-1 sample with no technician assigned.
+
+| Test | Result |
+|---|---|
+| Tech 1 / Tech 2 `GET /lab/summary` | Lab 1 counts / lab 2 counts (both linking methods work) |
+| Technician with no profile | 403 "No technician profile is linked to this account." |
+| Admin `GET /lab/summary` | 403 |
+| Admin / Officer `PUT /:id/analysis` | 403 Access denied |
+| Tech 2 (lab 2) analyzes a lab-1 sample | 404 |
+| Tech sends `labId` / `personId` + `sampleType` | 400 "Lab technicians can only update analysis fields ..." |
+| Tech uses the Officer endpoint `PUT /:id` | 403 |
+| Status `Done` | 400 Invalid analysis status |
+| `Analyzed` without code/date, or with code but no date | 400 |
+| Profile code `ab$` | 400 format error |
+| Analysis date before collection / in the future | 400 / 400 |
+| `Rejected` with empty remarks | 400 |
+| `In Analysis` + remarks | 200. **Technician auto-assigned** (Tanvir Hossain). Summary: awaiting 2→1, in analysis 0→1 |
+| `Analyzed` with code `dna7f2a91c5` | 200. Saved as `DNA7F2A91C5` with the date |
+| Officer views the sample | Sees the analysis result |
+| Tech sends only `remarks` (correction) | 200. Other fields kept |
+| Summary after | analyzed 2→3 |
+
+The test sample, test users and the temporary `lab_technicians.user_id` link were removed or reset afterwards.
+
+**Frontend:** `oxlint` found no issues and `vite build` succeeded. The pages were not clicked through in a browser.
+
+## Known gaps after Phase 3
+
+- The Matches pages (`Matches`, `MatchDetails`) and `getMatchesBy*` are still mock (Phase 4).
+- The Lab Technician **dashboard** (`Dashboards.jsx`) still shows mock counts (Phase 7). The same counts are now available from `getLabSummary()`.
+
+---
+
+<!-- Phase 4 onwards will be added below as each phase is completed. -->

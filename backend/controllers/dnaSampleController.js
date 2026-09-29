@@ -13,6 +13,9 @@ import {
   createFamilySample as dbCreateFamilySample,
   findFamilyDnaByPerson,
   findFamilyDnaSummary,
+  findTechnicianForUser,
+  findLabSampleSummary,
+  updateSampleAnalysis as dbUpdateSampleAnalysis,
 } from '../models/dnaSampleModel.js'
 
 // Sample er allowed status gulo (filter validate korar jonno)
@@ -460,6 +463,158 @@ export async function getFamilyDna(req, res) {
     })
   } catch (error) {
     console.error('Get family DNA error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+// ---------- Laboratory DNA Analysis Workflow (Member 1 - Issue 3) ----------
+
+// Ei field gulo investigation info — technician egulo pathale request reject hobe
+const INVESTIGATION_FIELDS = [
+  'person_id', 'personId', 'family_id', 'familyId', 'lab_id', 'labId',
+  'technician_id', 'technicianId', 'sample_type', 'sampleType',
+  'collection_date', 'collectionDate', 'storage_location', 'storageLocation',
+]
+
+// DNA profile code format: boro hater letter, number ar hyphen, 6-50 character (jemon DNA7F2A91C4)
+const PROFILE_CODE_PATTERN = /^[A-Z0-9-]{6,50}$/
+
+// PUT /api/dna-samples/:id/analysis — technician er analysis update
+export async function updateAnalysis(req, res) {
+  try {
+    const id = parseId(req.params.id)
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Invalid sample id.' })
+    }
+
+    // Technician investigation info change korte parbe na — egulo pathale shorashori reject
+    const body = req.body || {}
+    const forbidden = INVESTIGATION_FIELDS.filter(name => Object.prototype.hasOwnProperty.call(body, name))
+    if (forbidden.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Lab technicians can only update analysis fields (DNA profile code, analysis date, remarks, status).',
+      })
+    }
+
+    // Logged-in user er technician profile na thakle kon lab er sample ta bojha jabe na
+    const technician = await findTechnicianForUser(req.session.user)
+    if (!technician) {
+      return res.status(403).json({ success: false, message: 'No technician profile is linked to this account.' })
+    }
+
+    // Scope shoho sample load — onno lab er sample hole 404
+    const existing = await findSampleById(id, req.session.user)
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'DNA sample not found.' })
+    }
+
+    // Partial update: je field pathano hoyni sheta existing value theke
+    const statusField = readField(body, 'status')
+    const profileField = readField(body, 'dna_profile_code', 'dnaProfileCode')
+    const dateField = readField(body, 'analysis_date', 'analysisDate')
+    const remarksField = readField(body, 'remarks')
+
+    const status = statusField.provided ? normalizeText(statusField.value) : existing.status
+    const rawProfile = profileField.provided ? profileField.value : existing.dna_profile_code
+    const dnaProfileCode = typeof rawProfile === 'string' && rawProfile.trim() ? rawProfile.trim().toUpperCase() : null // uppercase e store
+    const rawDate = dateField.provided ? dateField.value : formatDate(existing.analysis_date)
+    const analysisDate = rawDate ? normalizeDate(rawDate) : null
+    const remarks = remarksField.provided ? normalizeOptionalText(remarksField.value) : existing.remarks
+
+    if (!SAMPLE_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid analysis status.' })
+    }
+
+    if (profileField.provided && profileField.value !== null && typeof profileField.value !== 'string') {
+      return res.status(400).json({ success: false, message: 'DNA profile code must be text.' })
+    }
+
+    if (dnaProfileCode && !PROFILE_CODE_PATTERN.test(dnaProfileCode)) {
+      return res.status(400).json({
+        success: false,
+        message: 'DNA profile code must be 6-50 characters using letters, numbers, or hyphens.',
+      })
+    }
+
+    if (analysisDate === undefined) {
+      return res.status(400).json({ success: false, message: 'Invalid analysis date.' })
+    }
+
+    if (remarks === undefined) {
+      return res.status(400).json({ success: false, message: 'Remarks must be text.' })
+    }
+
+    // Analysis date collection date er age ba bhobishhote hote parbe na
+    if (analysisDate) {
+      if (analysisDate > formatDate(new Date())) {
+        return res.status(400).json({ success: false, message: 'Analysis date cannot be in the future.' })
+      }
+      if (analysisDate < formatDate(existing.collection_date)) {
+        return res.status(400).json({ success: false, message: 'Analysis date cannot be before the collection date.' })
+      }
+    }
+
+    // Status onujayi rule:
+    // Analyzed hole profile code + analysis date lagbe, Rejected hole karon (remarks) lagbe
+    if (status === 'Analyzed' && (!dnaProfileCode || !analysisDate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'DNA profile code and analysis date are required to mark a sample as Analyzed.',
+      })
+    }
+
+    if (status === 'Rejected' && !remarks) {
+      return res.status(400).json({ success: false, message: 'Remarks are required when rejecting a sample.' })
+    }
+
+    const sample = await dbUpdateSampleAnalysis(id, technician.lab_id, technician.technician_id, {
+      dnaProfileCode,
+      analysisDate,
+      remarks,
+      status,
+    })
+
+    if (!sample) {
+      return res.status(404).json({ success: false, message: 'DNA sample not found.' })
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'DNA analysis updated successfully.',
+      sample: formatSample(sample),
+    })
+  } catch (error) {
+    console.error('Update DNA analysis error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+// GET /api/dna-samples/lab/summary — technician er lab er workload count
+export async function getLabSummary(req, res) {
+  try {
+    const technician = await findTechnicianForUser(req.session.user)
+    if (!technician) {
+      return res.status(403).json({ success: false, message: 'No technician profile is linked to this account.' })
+    }
+
+    const summary = await findLabSampleSummary(technician.lab_id)
+
+    // SUM() string/NULL ashe, tai Number e convert
+    return res.status(200).json({
+      success: true,
+      summary: {
+        labId: summary.lab_id,
+        labName: summary.lab_name,
+        totalSamples: Number(summary.total_samples),
+        awaitingAnalysis: Number(summary.awaiting_analysis || 0),
+        inAnalysis: Number(summary.in_analysis || 0),
+        analyzed: Number(summary.analyzed || 0),
+        rejected: Number(summary.rejected || 0),
+      },
+    })
+  } catch (error) {
+    console.error('Get lab summary error:', error)
     return res.status(500).json({ success: false, message: 'Internal server error.' })
   }
 }

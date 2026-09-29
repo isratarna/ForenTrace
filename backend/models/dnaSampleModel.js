@@ -328,3 +328,72 @@ export async function findFamilyDnaSummary(personId) {
 
   return rows[0]
 }
+
+// ---------- Laboratory DNA Analysis Workflow (Member 1 - Issue 3) ----------
+// Query gulo database/sql/dna_samples.sql er 14-18 number section e test kora
+
+// Logged-in technician er profile + lab ber kora (users.technician_id ba lab_technicians.user_id — je kono link diye)
+export async function findTechnicianForUser(user) {
+  const [rows] = await pool.execute(
+    `
+    SELECT lt.technician_id, lt.lab_id, dl.lab_name
+    FROM lab_technicians lt
+    INNER JOIN dna_labs dl ON dl.lab_id = lt.lab_id
+    WHERE lt.user_id = ? OR lt.technician_id = ?
+    LIMIT 1
+    `,
+    [user?.userId ?? 0, user?.technicianId ?? 0]
+  )
+
+  return rows[0] || null
+}
+
+// Technician er lab er workload summary — status onujayi koto sample
+export async function findLabSampleSummary(labId) {
+  const [rows] = await pool.execute(
+    `
+    SELECT
+      dl.lab_id,
+      dl.lab_name,
+      COUNT(s.sample_id) AS total_samples,
+      SUM(CASE WHEN s.status = 'Awaiting Analysis' THEN 1 ELSE 0 END) AS awaiting_analysis,
+      SUM(CASE WHEN s.status = 'In Analysis' THEN 1 ELSE 0 END) AS in_analysis,
+      SUM(CASE WHEN s.status = 'Analyzed' THEN 1 ELSE 0 END) AS analyzed,
+      SUM(CASE WHEN s.status = 'Rejected' THEN 1 ELSE 0 END) AS rejected
+    FROM dna_labs dl
+    LEFT JOIN dna_samples s ON s.lab_id = dl.lab_id
+    WHERE dl.lab_id = ?
+    GROUP BY dl.lab_id, dl.lab_name
+    `,
+    [labId]
+  )
+
+  return rows[0] || null
+}
+
+// Technician analysis update — SHUDHU analysis column (profile code, analysis date, remarks, status)
+// technician_id NULL thakle je technician analysis korlo take assign kora hoy (COALESCE)
+// WHERE e lab_id: technician onno lab er sample update korte parbe na (database level e o protection)
+export async function updateSampleAnalysis(id, labId, technicianId, {
+  dnaProfileCode = null,
+  analysisDate = null,
+  remarks = null,
+  status,
+}) {
+  const [result] = await pool.execute(
+    `
+    UPDATE dna_samples
+    SET dna_profile_code = ?,
+        analysis_date = ?,
+        remarks = ?,
+        status = ?,
+        technician_id = COALESCE(technician_id, ?)
+    WHERE sample_id = ?
+      AND lab_id = ?
+    `,
+    [dnaProfileCode, analysisDate, remarks, status, technicianId, id, labId]
+  )
+
+  if (!result.affectedRows) return null
+  return findSampleById(id)
+}

@@ -64,6 +64,18 @@ export async function getSamplesByCase(caseId) {
   return getSamples({ case_id: caseId })
 }
 
+// Lab technician er analysis update — shudhu { status, dnaProfileCode, analysisDate, remarks } (Issue 3)
+export async function updateSampleAnalysis(id, data) {
+  const response = await api.put(`/dna-samples/${id}/analysis`, data)
+  return response.data.sample
+}
+
+// Technician er nijer lab er workload summary (Awaiting / In Analysis / Analyzed / Rejected count)
+export async function getLabSummary() {
+  const response = await api.get('/dna-samples/lab/summary')
+  return response.data.summary
+}
+
 // Missing person er family member + tader reference DNA sample (Issue 2)
 // Response: { summary: {...}, familyMembers: [{ familyId, name, relationship, phone, samples: [...] }] }
 export async function getFamilyDnaByPerson(personId) {
@@ -116,6 +128,8 @@ export default {
   getSamplesByPerson,
   getSamplesByCase,
   getFamilyDnaByPerson,
+  updateSampleAnalysis,
+  getLabSummary,
   getLabs,
   getTechnicians,
   getMatchesByPerson,

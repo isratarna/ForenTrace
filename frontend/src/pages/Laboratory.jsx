@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { PageHeader, SearchFilters, StatusBadge, TableAction } from '../components/Ui'
+import { MetricCard, PageHeader, SearchFilters, StatusBadge, TableAction } from '../components/Ui'
 import { useData } from '../data/DataContext'
 import { useAuth } from '../context/AuthContext'
 import {
   createSample,
   deleteSample,
   getLabs,
+  getLabSummary,
   getSampleById,
   getSamples,
   getTechnicians,
   updateSample,
+  updateSampleAnalysis,
 } from '../services/dnaService'
 import { getMissingPersons } from '../services/missingPersonService'
 import { getFamilyMembersByPerson } from '../services/familyMemberService'
@@ -29,6 +31,11 @@ const SAMPLE_TYPES = ['Buccal Swab', 'Blood Sample', 'Hair Strand', 'Bone Sample
 const errorMessage = (error, fallback) => error.response?.data?.message || fallback // backend er error message dekhano
 const today = () => new Date().toISOString().slice(0, 10)
 const emptySampleForm = { personId: '', familyId: '', labId: '', technicianId: '', sampleType: '', collectionDate: '', storageLocation: '', remarks: '' }
+
+// Technician je status gulo set korte pare (Issue 3) — 'Awaiting Analysis' e ferot jawa lage na
+const ANALYSIS_STATUSES = ['In Analysis', 'Analyzed', 'Rejected']
+// Ei status e thakle sample ekhono "analyze" korar baki
+const isPendingAnalysis = sample => sample.status === 'Awaiting Analysis' || sample.status === 'In Analysis'
 
 // Sample ta kar — family reference hole family member er naam + relationship, noile missing person
 const sampleProvider = sample => sample.familyMemberName ? `${sample.familyMemberName} (${sample.familyRelationship})` : sample.personName
@@ -58,19 +65,26 @@ export function Samples() {
   const [deletingId, setDeletingId] = useState(null)
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState({ status: '', source: '' })
+  const [labSummary, setLabSummary] = useState(null) // technician er lab workload (Issue 3)
+  const isTechnician = role === 'Lab Technician'
 
-  // Backend theke sample list load kora
+  // Backend theke sample list (+ technician hole lab summary) load kora
   const refreshSamples = useCallback(async () => {
     try {
       setLoading(true)
       setError('')
-      setSamples(await getSamples(linkedPerson ? { person_id: linkedPerson } : {}))
+      const [rows, summary] = await Promise.all([
+        getSamples(linkedPerson ? { person_id: linkedPerson } : {}),
+        isTechnician ? getLabSummary() : Promise.resolve(null),
+      ])
+      setSamples(rows)
+      setLabSummary(summary)
     } catch (requestError) {
       setError(errorMessage(requestError, 'Failed to load DNA samples.'))
     } finally {
       setLoading(false)
     }
-  }, [linkedPerson])
+  }, [linkedPerson, isTechnician])
 
   useEffect(() => { refreshSamples() }, [refreshSamples])
 
@@ -101,10 +115,19 @@ export function Samples() {
     <>
       <PageHeader
         title="DNA Samples"
-        subtitle={linkedPerson ? 'Samples linked to the selected missing person.' : role === 'Lab Technician' ? 'DNA sample records assigned to your laboratory.' : role === 'Officer' ? 'DNA samples for your assigned investigation cases.' : 'DNA sample collection and analysis records.'}
+        subtitle={linkedPerson ? 'Samples linked to the selected missing person.' : isTechnician ? `DNA sample records assigned to ${labSummary?.labName || 'your laboratory'}.` : role === 'Officer' ? 'DNA samples for your assigned investigation cases.' : 'DNA sample collection and analysis records.'}
         action={canManage ? <Link to={`/dna-samples/new${linkedPerson ? `?personId=${linkedPerson}` : ''}`} className="btn btn-primary">Register DNA Sample</Link> : null}
       />
       {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      {/* Technician er lab queue summary card (Issue 3 — technician sample view) */}
+      {labSummary && (
+        <div className="row g-3 mb-4">
+          <div className="col-sm-6 col-xl-3"><MetricCard label="Awaiting Analysis" value={labSummary.awaitingAnalysis} hint="Queued in your lab" tone="warning"/></div>
+          <div className="col-sm-6 col-xl-3"><MetricCard label="In Analysis" value={labSummary.inAnalysis} hint="Currently being processed"/></div>
+          <div className="col-sm-6 col-xl-3"><MetricCard label="Analyzed" value={labSummary.analyzed} hint="DNA profiles recorded" tone="success"/></div>
+          <div className="col-sm-6 col-xl-3"><MetricCard label="Rejected" value={labSummary.rejected} hint="Unusable samples"/></div>
+        </div>
+      )}
       <SearchFilters onSearchChange={setQuery} onClear={() => setFilters({ status: '', source: '' })}>
         <Filter label="State" value={filters.status} values={SAMPLE_STATUSES} onChange={status => setFilters({ ...filters, status })}/>
         <Filter label="Source" value={filters.source} values={SAMPLE_SOURCES} onChange={source => setFilters({ ...filters, source })}/>
@@ -127,7 +150,7 @@ export function Samples() {
                   <td><StatusBadge value={item.status}/></td>
                   <td className="text-nowrap">
                     <TableAction to={`/dna-samples/${item.id}`}/>
-                    {role === 'Lab Technician' && item.status === 'Awaiting Analysis' && <Link className="btn btn-sm btn-primary ms-1" to={`/lab/analysis/${item.id}`}>Analyze</Link>}
+                    {isTechnician && isPendingAnalysis(item) && <Link className="btn btn-sm btn-primary ms-1" to={`/lab/analysis/${item.id}`}>Analyze</Link>}
                     {canManage && <Link className="btn btn-sm btn-outline-secondary ms-1" to={`/dna-samples/${item.id}/edit`}>Edit</Link>}
                     {canManage && <button type="button" className="btn btn-sm btn-outline-danger ms-1" disabled={deletingId === item.id} onClick={() => remove(item)}>{deletingId === item.id ? 'Deleting...' : 'Delete'}</button>}
                   </td>
@@ -313,7 +336,8 @@ export function SampleDetails() {
         title={`DNA Sample #${sample.id}`}
         subtitle="DNA sample record"
         action={<>
-          {isTechnician && sample.status === 'Awaiting Analysis' && <Link className="btn btn-primary" to={`/lab/analysis/${sample.id}`}>Analyze Sample</Link>}
+          {/* Pending hole "Analyze", already analyzed/rejected hole correction er jonno "Update Analysis" */}
+          {isTechnician && <Link className="btn btn-primary" to={`/lab/analysis/${sample.id}`}>{isPendingAnalysis(sample) ? 'Analyze Sample' : 'Update Analysis'}</Link>}
           {canManage && <Link className="btn btn-outline-secondary" to={`/dna-samples/${sample.id}/edit`}>Edit</Link>}
           {canManage && <button type="button" className="btn btn-outline-danger" onClick={remove}>Delete</button>}
         </>}
@@ -353,8 +377,109 @@ export function SampleDetails() {
   )
 }
 
+// Lab Sample Analysis page (Member 1 - Issue 3)
+// Technician shudhu analysis info (status, analysis date, DNA profile code, laboratory remarks) update kore
+// Collection/investigation info read-only — backend o egulo pathale reject kore
 export function DNAAnalysis() {
-  const { id } = useParams(); const { data, updateSample } = useData(); const { user } = useAuth(); const sample = data.samples.find(item => item.id === id); const nav = useNavigate(); const [form, setForm] = useState({ analysis: '', profile: '', remarks: sample?.remarks || '' }); if (!sample) return <NotFound label="DNA sample"/>; if (sample.lab !== technicianLab(user, data)) return <AccessDenied/>; if (sample.status !== 'Awaiting Analysis') return <div className="alert alert-info">This sample has already been analyzed.</div>; const change = event => setForm({ ...form, [event.target.name]: event.target.value }); return <><PageHeader title={`Analyze ${sample.id}`} subtitle="Record analysis for this selected sample. Collection data remains read-only."/><div className="row g-4"><div className="col-lg-4"><Card title="Sample information"><p><span className="text-secondary d-block small">Source / provider</span>{sample.source} — {sampleOwner(sample, data)}</p><p><span className="text-secondary d-block small">Sample type</span>{sample.type}</p><p className="mb-0"><span className="text-secondary d-block small">Associated lab</span>{sample.lab}</p></Card></div><div className="col-lg-8"><form className="card" onSubmit={event => { event.preventDefault(); updateSample(sample.id, { ...form, status: 'Analyzed' }); nav(`/dna-samples/${sample.id}`) }}><div className="card-header bg-white"><strong>Analysis information</strong></div><div className="card-body"><div className="row g-3"><Field label="Analysis Date" name="analysis" type="date" required value={form.analysis} onChange={change}/><Field label="DNA Profile Code" name="profile" required value={form.profile} onChange={change}/><div className="col-12"><label className="form-label">Laboratory Remarks</label><textarea name="remarks" value={form.remarks} onChange={change} className="form-control" rows="6" required/></div></div></div><div className="card-footer bg-white text-end"><Link to={`/dna-samples/${sample.id}`} className="btn btn-light me-2">Cancel</Link><button className="btn btn-primary">Mark Analysis Complete</button></div></form></div></div></>
+  const { id } = useParams()
+  const nav = useNavigate()
+  const [sample, setSample] = useState(null)
+  const [form, setForm] = useState({ status: 'Analyzed', analysisDate: today(), dnaProfileCode: '', remarks: '' })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  // Sample load — onno lab er sample hole backend 404 dey
+  useEffect(() => {
+    let mounted = true
+    getSampleById(id)
+      .then(row => {
+        if (!mounted) return
+        setSample(row)
+        // Age theke analysis info thakle sheta diye form fill (correction er jonno)
+        setForm({
+          status: ANALYSIS_STATUSES.includes(row.status) ? row.status : 'Analyzed',
+          analysisDate: row.analysisDate || today(),
+          dnaProfileCode: row.dnaProfileCode || '',
+          remarks: row.remarks || '',
+        })
+      })
+      .catch(requestError => { if (mounted) setError(errorMessage(requestError, 'Failed to load the DNA sample.')) })
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [id])
+
+  const change = event => setForm({ ...form, [event.target.name]: event.target.value })
+
+  const submit = async event => {
+    event.preventDefault()
+    try {
+      setSaving(true)
+      setError('')
+      // Shudhu 4 ta analysis field pathano hocche — investigation field kokhono na
+      await updateSampleAnalysis(id, {
+        status: form.status,
+        analysisDate: form.analysisDate || null,
+        dnaProfileCode: form.dnaProfileCode.trim() || null,
+        remarks: form.remarks.trim() || null,
+      })
+      nav(`/dna-samples/${id}`)
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Failed to save the analysis.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <div className="card"><div className="card-body text-center text-secondary py-4">Loading DNA sample...</div></div>
+  if (!sample) return <div className="alert alert-warning">{error || 'This DNA sample could not be found.'}</div>
+
+  const needsProfile = form.status === 'Analyzed' // Analyzed hole profile code + date lagbe
+  const needsRemarks = form.status === 'Rejected' // Rejected hole karon lagbe
+
+  return (
+    <>
+      <PageHeader title={`Analyze Sample #${sample.id}`} subtitle="Record the laboratory analysis for this sample. Collection data remains read-only."/>
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      <div className="row g-4">
+        <div className="col-lg-4">
+          {/* Read-only collection info — technician edit korte parbe na */}
+          <Card title="Sample information (read-only)">
+            <p><span className="text-secondary d-block small">Source / provider</span>{sample.source} — {sampleProvider(sample)}</p>
+            <p><span className="text-secondary d-block small">Sample type</span>{sample.sampleType}</p>
+            <p><span className="text-secondary d-block small">Collection date</span>{sample.collectionDate}</p>
+            <p><span className="text-secondary d-block small">Storage location</span>{sample.storageLocation || '—'}</p>
+            <p><span className="text-secondary d-block small">Assigned lab / technician</span>{sample.labName || '—'} / {sample.technicianName || 'Not assigned'}</p>
+            <p className="mb-0"><span className="text-secondary d-block small">Current status</span><StatusBadge value={sample.status}/></p>
+          </Card>
+        </div>
+        <div className="col-lg-8">
+          <form className="card" onSubmit={submit}>
+            <div className="card-header bg-white"><strong>Analysis information</strong></div>
+            <div className="card-body">
+              <div className="row g-3">
+                <Field label="Analysis Status" name="status" select required value={form.status} onChange={change} options={ANALYSIS_STATUSES}/>
+                <Field label="Analysis Date" name="analysisDate" type="date" required={needsProfile} value={form.analysisDate} onChange={change}/>
+                <div className="col-md-6">
+                  <label className="form-label">DNA Profile Code</label>
+                  <input name="dnaProfileCode" className="form-control text-uppercase" value={form.dnaProfileCode} onChange={change} required={needsProfile} placeholder="e.g. DNA7F2A91C4" pattern="[A-Za-z0-9\-]{6,50}" title="6-50 letters, numbers, or hyphens"/>
+                  <small className="text-secondary">Required when the status is Analyzed.</small>
+                </div>
+                <div className="col-12">
+                  <label className="form-label">Laboratory Remarks</label>
+                  <textarea name="remarks" value={form.remarks} onChange={change} className="form-control" rows="5" required={needsRemarks} placeholder={needsRemarks ? 'Reason for rejecting the sample' : 'Extraction method, quality notes, etc.'}/>
+                </div>
+              </div>
+            </div>
+            <div className="card-footer bg-white text-end">
+              <Link to={`/dna-samples/${sample.id}`} className="btn btn-light me-2">Cancel</Link>
+              <button className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save Analysis'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </>
+  )
 }
 
 export function Matches() {

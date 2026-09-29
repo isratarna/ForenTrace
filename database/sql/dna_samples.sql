@@ -253,3 +253,78 @@ WHERE fm.person_id = 1;
 -- 13. Test row delete (seed data jeno thik thake)
 DELETE FROM dna_samples
 WHERE sample_id = @family_sample_id;
+
+
+-- =========================================================
+-- Laboratory DNA Analysis Workflow (Member 1 - Issue 3)
+-- Technician shudhu analysis field update korte parbe:
+--   dna_profile_code, analysis_date, remarks (laboratory remarks), status
+-- Investigation info (person, family, lab, collection data) technician change korte parbe na.
+-- =========================================================
+
+-- 14. Logged-in user er technician profile + lab ber kora (user_id = 2 ba technician_id = 1)
+SELECT lt.technician_id, lt.lab_id, dl.lab_name
+FROM lab_technicians lt
+INNER JOIN dna_labs dl ON dl.lab_id = lt.lab_id
+WHERE lt.user_id = 2 OR lt.technician_id = 1
+LIMIT 1;
+
+
+-- 15. Technician er analysis queue: nijer lab er je sample gulo ekhono analysis baki
+SELECT
+    s.sample_id,
+    s.sample_type,
+    s.collection_date,
+    s.status,
+    CONCAT(lt.first_name, ' ', lt.last_name) AS technician_name
+FROM dna_samples s
+LEFT JOIN lab_technicians lt ON lt.technician_id = s.technician_id
+WHERE s.lab_id = 1
+  AND s.status IN ('Awaiting Analysis', 'In Analysis')
+ORDER BY s.collection_date ASC;   -- purono sample age (first come first serve)
+
+
+-- 16. Lab workload summary (technician er Samples page er card): status onujayi count
+SELECT
+    dl.lab_id,
+    dl.lab_name,
+    COUNT(s.sample_id) AS total_samples,
+    SUM(CASE WHEN s.status = 'Awaiting Analysis' THEN 1 ELSE 0 END) AS awaiting_analysis,
+    SUM(CASE WHEN s.status = 'In Analysis' THEN 1 ELSE 0 END) AS in_analysis,
+    SUM(CASE WHEN s.status = 'Analyzed' THEN 1 ELSE 0 END) AS analyzed,
+    SUM(CASE WHEN s.status = 'Rejected' THEN 1 ELSE 0 END) AS rejected
+FROM dna_labs dl
+LEFT JOIN dna_samples s ON s.lab_id = dl.lab_id
+WHERE dl.lab_id = 1
+GROUP BY dl.lab_id, dl.lab_name;
+
+
+-- 17. Analysis test er jonno ekta test sample (seed data nosto na korar jonno)
+INSERT INTO dna_samples (person_id, family_id, lab_id, technician_id, sample_type, collection_date, storage_location, status)
+VALUES (1, NULL, 1, NULL, 'Hair Strand', '2026-03-02', 'Evidence Room A-07', 'Awaiting Analysis');
+SET @analysis_sample_id = LAST_INSERT_ID();
+
+
+-- 18. Technician analysis update (UPDATE — shudhu analysis column)
+-- technician_id NULL thakle je technician analysis korlo take assign kora hoy (COALESCE)
+-- WHERE e lab_id check: technician shudhu nijer lab er sample update korte parbe
+UPDATE dna_samples
+SET
+    dna_profile_code = 'DNA7F2A91C5',
+    analysis_date = '2026-03-06',
+    remarks = 'STR profile generated successfully',
+    status = 'Analyzed',
+    technician_id = COALESCE(technician_id, 1)
+WHERE sample_id = @analysis_sample_id
+  AND lab_id = 1;
+
+
+-- 19. Update er por result check
+SELECT sample_id, person_id, lab_id, technician_id, dna_profile_code, analysis_date, remarks, status
+FROM dna_samples
+WHERE sample_id = @analysis_sample_id;
+
+
+-- 20. Test sample delete
+DELETE FROM dna_samples
+WHERE sample_id = @analysis_sample_id;

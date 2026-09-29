@@ -7,6 +7,8 @@ import {
   updateSample,
   deleteSample,
   getFamilyDna,
+  updateAnalysis,
+  getLabSummary,
 } from '../controllers/dnaSampleController.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
 import { requireRole } from '../middleware/roleMiddleware.js'
@@ -18,14 +20,19 @@ const router = express.Router()
 // Technician family er contact info dekhbe na, tai shudhu Admin + Officer
 router.get('/family/:personId', requireAuth, requireRole('Admin', 'Officer'), getFamilyDna)
 
+// Technician er nijer lab er workload summary (Issue 3) — eta o '/:id' er AGE
+router.get('/lab/summary', requireAuth, requireRole('Lab Technician'), getLabSummary)
+
 // Admin, Officer, Lab Technician — tinjonei sample dekhte parbe (controller role onujayi data filter kore)
 router.get('/',requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), listSamples)
 router.get('/:id', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), getSample)
 
 // Shudhu Admin ar Officer sample register/update/delete korte parbe
-// (Technician er analysis update Issue 3 e alada route e hobe)
 router.post('/', requireAuth, requireRole('Admin', 'Officer'), createSample)
 router.put('/:id', requireAuth, requireRole('Admin', 'Officer'), updateSample)
 router.delete('/:id', requireAuth, requireRole('Admin', 'Officer'), deleteSample)
+
+// Laboratory analysis update (Issue 3) — shudhu Lab Technician, shudhu analysis field
+router.put('/:id/analysis', requireAuth, requireRole('Lab Technician'), updateAnalysis)
 
 export default router
