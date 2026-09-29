@@ -6,6 +6,7 @@ import { changePassword } from '../services/mockAuth'
 import { getUsers, updateUser, updateUserStatus, deleteUser } from '../services/userService'
 import { getOfficers, createOfficer, updateOfficer, deleteOfficer } from '../services/officerService'
 import { getStations, createStation, updateStation, deleteStation } from '../services/policeStationService'
+import caseService from '../services/caseService'
 
 const recordConfig = {
   stations: { title: 'Police Stations', subtitle: 'Manage police station records.', button: 'Add Station', fields: [['name', 'Station name'], ['district', 'District'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email', 'email']] },
@@ -224,7 +225,42 @@ export function AdminList({ kind }) {
 }
 
 export function Reports() {
-  const { data } = useData(); const solved = data.cases.filter(caseItem => caseItem.status === 'Solved').length; const pending = data.cases.filter(caseItem => caseItem.status === 'Pending').length; const analyzed = data.samples.filter(sample => sample.status === 'Analyzed').length; const top = [...data.matches].sort((first, second) => parseFloat(second.similarity) - parseFloat(first.similarity))[0]; const reportCards = [['Highest DNA similarity match', top?.id || '—', top ? `${top.similarity} similarity` : 'No matches'], ['Solved investigations', String(solved), 'Current records'], ['Pending investigations', String(pending), 'Across all police stations'], ['Samples analyzed', String(analyzed), `of ${data.samples.length} collected samples`], ['Total missing-person reports', String(data.missingPeople.length), 'Current registry']]; const exportReport = () => { const rows = [['ForenTrace Report', new Date().toLocaleDateString()], [], ['Metric', 'Value', 'Detail'], ...reportCards.map(card => [card[0], card[1], card[2]]), [], ['Cases'], ['Case ID', 'Missing Person', 'Status', 'Priority'], ...data.cases.map(caseItem => [caseItem.id, caseItem.person, caseItem.status, caseItem.priority])]; const csv = rows.map(row => row.map(cell => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = `forentrace-report-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url) }; return <><PageHeader title="Reports" subtitle="System statistics and reporting summaries." action={<button onClick={exportReport} className="btn btn-outline-primary">Export Report (CSV)</button>}/><div className="row g-3 mb-4">{reportCards.map(card => <div className="col-md-6 col-xl" key={card[0]}><div className="card report-card h-100"><div className="card-body"><p className="small text-secondary">{card[0]}</p><h3>{card[1]}</h3><small className="text-secondary">{card[2]}</small></div></div></div>)}</div><div className="card"><div className="card-header bg-white"><strong>Case resolution overview</strong></div><div className="card-body"><div className="bar-row"><span>Solved</span><div className="progress"><div className="progress-bar bg-success" style={{ width: `${data.cases.length ? solved / data.cases.length * 100 : 0}%` }}/></div><b>{solved}</b></div><div className="bar-row"><span>Active</span><div className="progress"><div className="progress-bar" style={{ width: `${data.cases.length ? data.cases.filter(caseItem => caseItem.status === 'Active').length / data.cases.length * 100 : 0}%` }}/></div><b>{data.cases.filter(caseItem => caseItem.status === 'Active').length}</b></div><div className="bar-row"><span>Pending</span><div className="progress"><div className="progress-bar bg-warning" style={{ width: `${data.cases.length ? pending / data.cases.length * 100 : 0}%` }}/></div><b>{pending}</b></div></div></div></>
+  const { data } = useData()
+  const [caseStats, setCaseStats] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    setError(null)
+    caseService.getCaseStatistics()
+      .then(stats => { if (!mounted) return; setCaseStats(stats) })
+      .catch(err => { console.error('Failed to load case statistics', err); if (!mounted) return; setError('Failed to load statistics') })
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [])
+
+  const solved = caseStats?.summary?.solvedCases ?? data.cases.filter(caseItem => caseItem.status === 'Solved').length
+  const pending = caseStats?.summary?.pendingCases ?? data.cases.filter(caseItem => caseItem.status === 'Pending').length
+  const avgResolution = caseStats?.summary?.averageResolutionDays ?? null
+  const stationStats = caseStats?.stationStatistics ?? []
+
+  const exportReport = () => {
+    const top = [...(data.matches || [])].sort((first, second) => parseFloat(second.similarity || 0) - parseFloat(first.similarity || 0))[0]
+    const analyzed = (data.samples || []).filter(sample => sample.status === 'Analyzed').length
+    const reportCards = [['Highest DNA similarity match', top?.id || '—', top ? `${top.similarity} similarity` : 'No matches'], ['Solved investigations', String(solved), 'Current records'], ['Pending investigations', String(pending), 'Across all police stations'], ['Samples analyzed', String(analyzed), `of ${data.samples.length} collected samples`], ['Total missing-person reports', String(data.missingPeople.length), 'Current registry']]
+    const rows = [['ForenTrace Report', new Date().toLocaleDateString()], [], ['Metric', 'Value', 'Detail'], ...reportCards.map(card => [card[0], card[1], card[2]]), [], ['Cases'], ['Case ID', 'Missing Person', 'Status', 'Priority'], ...(data.cases || []).map(caseItem => [caseItem.id, caseItem.person, caseItem.status, caseItem.priority])]
+    const csv = rows.map(row => row.map(cell => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `forentrace-report-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return <><PageHeader title="Reports" subtitle="System statistics and reporting summaries." action={<button onClick={exportReport} className="btn btn-outline-primary">Export Report (CSV)</button>}/>{loading && <div className="mb-3 text-secondary">Loading statistics...</div>}{error && <div className="mb-3 alert alert-danger">{error}</div>}<div className="row g-3 mb-4">{(stationStats.length ? stationStats.map(st => <div key={st.stationId ?? st.station_id ?? st.stationName} className="col-md-6 col-xl"><div className="card report-card h-100"><div className="card-body"><p className="small text-secondary">{st.stationName ?? st.station_name ?? 'Station'}</p><h3>{(st.solvedCases ?? st.solved_cases ?? 0)}/{(st.totalCases ?? st.total_cases ?? 0)}</h3><small className="text-secondary">Solved / Total</small></div></div></div>) : <div className="col-12"><div className="alert alert-secondary">No station statistics available.</div></div>)}</div><div className="card"><div className="card-header bg-white"><strong>Average identification time (days)</strong></div><div className="card-body"><h3>{avgResolution === null ? '—' : String(avgResolution)}</h3><small className="text-secondary">Average days between report and identification for solved cases</small></div></div></>
 }
 
 export function Profile() {

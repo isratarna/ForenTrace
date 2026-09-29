@@ -17,6 +17,7 @@ import labTechnicianRoutes from './routes/labTechnicianRoutes.js';
 import dnaAnalyticsRoutes from './routes/dnaAnalyticsRoutes.js';
 import familyMemberRoutes from './routes/familyMemberRoutes.js';
 import reportRoutes from './routes/reportRoutes.js'
+import adminStatsRoutes from './routes/adminStatsRoutes.js'
 
 const app = express()
 
@@ -55,6 +56,7 @@ app.use('/api/technicians', labTechnicianRoutes);
 app.use('/api/analytics/dna', dnaAnalyticsRoutes);
 app.use('/api/family-members', familyMemberRoutes);
 app.use('/api/reports', reportRoutes)
+app.use('/api/admin/counts', adminStatsRoutes)
 
 async function startServer() {
   try {
