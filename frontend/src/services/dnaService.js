@@ -1,26 +1,6 @@
 import api from './api'
 
-// dnaService: DNA sample gulo ekhon real backend (/api/dna-samples) theke ashe.
-// DNA match API Issue 4 e toiri hobe — totokkhon match gulo mock thakbe.
-const USE_MOCK_MATCHES = true
-
-// Match data ekhono mock kina (MatchesList e "(Sample data)" label dekhanor jonno)
-export const isMockDna = () => USE_MOCK_MATCHES
-
-function buildMatches(id) {
-  const matchKey = id ?? 'ANY'
-  const seed = Number(id) || 1
-  const similarity = 70 + (seed * 7) % 30
-  return [{
-    match_id: `MOCK-M-${matchKey}-1`,
-    unknown_sample_id: `MOCK-S-${matchKey}-1`,
-    matched_sample_id: `MOCK-S-${matchKey}-2`,
-    similarity_percentage: similarity,
-    confidence_level: similarity >= 90 ? 'High' : similarity >= 80 ? 'Medium' : 'Low',
-    match_date: '2026-09-01',
-    match_status: 'Pending Review',
-  }]
-}
+// dnaService: DNA sample (/api/dna-samples) ar DNA match (/api/dna-matches) — duitai real backend theke ashe.
 
 // ---------- DNA Samples (real API) ----------
 
@@ -100,26 +80,55 @@ export async function getTechnicians() {
   return response.data.data ?? []
 }
 
-// ---------- DNA Matches (Issue 4 porjonto mock) ----------
+// ---------- DNA Matches (real API — Issue 4) ----------
 
-export async function getMatchesByPerson(personId) {
-  if (USE_MOCK_MATCHES) {
-    return Promise.resolve(buildMatches(personId))
-  }
-
-  // TODO: Member 1 - Issue 4 e /api/dna-matches toiri hole connect hobe
-  throw new Error('dnaService: dna matches API not implemented')
+// Match list — params: { status, confidence, person_id, case_id, sample_id }
+export async function getMatches(params = {}) {
+  const response = await api.get('/dna-matches', { params })
+  return response.data.matches ?? []
 }
 
+// Ekta match er details
+export async function getMatchById(id) {
+  const response = await api.get(`/dna-matches/${id}`)
+  return response.data.match
+}
+
+// Duita sample compare (save kore na) — { unknownSampleId, matchedSampleId }
+export async function compareSamples(data) {
+  const response = await api.post('/dna-matches/compare', data)
+  return response.data.comparison
+}
+
+// Match save — similarityPercentage dile Manual (Admin/Officer), na dile Computed
+export async function createMatch(data) {
+  const response = await api.post('/dna-matches', data)
+  return response.data.match
+}
+
+// Review: 'Confirmed' ba 'Rejected'
+export async function updateMatchStatus(id, matchStatus) {
+  const response = await api.put(`/dna-matches/${id}/status`, { matchStatus })
+  return response.data.match
+}
+
+// Match delete (Admin)
+export async function deleteMatch(id) {
+  const response = await api.delete(`/dna-matches/${id}`)
+  return response.data
+}
+
+// Missing person details page er DNA Matches tab er jonno
+export async function getMatchesByPerson(personId) {
+  return getMatches({ person_id: personId })
+}
+
+// Case details page er DNA Matches section er jonno
 export async function getMatchesByCase(caseId) {
-  if (USE_MOCK_MATCHES) {
-    return Promise.resolve(buildMatches(caseId))
-  }
-  throw new Error('dnaService: dna matches API not implemented')
+  return getMatches({ case_id: caseId })
 }
 
 export default {
-  isMockDna,
   getSamples,
   getSampleById,
   createSample,
@@ -132,6 +141,12 @@ export default {
   getLabSummary,
   getLabs,
   getTechnicians,
+  getMatches,
+  getMatchById,
+  compareSamples,
+  createMatch,
+  updateMatchStatus,
+  deleteMatch,
   getMatchesByPerson,
   getMatchesByCase,
 }

@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { MetricCard, PageHeader, SearchFilters, StatusBadge, TableAction } from '../components/Ui'
-import { useData } from '../data/DataContext'
 import { useAuth } from '../context/AuthContext'
 import {
+  compareSamples,
+  createMatch,
   createSample,
+  deleteMatch,
   deleteSample,
   getLabs,
   getLabSummary,
+  getMatchById,
+  getMatches,
   getSampleById,
   getSamples,
   getTechnicians,
+  updateMatchStatus,
   updateSample,
   updateSampleAnalysis,
 } from '../services/dnaService'
@@ -19,9 +24,6 @@ import { getFamilyMembersByPerson } from '../services/familyMemberService'
 
 const search = (row, query) => !query || Object.values(row).some(value => String(value ?? '').toLowerCase().includes(query.toLowerCase()))
 const Field = ({ label, name, type = 'text', select, options = [], value, onChange, required }) => <div className="col-md-6"><label className="form-label">{label}</label>{select ? <select name={name} className="form-select" value={value} onChange={onChange} required={required}><option value="">Select {label}</option>{options.map(item => <option key={item.value ?? item} value={item.value ?? item}>{item.label ?? item}</option>)}</select> : <input name={name} type={type} className="form-control" value={value} onChange={onChange} required={required}/>}</div>
-const sampleOwner = (sample, data) => sample.familyMemberId ? data.familyMembers.find(item => item.id === sample.familyMemberId)?.name || sample.person : sample.person
-const technicianLab = (user, data) => user?.lab || data.technicians.find(item => item.email === user?.email || item.name === user?.name)?.lab || ''
-const labCanAccessSample = (role, user, data, sample) => role !== 'Lab Technician' || sample.lab === technicianLab(user, data)
 
 // ---------- DNA Sample module (real API — Member 1 Issue 1) ----------
 
@@ -338,6 +340,8 @@ export function SampleDetails() {
         action={<>
           {/* Pending hole "Analyze", already analyzed/rejected hole correction er jonno "Update Analysis" */}
           {isTechnician && <Link className="btn btn-primary" to={`/lab/analysis/${sample.id}`}>{isPendingAnalysis(sample) ? 'Analyze Sample' : 'Update Analysis'}</Link>}
+          {/* Analyzed evidence sample hole shorashori comparison shuru (Issue 4) */}
+          {sample.status === 'Analyzed' && !sample.familyId && <Link className="btn btn-outline-primary" to={`/dna-matches/new?unknownSampleId=${sample.id}`}>Compare</Link>}
           {canManage && <Link className="btn btn-outline-secondary" to={`/dna-samples/${sample.id}/edit`}>Edit</Link>}
           {canManage && <button type="button" className="btn btn-outline-danger" onClick={remove}>Delete</button>}
         </>}
@@ -482,17 +486,324 @@ export function DNAAnalysis() {
   )
 }
 
+// ---------- DNA Match module (real API — Member 1 Issue 4) ----------
+
+const MATCH_STATUSES = ['Pending Review', 'Confirmed', 'Rejected']
+const CONFIDENCE_LEVELS = ['High', 'Medium', 'Low']
+
+// Sample er short description: "#12 — Rafiqul Islam (Father)"
+const sampleLabel = sample => `#${sample.id} — ${sampleProvider(sample)} · ${sample.sampleType} · ${sample.dnaProfileCode}`
+
+// Duita profile code position-by-position dekhay — je position e character mile sheta shobuj
+// (backend er SQL comparison je vabe kaj kore, UI te shetai visually bojhano)
+function CodeComparison({ first, second }) {
+  const length = Math.max(first?.length || 0, second?.length || 0)
+  const positions = Array.from({ length }, (_, index) => index)
+  const cell = (char, same) => ({ display: 'inline-block', width: '1.6rem', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, borderRadius: 4, margin: 1, padding: '2px 0', background: same ? '#d1e7dd' : '#f8d7da' })
+  return (
+    <div className="overflow-auto">
+      {[first, second].map((code, row) => (
+        <div key={row} className="text-nowrap">
+          {positions.map(index => {
+            const same = first?.[index] !== undefined && first?.[index] === second?.[index]
+            return <span key={index} style={cell(code?.[index], same)}>{code?.[index] ?? '·'}</span>
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// DNA match list page — backend role onujayi filter kore pathay
 export function Matches() {
-  const { data } = useData(); const { role, user } = useAuth(); const [params] = useSearchParams(); const linkedPerson = params.get('personId'); const [query, setQuery] = useState(''); const [filters, setFilters] = useState({ confidence: '', status: '' }); const personSamples = linkedPerson ? data.samples.filter(item => item.personId === linkedPerson).map(item => item.id) : []; const assignedLab = technicianLab(user, data); const rows = data.matches.filter(item => (!linkedPerson || personSamples.includes(item.unknown) || personSamples.includes(item.matched)) && (role !== 'Lab Technician' || item.lab === assignedLab) && search(item, query) && (!filters.confidence || item.confidence === filters.confidence) && (!filters.status || item.status === filters.status)); return <><PageHeader title="DNA Matches" subtitle={linkedPerson ? 'DNA comparison results tied to the selected missing person.' : 'DNA profile comparison results for authorized investigation review.'}/><SearchFilters onSearchChange={setQuery} onClear={() => setFilters({ confidence: '', status: '' })}><Filter label="Confidence" value={filters.confidence} values={['High', 'Medium', 'Low']} onChange={confidence => setFilters({ ...filters, confidence })}/><Filter label="Status" value={filters.status} values={['Pending Review', 'Reviewed']} onChange={status => setFilters({ ...filters, status })}/></SearchFilters><div className="card"><div className="table-responsive"><table className="table table-hover mb-0"><thead><tr><th>Match ID</th><th>Sample A / Provider</th><th>Sample B / Provider</th><th>Similarity</th><th>Confidence</th><th>Match Date</th><th>Status</th><th/></tr></thead><tbody>{rows.map(item => <tr key={item.id}><td className="fw-semibold">{item.id}</td><td>{describeSample(item.unknown, data)}</td><td>{describeSample(item.matched, data)}</td><td className="fw-bold">{item.similarity}</td><td><StatusBadge value={item.confidence}/></td><td>{item.date}</td><td><StatusBadge value={item.status}/></td><td><TableAction to={`/dna-matches/${item.id}`}/></td></tr>)}{!rows.length && <tr><td colSpan="8" className="text-center text-secondary py-4">No matching DNA comparisons found.</td></tr>}</tbody></table></div></div></>
+  const { role } = useAuth()
+  const [params] = useSearchParams()
+  const linkedPerson = params.get('personId') || '' // missing person page theke ashle shudhu tar match
+  const [matches, setMatches] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
+  const [filters, setFilters] = useState({ confidence: '', status: '' })
+
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    getMatches(linkedPerson ? { person_id: linkedPerson } : {})
+      .then(rows => { if (mounted) setMatches(rows) })
+      .catch(requestError => { if (mounted) setError(errorMessage(requestError, 'Failed to load DNA matches.')) })
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [linkedPerson])
+
+  // Search (sample id, provider, person name) + dropdown filter client side e
+  const rows = useMemo(() => matches.filter(item =>
+    search({ id: item.id, a: item.unknownSample.provider, b: item.matchedSample.provider, pa: item.unknownSample.personName, pb: item.matchedSample.personName, sa: item.unknownSampleId, sb: item.matchedSampleId }, query) &&
+    (!filters.confidence || item.confidenceLevel === filters.confidence) &&
+    (!filters.status || item.matchStatus === filters.status)
+  ), [matches, query, filters])
+
+  return (
+    <>
+      <PageHeader
+        title="DNA Matches"
+        subtitle={linkedPerson ? 'DNA comparison results tied to the selected missing person.' : role === 'Lab Technician' ? 'Comparison results involving samples from your laboratory.' : 'DNA profile comparison results for investigation review.'}
+        action={<Link to="/dna-matches/new" className="btn btn-primary">New Comparison</Link>}
+      />
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      <SearchFilters onSearchChange={setQuery} onClear={() => setFilters({ confidence: '', status: '' })}>
+        <Filter label="Confidence" value={filters.confidence} values={CONFIDENCE_LEVELS} onChange={confidence => setFilters({ ...filters, confidence })}/>
+        <Filter label="Review" value={filters.status} values={MATCH_STATUSES} onChange={status => setFilters({ ...filters, status })}/>
+      </SearchFilters>
+      <div className="card">
+        <div className="table-responsive">
+          <table className="table table-hover align-middle mb-0">
+            <thead><tr><th>Match</th><th>Unknown Sample</th><th>Matched Sample</th><th>Similarity</th><th>Confidence</th><th>Method</th><th>Match Date</th><th>Status</th><th/></tr></thead>
+            <tbody>
+              {loading && <tr><td colSpan="9" className="text-center text-secondary py-4">Loading DNA matches...</td></tr>}
+              {!loading && rows.map(item => (
+                <tr key={item.id}>
+                  <td className="fw-semibold">#{item.id}</td>
+                  <td>#{item.unknownSampleId}<small className="d-block text-secondary">{item.unknownSample.provider}</small></td>
+                  <td>#{item.matchedSampleId}<small className="d-block text-secondary">{item.matchedSample.provider}</small></td>
+                  <td className="fw-bold">{item.similarityPercentage}%</td>
+                  <td><StatusBadge value={item.confidenceLevel}/></td>
+                  <td>{item.matchMethod}</td>
+                  <td>{item.matchDate}</td>
+                  <td><StatusBadge value={item.matchStatus}/></td>
+                  <td><TableAction to={`/dna-matches/${item.id}`}/></td>
+                </tr>
+              ))}
+              {!loading && !rows.length && <tr><td colSpan="9" className="text-center text-secondary py-4">No matching DNA comparisons found.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  )
 }
 
+// Notun comparison page: duita analyzed sample select → Run Comparison (preview) → Save Match
+// Option 1: SQL compute (default), Option 2: Admin/Officer manual similarity
+export function MatchForm() {
+  const { role } = useAuth()
+  const nav = useNavigate()
+  const [params] = useSearchParams()
+  const [samples, setSamples] = useState([])
+  const [form, setForm] = useState({ unknownSampleId: params.get('unknownSampleId') || '', matchedSampleId: '', manual: false, similarityPercentage: '' })
+  const [comparison, setComparison] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+  const canEnterManually = role === 'Admin' || role === 'Officer' // Option 2 shudhu Admin/Officer
+
+  // Shudhu analyzed sample (profile code ache) load — backend role scope o apply kore
+  useEffect(() => {
+    let mounted = true
+    getSamples({ status: 'Analyzed' })
+      .then(rows => { if (mounted) setSamples(rows.filter(sample => sample.dnaProfileCode)) })
+      .catch(requestError => { if (mounted) setError(errorMessage(requestError, 'Failed to load analyzed samples.')) })
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [])
+
+  const change = event => {
+    const { name, value, type, checked } = event.target
+    setForm({ ...form, [name]: type === 'checkbox' ? checked : value })
+    if (name === 'unknownSampleId' || name === 'matchedSampleId') setComparison(null) // sample change hole purono result baad
+  }
+
+  const pairPayload = () => ({ unknownSampleId: Number(form.unknownSampleId), matchedSampleId: Number(form.matchedSampleId) })
+
+  // Preview — database e save hoy na
+  const runComparison = async () => {
+    try {
+      setWorking(true)
+      setError('')
+      setComparison(await compareSamples(pairPayload()))
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Comparison failed.'))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const save = async event => {
+    event.preventDefault()
+    try {
+      setWorking(true)
+      setError('')
+      const payload = pairPayload()
+      if (form.manual) payload.similarityPercentage = Number(form.similarityPercentage) // Option 2
+      const match = await createMatch(payload)
+      nav(`/dna-matches/${match.id}`)
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Failed to save the DNA match.'))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  // Unknown = evidence/missing person sample (family reference na), Matched = je kono onno analyzed sample
+  const unknownOptions = samples.filter(sample => !sample.familyId)
+  const matchedOptions = samples.filter(sample => String(sample.id) !== form.unknownSampleId)
+  const bothSelected = form.unknownSampleId && form.matchedSampleId
+
+  if (loading) return <div className="card"><div className="card-body text-center text-secondary py-4">Loading analyzed samples...</div></div>
+
+  return (
+    <>
+      <PageHeader title="New DNA Comparison" subtitle="Select an unknown/evidence sample and a reference sample, compare their DNA profile codes, and record the match."/>
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      <form className="card mb-4" onSubmit={save}>
+        <div className="card-body">
+          <div className="row g-3">
+            <div className="col-md-6">
+              <label className="form-label">Unknown / Evidence Sample</label>
+              <select name="unknownSampleId" className="form-select" value={form.unknownSampleId} onChange={change} required>
+                <option value="">Select unknown sample</option>
+                {unknownOptions.map(sample => <option key={sample.id} value={String(sample.id)}>{sampleLabel(sample)}</option>)}
+              </select>
+            </div>
+            <div className="col-md-6">
+              <label className="form-label">Matched / Reference Sample</label>
+              <select name="matchedSampleId" className="form-select" value={form.matchedSampleId} onChange={change} required>
+                <option value="">Select reference sample</option>
+                {matchedOptions.map(sample => <option key={sample.id} value={String(sample.id)}>{sampleLabel(sample)}</option>)}
+              </select>
+            </div>
+            {canEnterManually && (
+              <div className="col-12">
+                <div className="form-check">
+                  <input id="manual-similarity" name="manual" type="checkbox" className="form-check-input" checked={form.manual} onChange={change}/>
+                  <label htmlFor="manual-similarity" className="form-check-label">Enter similarity percentage manually</label>
+                </div>
+              </div>
+            )}
+            {form.manual && (
+              <div className="col-md-4">
+                <label className="form-label">Similarity Percentage</label>
+                <input name="similarityPercentage" type="number" min="0" max="100" step="0.01" className="form-control" value={form.similarityPercentage} onChange={change} required/>
+              </div>
+            )}
+          </div>
+          {!unknownOptions.length && <p className="text-secondary small mt-3 mb-0">No analyzed evidence samples are available in your scope yet.</p>}
+        </div>
+        <div className="card-footer bg-white text-end">
+          <Link to="/dna-matches" className="btn btn-light me-2">Cancel</Link>
+          {!form.manual && <button type="button" className="btn btn-outline-primary me-2" disabled={!bothSelected || working} onClick={runComparison}>Run Comparison</button>}
+          <button className="btn btn-primary" disabled={!bothSelected || working || Boolean(comparison?.existingMatchId)}>{working ? 'Working...' : 'Save Match'}</button>
+        </div>
+      </form>
+
+      {/* Comparison preview result */}
+      {comparison && (
+        <Card title="Comparison result">
+          {comparison.existingMatchId && <div className="alert alert-warning">These samples were already compared. <Link to={`/dna-matches/${comparison.existingMatchId}`}>View match #{comparison.existingMatchId}</Link></div>}
+          <div className="d-flex flex-wrap gap-4 mb-3">
+            <span>Similarity<b className="d-block fs-4">{comparison.similarityPercentage}%</b></span>
+            <span>Matching positions<b className="d-block fs-4">{comparison.matchingPositions} / {comparison.codeLength}</b></span>
+            <span>Confidence<b className="d-block mt-1"><StatusBadge value={comparison.confidenceLevel}/></b></span>
+          </div>
+          <CodeComparison first={comparison.unknownProfileCode} second={comparison.matchedProfileCode}/>
+        </Card>
+      )}
+    </>
+  )
+}
+
+// Match details page — Admin/Officer review (Confirm/Reject) korte pare
 export function MatchDetails() {
-  const { id } = useParams(); const { data, updateMatch } = useData(); const { role, user } = useAuth(); const match = data.matches.find(item => item.id === id); if (!match) return <NotFound label="DNA match"/>; if (role === 'Lab Technician' && match.lab !== technicianLab(user, data)) return <AccessDenied/>; const first = data.samples.find(item => item.id === match.unknown); const second = data.samples.find(item => item.id === match.matched); const canReview = role === 'Officer' || role === 'Lab Technician'; const canOpenSample = sample => sample && labCanAccessSample(role, user, data, sample)
-  return <><PageHeader title={match.id} subtitle="DNA match comparison result" action={canReview && match.status !== 'Reviewed' ? <button onClick={() => updateMatch(match.id, { status: 'Reviewed' })} className="btn btn-primary">Mark as Reviewed</button> : null}/><div className="match-hero card mb-4"><div className="card-body"><div><span className="eyebrow">SAMPLE A</span><h3>{match.unknown}</h3><small>{describeSample(match.unknown, data)}</small></div><div className="match-score"><b>{match.similarity}</b><span>Similarity</span><StatusBadge value={`${match.confidence} Confidence`}/></div><div className="text-lg-end"><span className="eyebrow">SAMPLE B</span><h3>{match.matched}</h3><small>{describeSample(match.matched, data)}</small></div></div></div><div className="row g-4"><div className="col-md-6"><Card title="Compared samples"><p>Sample A: {canOpenSample(first) ? <Link to={`/dna-samples/${first.id}`}>{first.id}</Link> : match.unknown} <b>— {first ? sampleOwner(first, data) : 'record unavailable'}</b></p><p className="mb-0">Sample B: {canOpenSample(second) ? <Link to={`/dna-samples/${second.id}`}>{second.id}</Link> : match.matched} <b>— {second ? sampleOwner(second, data) : 'record unavailable'}</b></p></Card></div><div className="col-md-6"><Card title="Match record"><p>Match date: <b>{match.date}</b></p><p>Confidence: <StatusBadge value={match.confidence}/></p><p className="mb-0">Status: <StatusBadge value={match.status}/></p></Card></div></div></>
+  const { id } = useParams()
+  const { role } = useAuth()
+  const nav = useNavigate()
+  const [match, setMatch] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    getMatchById(id)
+      .then(row => { if (mounted) setMatch(row) })
+      .catch(requestError => { if (mounted) setError(errorMessage(requestError, 'Failed to load the DNA match.')) })
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [id])
+
+  // Confirm / Reject — Confirmed hole (Issue 5 trigger) missing person 'Identified' hobe
+  const review = async matchStatus => {
+    const note = matchStatus === 'Confirmed' ? ' This will mark the matched missing person as Identified.' : ''
+    if (!window.confirm(`Mark match #${match.id} as ${matchStatus}?${note}`)) return
+    try {
+      setWorking(true)
+      setError('')
+      setMatch(await updateMatchStatus(match.id, matchStatus))
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Failed to update the match.'))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const remove = async () => {
+    if (!window.confirm(`Delete match #${match.id}? This action cannot be undone.`)) return
+    try {
+      await deleteMatch(match.id)
+      nav('/dna-matches')
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Failed to delete the match.'))
+    }
+  }
+
+  if (loading) return <div className="card"><div className="card-body text-center text-secondary py-4">Loading DNA match...</div></div>
+  if (!match) return <div className="alert alert-warning">{error || 'This DNA match could not be found.'}</div>
+
+  const canReview = (role === 'Admin' || role === 'Officer') && match.matchStatus === 'Pending Review'
+  const canDelete = role === 'Admin' && match.matchStatus !== 'Confirmed'
+  const isTechnician = role === 'Lab Technician' // technician investigation (person) page e link pabe na
+  const personLink = sample => isTechnician ? sample.personName : <Link to={`/missing-persons/${sample.personId}`}>{sample.personName}</Link>
+
+  return (
+    <>
+      <PageHeader
+        title={`DNA Match #${match.id}`}
+        subtitle="DNA profile comparison result"
+        action={<>
+          {canReview && <button type="button" className="btn btn-success" disabled={working} onClick={() => review('Confirmed')}>Confirm Match</button>}
+          {canReview && <button type="button" className="btn btn-outline-danger" disabled={working} onClick={() => review('Rejected')}>Reject Match</button>}
+          {canDelete && <button type="button" className="btn btn-outline-secondary" onClick={remove}>Delete</button>}
+        </>}
+      />
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      <div className="match-hero card mb-4">
+        <div className="card-body">
+          <div><span className="eyebrow">UNKNOWN SAMPLE</span><h3>#{match.unknownSampleId}</h3><small>{match.unknownSample.provider}</small></div>
+          <div className="match-score"><b>{match.similarityPercentage}%</b><span>Similarity</span><StatusBadge value={`${match.confidenceLevel} Confidence`}/></div>
+          <div className="text-lg-end"><span className="eyebrow">MATCHED SAMPLE</span><h3>#{match.matchedSampleId}</h3><small>{match.matchedSample.provider}</small></div>
+        </div>
+      </div>
+      <div className="row g-4">
+        <div className="col-md-6">
+          <Card title="Compared samples">
+            <p>Unknown: <Link to={`/dna-samples/${match.unknownSampleId}`}>#{match.unknownSampleId}</Link> — {match.unknownSample.sampleType}, {match.unknownSample.labName || '—'}<br/><small className="text-secondary">Investigation: {personLink(match.unknownSample)}</small></p>
+            <p>Matched: <Link to={`/dna-samples/${match.matchedSampleId}`}>#{match.matchedSampleId}</Link> — {match.matchedSample.sampleType}, {match.matchedSample.labName || '—'}<br/><small className="text-secondary">{match.matchedSample.isFamilyReference ? 'Family reference for' : 'Sample of'}: {personLink(match.matchedSample)} ({match.matchedSample.personStatus})</small></p>
+            <b className="d-block mb-2">Profile code comparison</b>
+            <CodeComparison first={match.unknownSample.profileCode} second={match.matchedSample.profileCode}/>
+          </Card>
+        </div>
+        <div className="col-md-6">
+          <Card title="Match record">
+            <p>Match date: <b>{match.matchDate}</b></p>
+            <p>Method: <b>{match.matchMethod === 'Manual' ? 'Manual similarity entry' : 'Computed from profile codes'}</b></p>
+            <p>Confidence: <StatusBadge value={match.confidenceLevel}/></p>
+            <p className="mb-0">Review status: <StatusBadge value={match.matchStatus}/></p>
+          </Card>
+        </div>
+      </div>
+    </>
+  )
 }
 
-function describeSample(id, data) { const sample = data.samples.find(item => item.id === id); return sample ? `${sample.id} — ${sampleOwner(sample, data)}` : `${id} — unavailable sample record` }
 function Filter({ label, value, values, onChange }) { return <div className="col-md-2"><label className="form-label">{label}</label><select className="form-select" value={value} onChange={event => onChange(event.target.value)}><option value="">All {label.toLowerCase()}s</option>{values.map(item => <option key={item}>{item}</option>)}</select></div> }
 function Card({ title, children }) { return <div className="card h-100"><div className="card-header bg-white"><strong>{title}</strong></div><div className="card-body">{children}</div></div> }
-function NotFound({ label }) { return <div className="alert alert-warning">This {label} could not be found.</div> }
-function AccessDenied() { return <div className="alert alert-danger">You are not authorized to access this laboratory record.</div> }

@@ -16,7 +16,7 @@ This file records every change made for Member 1, phase by phase. Each phase mat
 | 1 | Issue 1: DNA Sample Management Module | ✅ Done |
 | 2 | Issue 2: Family DNA Reference Integration | ✅ Done |
 | 3 | Issue 3: Laboratory DNA Analysis Workflow | ✅ Done |
-| 4 | Issue 4: DNA Matching Workflow | ⏳ Pending |
+| 4 | Issue 4: DNA Matching Workflow | ✅ Done |
 | 5 | Issue 5: SQL Trigger (automatic identification update) | ⏳ Pending |
 | 6 | Issue 6: SQL UNION Report | ⏳ Pending |
 | 7 | Issue 7: Connect the lab frontend to the real backend | ⏳ Pending |
@@ -3233,4 +3233,1628 @@ The test sample, test users and the temporary `lab_technicians.user_id` link wer
 
 ---
 
-<!-- Phase 4 onwards will be added below as each phase is completed. -->
+# Phase 4 — Issue 4: DNA Matching Workflow
+
+## Goal
+
+Create DNA match records. Two samples are compared, the result is stored, and the match is reviewed:
+
+```
+Analyzed unknown/evidence sample ─┐
+                                  ├─> Compare profile codes ─> dna_matches (Pending Review) ─> Confirmed / Rejected
+Analyzed reference sample ────────┘
+```
+
+As the spec asks, this is **not** real biological DNA matching. The goal is to show the workflow. **Both options from the spec are implemented:**
+
+| Option | How it works | Who | `match_method` |
+|---|---|---|---|
+| **1. String similarity** | Compares the two stored `dna_profile_code` values **position by position, in raw SQL** (recursive CTE) | Admin, Officer, Lab Technician | `Computed` |
+| **2. Manual similarity** | Admin/Officer types the similarity percentage | Admin, Officer only | `Manual` |
+
+**Similarity formula:** (number of positions where the characters match ÷ length of the longer code) × 100
+
+| Example | Matching positions | Similarity | Confidence |
+|---|---|---|---|
+| `ABC12345` vs `ABC12346` (spec example) | 7 / 8 | **87.50%** | Medium |
+| `DNA7F2A91C4` vs `DNA7F2A91C9` (seed: John Doe's evidence vs his father) | 10 / 11 | **90.91%** | High |
+
+**Confidence level:** ≥ 90 → High, ≥ 80 → Medium, otherwise Low.
+
+## Files changed
+
+| File | Type | What changed |
+|---|---|---|
+| `database/sql/dna_matches.sql` | New | Table, SQL comparison (recursive CTE), insert (computed + manual), scoped views, duplicate check, review update |
+| `database/schema.sql` | Modified | Added the `dna_matches` table |
+| `database/seed.sql` | Modified | 2 demo matches (1 Pending Review, 1 Rejected) |
+| `backend/models/dnaMatchModel.js` | New | Runs the raw SQL through `mysql2` |
+| `backend/controllers/dnaMatchController.js` | New | Pair validation, compare, create, review, delete |
+| `backend/routes/dnaMatchRoutes.js` | New | Endpoints plus role guards |
+| `backend/server.js` | Modified | Mounted `/api/dna-matches` |
+| `frontend/src/services/dnaService.js` | Modified | **Removed all mock match code.** Added real match API functions |
+| `frontend/src/components/MatchesList.jsx` | Modified | Removed the mock label. Links to match details, shows the provider and status badges |
+| `frontend/src/pages/Laboratory.jsx` | Modified | Real `Matches`, new `MatchForm`, real `MatchDetails`, `CodeComparison`. **Removed every remaining mock/DataContext helper** |
+| `frontend/src/routes/AppRoutes.jsx` | Modified | Added `/dna-matches/new` |
+
+## Table `dna_matches`
+
+| Column | Type | Notes |
+|---|---|---|
+| `match_id` | INT PK AUTO_INCREMENT | |
+| `unknown_sample_id` | INT NOT NULL | FK → `dna_samples`, `ON DELETE CASCADE` |
+| `matched_sample_id` | INT NOT NULL | FK → `dna_samples`, `ON DELETE CASCADE` |
+| `similarity_percentage` | DECIMAL(5,2) NOT NULL | `CHECK (BETWEEN 0 AND 100)` |
+| `confidence_level` | VARCHAR(10) | High / Medium / Low |
+| `match_date` | DATE | `CURDATE()` when created |
+| `match_status` | VARCHAR(20) | Pending Review (default) / Confirmed / Rejected |
+| `match_method` | VARCHAR(20) | Computed / Manual (extra column, so Option 1 and Option 2 can be told apart) |
+| `created_at`, `updated_at` | TIMESTAMP | Same pattern as the other tables |
+
+`UNIQUE (unknown_sample_id, matched_sample_id)` stops the same pair from being saved twice. The controller also checks the reversed pair.
+
+## API endpoints
+
+| Method | Endpoint | Roles | Purpose |
+|---|---|---|---|
+| GET | `/api/dna-matches` | Admin, Officer, Lab Technician | List (scoped). Filters: `status`, `confidence`, `person_id`, `case_id`, `sample_id` |
+| GET | `/api/dna-matches/:id` | Admin, Officer, Lab Technician | Details (scoped) |
+| POST | `/api/dna-matches/compare` | Admin, Officer, Lab Technician | **Preview**: runs the SQL comparison without saving. Also returns `existingMatchId` |
+| POST | `/api/dna-matches` | Admin, Officer, Lab Technician | Save a match. No `similarityPercentage` → Computed. With `similarityPercentage` → Manual (Admin/Officer only) |
+| PUT | `/api/dna-matches/:id/status` | Admin, Officer | Review: `Pending Review` → `Confirmed` / `Rejected` |
+| DELETE | `/api/dna-matches/:id` | Admin | Delete a wrong match (not allowed for Confirmed ones) |
+
+## Access and validation rules
+
+| Rule | Result |
+|---|---|
+| **View scope:** Admin sees all. An Officer sees a match if **either** sample's missing person is in their cases. A Technician sees it if **either** sample is in their lab | Out-of-scope → 404 |
+| **Compare/create:** the user must be able to access **both** samples (the Phase 1 sample scope is reused) | 404 "Unknown/Matched sample not found." |
+| Same sample twice | 400 |
+| The unknown sample is a **family reference** | 400. The unknown sample must be evidence or the missing person's own sample |
+| Either sample isn't `Analyzed` or has no profile code | 400 |
+| Pair already compared (either direction) | 409 |
+| Technician sends `similarityPercentage` | 403 "Only Admin and Officer can enter similarity manually." |
+| Manual similarity is not a number between 0 and 100 | 400 (rounded to 2 decimals) |
+| Review a match that isn't `Pending Review` | 409, so a review can't be changed afterwards |
+| Delete a `Confirmed` match | 409, because it is the evidence behind the identification |
+
+## Design decisions
+
+- **The comparison runs in SQL**, not JavaScript, so the matching logic is raw SQL as the project requires. `WITH RECURSIVE positions` generates the numbers 1…N. `SUBSTRING(code, pos, 1)` compares each position, and `SUM(...)` counts the positions that match.
+- **Unknown vs matched:** the unknown sample must have `family_id IS NULL` (evidence, or the missing person's own sample). The matched sample can be any analyzed sample, usually a family reference. In Phase 5, the trigger will mark the **matched sample's missing person** as Identified.
+- **Cross-case comparison is possible for Admin:** a sample from person A's case can be compared with a reference from person B. That is how an unknown person gets identified. Officers and technicians are limited to samples in their own scope.
+- **Review is a separate step** handled by Admin/Officer. It is an investigation decision, not a lab decision.
+- **All lab pages now use real data.** `Laboratory.jsx` no longer imports `useData`. The unused mock helpers (`sampleOwner`, `technicianLab`, `labCanAccessSample`, `describeSample`, `NotFound`, `AccessDenied`) were removed.
+
+---
+
+## 4.1 `database/sql/dna_matches.sql` (new)
+
+| Query | What it does |
+|---|---|
+| 0 | `CREATE TABLE dna_matches` with UNIQUE pair, CHECK on similarity, and 2 cascading FKs. (A CHECK on the FK columns isn't possible: MySQL doesn't allow it on columns used by `ON DELETE CASCADE`, so "same sample twice" is checked in the controller) |
+| 1 | **The comparison**: CTE `codes` puts both profile codes and the longer length in one row. The recursive CTE `positions` generates 1…max_length. `CROSS JOIN` + `SUM(SUBSTRING(a,pos,1) = SUBSTRING(b,pos,1))` counts matches, then `ROUND(... / max_length * 100, 2)` gives the similarity, and `CASE` gives the confidence |
+| 1b | Checks the spec example: `ABC12345` vs `ABC12346` = **87.50** |
+| 2 / 2b | INSERT a computed match / a manual match (Option 2) |
+| 3 | Admin view: `dna_samples` is joined **twice** (`u` = unknown, `ms` = matched), plus persons, family names and relationships |
+| 4 | Officer view: `EXISTS (... cf.officer_id = ? AND cf.person_id IN (u.person_id, ms.person_id))` |
+| 5 | Technician view: `u.lab_id IN (tech lab) OR ms.lab_id IN (tech lab)` |
+| 6 | Matches of one missing person (used by the Missing Person Details tab) |
+| 7 | Duplicate check in both directions |
+| 8 | Review UPDATE with `AND match_status = 'Pending Review'` |
+| 9–10 | Details + cleanup of the test rows |
+
+```sql
+-- =========================================================
+-- ForenTrace: DNA Matching Queries (Member 1 - Issue 4)
+-- File: database/sql/dna_matches.sql
+-- Ei file-er shob query age MySQL-e test kora hoyeche, tarpor
+-- backend/models/dnaMatchModel.js e mysql2 diye use kora hoyeche.
+--
+-- Matching logic (checkpoint/demo er jonno — real biological matching na):
+--   Duita sample er stored DNA profile code position-by-position compare kora hoy.
+--   similarity = (je position e character mile) / (boro code er length) * 100
+--   Example: ABC12345 vs ABC12346 → 8 tar moddhe 7 ta mile → 87.5%
+-- =========================================================
+
+USE forentrace_db;
+
+-- 0. Table: dna_matches
+-- Relationship:
+--   DNASample 1 : M DNAMatch (unknown_sample_id hishebe — evidence/unknown sample)
+--   DNASample 1 : M DNAMatch (matched_sample_id hishebe — reference sample)
+CREATE TABLE IF NOT EXISTS dna_matches (
+    match_id INT AUTO_INCREMENT PRIMARY KEY,
+    unknown_sample_id INT NOT NULL,          -- FK: je unknown/evidence sample er identity khuja hocche
+    matched_sample_id INT NOT NULL,          -- FK: jar sathe compare kora hoyeche (family reference ba onno sample)
+    similarity_percentage DECIMAL(5,2) NOT NULL, -- 0.00 - 100.00
+    confidence_level VARCHAR(10) NOT NULL,   -- High / Medium / Low (similarity theke ber kora)
+    match_date DATE NOT NULL,                -- kobe comparison kora hoyeche
+    match_status VARCHAR(20) NOT NULL DEFAULT 'Pending Review', -- Pending Review / Confirmed / Rejected
+    match_method VARCHAR(20) NOT NULL DEFAULT 'Computed',       -- Computed (profile code compare) / Manual (hat e similarity)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    -- Ek jora sample er match ekbar-i record hobe
+    CONSTRAINT uq_match_pair UNIQUE (unknown_sample_id, matched_sample_id),
+
+    -- Similarity 0 theke 100 er moddhe thakte hobe
+    CONSTRAINT chk_match_similarity CHECK (similarity_percentage BETWEEN 0 AND 100),
+
+    -- Sample delete hole tar match record o delete hobe
+    CONSTRAINT fk_match_unknown_sample
+        FOREIGN KEY (unknown_sample_id) REFERENCES dna_samples(sample_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_match_matched_sample
+        FOREIGN KEY (matched_sample_id) REFERENCES dna_samples(sample_id)
+        ON DELETE CASCADE
+);
+
+
+-- 1. Compare two samples (Option 1: string similarity in SQL)
+-- WITH RECURSIVE diye 1..N position er ekta list banano hoy (N = boro code er length),
+-- tarpor proti position e SUBSTRING diye character mile kina check kore SUM kora hoy.
+-- Unknown sample = 1 (John Doe er toothbrush evidence), Matched sample = 2 (father er reference)
+SET @unknown_sample_id = 1;
+SET @matched_sample_id = 2;
+
+WITH RECURSIVE
+codes AS (
+    -- Duita sample er profile code ek row te ana
+    SELECT
+        u.dna_profile_code AS unknown_code,
+        m.dna_profile_code AS matched_code,
+        GREATEST(CHAR_LENGTH(u.dna_profile_code), CHAR_LENGTH(m.dna_profile_code)) AS max_length
+    FROM dna_samples u
+    INNER JOIN dna_samples m ON m.sample_id = @matched_sample_id
+    WHERE u.sample_id = @unknown_sample_id
+),
+positions AS (
+    -- 1, 2, 3 ... max_length porjonto number generate (recursive CTE)
+    SELECT 1 AS pos
+    UNION ALL
+    SELECT p.pos + 1
+    FROM positions p
+    INNER JOIN codes c ON p.pos < c.max_length
+)
+SELECT
+    c.unknown_code,
+    c.matched_code,
+    c.max_length,
+    -- Ek position e duitar character same hole 1, noile 0 → SUM = koto position mile
+    SUM(SUBSTRING(c.unknown_code, p.pos, 1) = SUBSTRING(c.matched_code, p.pos, 1)) AS matching_positions,
+    ROUND(SUM(SUBSTRING(c.unknown_code, p.pos, 1) = SUBSTRING(c.matched_code, p.pos, 1)) / c.max_length * 100, 2) AS similarity_percentage,
+    -- Similarity theke confidence level
+    CASE
+        WHEN ROUND(SUM(SUBSTRING(c.unknown_code, p.pos, 1) = SUBSTRING(c.matched_code, p.pos, 1)) / c.max_length * 100, 2) >= 90 THEN 'High'
+        WHEN ROUND(SUM(SUBSTRING(c.unknown_code, p.pos, 1) = SUBSTRING(c.matched_code, p.pos, 1)) / c.max_length * 100, 2) >= 80 THEN 'Medium'
+        ELSE 'Low'
+    END AS confidence_level
+FROM codes c
+CROSS JOIN positions p
+GROUP BY c.unknown_code, c.matched_code, c.max_length;
+
+
+-- 1b. Spec er example verify: 'ABC12345' vs 'ABC12346' → 87.50
+WITH RECURSIVE
+codes AS (
+    SELECT 'ABC12345' AS unknown_code, 'ABC12346' AS matched_code, 8 AS max_length
+),
+positions AS (
+    SELECT 1 AS pos
+    UNION ALL
+    SELECT p.pos + 1 FROM positions p INNER JOIN codes c ON p.pos < c.max_length
+)
+SELECT
+    ROUND(SUM(SUBSTRING(c.unknown_code, p.pos, 1) = SUBSTRING(c.matched_code, p.pos, 1)) / c.max_length * 100, 2) AS similarity_percentage
+FROM codes c
+CROSS JOIN positions p
+GROUP BY c.unknown_code, c.matched_code, c.max_length;
+
+
+-- 2. Create DNA Match record (INSERT) — computed result save
+INSERT INTO dna_matches (
+    unknown_sample_id, matched_sample_id, similarity_percentage,
+    confidence_level, match_date, match_status, match_method
+) VALUES (
+    1, 3, 72.73, 'Low', CURDATE(), 'Pending Review', 'Computed'
+);
+SET @new_match_id = LAST_INSERT_ID();
+
+
+-- 2b. Option 2: Admin/Officer hat e similarity diye match create (Manual)
+INSERT INTO dna_matches (
+    unknown_sample_id, matched_sample_id, similarity_percentage,
+    confidence_level, match_date, match_status, match_method
+) VALUES (
+    5, 3, 85.00, 'Medium', CURDATE(), 'Pending Review', 'Manual'
+);
+SET @manual_match_id = LAST_INSERT_ID();
+
+
+-- 3. View all DNA matches with both sample details (Admin view)
+-- dna_samples table ke duibar JOIN (u = unknown, ms = matched) — self-join er moto alias
+SELECT
+    m.match_id,
+    m.unknown_sample_id,
+    CONCAT(up.first_name, ' ', up.last_name) AS unknown_person_name,
+    u.dna_profile_code AS unknown_profile_code,
+    m.matched_sample_id,
+    CONCAT(mp.first_name, ' ', mp.last_name) AS matched_person_name,
+    CONCAT(mf.first_name, ' ', mf.last_name) AS matched_family_name,
+    mf.relationship AS matched_family_relationship,
+    ms.dna_profile_code AS matched_profile_code,
+    m.similarity_percentage,
+    m.confidence_level,
+    m.match_date,
+    m.match_status,
+    m.match_method
+FROM dna_matches m
+INNER JOIN dna_samples u ON u.sample_id = m.unknown_sample_id
+INNER JOIN missing_persons up ON up.person_id = u.person_id
+INNER JOIN dna_samples ms ON ms.sample_id = m.matched_sample_id
+INNER JOIN missing_persons mp ON mp.person_id = ms.person_id
+LEFT JOIN family_members mf ON mf.family_id = ms.family_id
+ORDER BY m.match_id DESC;
+
+
+-- 4. Officer view: je match er kono ekta sample tar assigned case er (officer_id = 1)
+SELECT m.match_id, m.unknown_sample_id, m.matched_sample_id, m.similarity_percentage, m.match_status
+FROM dna_matches m
+INNER JOIN dna_samples u ON u.sample_id = m.unknown_sample_id
+INNER JOIN dna_samples ms ON ms.sample_id = m.matched_sample_id
+WHERE EXISTS (
+    SELECT 1
+    FROM case_files cf
+    WHERE cf.officer_id = 1
+      AND cf.person_id IN (u.person_id, ms.person_id)
+)
+ORDER BY m.match_id DESC;
+
+
+-- 5. Lab Technician view: je match er kono ekta sample tar lab er (user_id = 2 ba technician_id = 1)
+SELECT m.match_id, m.unknown_sample_id, m.matched_sample_id, m.similarity_percentage, m.match_status
+FROM dna_matches m
+INNER JOIN dna_samples u ON u.sample_id = m.unknown_sample_id
+INNER JOIN dna_samples ms ON ms.sample_id = m.matched_sample_id
+WHERE u.lab_id IN (SELECT lt.lab_id FROM lab_technicians lt WHERE lt.user_id = 2 OR lt.technician_id = 1)
+   OR ms.lab_id IN (SELECT lt.lab_id FROM lab_technicians lt WHERE lt.user_id = 2 OR lt.technician_id = 1)
+ORDER BY m.match_id DESC;
+
+
+-- 6. Ekta missing person er shob match (Missing Person Details → DNA Matches tab, person_id = 1)
+SELECT m.match_id, m.unknown_sample_id, m.matched_sample_id, m.similarity_percentage, m.confidence_level, m.match_status
+FROM dna_matches m
+INNER JOIN dna_samples u ON u.sample_id = m.unknown_sample_id
+INNER JOIN dna_samples ms ON ms.sample_id = m.matched_sample_id
+WHERE u.person_id = 1 OR ms.person_id = 1
+ORDER BY m.match_id DESC;
+
+
+-- 7. Duplicate check: ei duita sample age theke (je kono direction e) compare kora hoyeche kina
+SELECT match_id
+FROM dna_matches
+WHERE (unknown_sample_id = 1 AND matched_sample_id = 3)
+   OR (unknown_sample_id = 3 AND matched_sample_id = 1)
+LIMIT 1;
+
+
+-- 8. Review: match status update (Pending Review → Confirmed / Rejected)
+-- Shudhu 'Pending Review' match review kora jay (WHERE e check)
+UPDATE dna_matches
+SET match_status = 'Rejected'
+WHERE match_id = @new_match_id
+  AND match_status = 'Pending Review';
+
+
+-- 9. Single match details
+SELECT *
+FROM dna_matches
+WHERE match_id = @new_match_id;
+
+
+-- 10. Delete test matches (seed data jeno thik thake)
+DELETE FROM dna_matches
+WHERE match_id IN (@new_match_id, @manual_match_id);
+```
+
+## 4.2 `database/schema.sql` (modified)
+
+```diff
+@@ -227,4 +227,27 @@ CREATE TABLE IF NOT EXISTS dna_samples (
+     CONSTRAINT fk_sample_technician
+         FOREIGN KEY (technician_id) REFERENCES lab_technicians(technician_id)
+         ON DELETE RESTRICT
++);
++
++-- DNA Matches Table (Member 1 - Issue 4)
++-- Raw SQL + query gulo: database/sql/dna_matches.sql
++CREATE TABLE IF NOT EXISTS dna_matches (
++    match_id INT AUTO_INCREMENT PRIMARY KEY,
++    unknown_sample_id INT NOT NULL,          -- FK: unknown/evidence sample
++    matched_sample_id INT NOT NULL,          -- FK: reference sample
++    similarity_percentage DECIMAL(5,2) NOT NULL,
++    confidence_level VARCHAR(10) NOT NULL,   -- High / Medium / Low
++    match_date DATE NOT NULL,
++    match_status VARCHAR(20) NOT NULL DEFAULT 'Pending Review', -- Pending Review / Confirmed / Rejected
++    match_method VARCHAR(20) NOT NULL DEFAULT 'Computed',       -- Computed / Manual
++    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
++    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
++    CONSTRAINT uq_match_pair UNIQUE (unknown_sample_id, matched_sample_id),
++    CONSTRAINT chk_match_similarity CHECK (similarity_percentage BETWEEN 0 AND 100),
++    CONSTRAINT fk_match_unknown_sample
++        FOREIGN KEY (unknown_sample_id) REFERENCES dna_samples(sample_id)
++        ON DELETE CASCADE,
++    CONSTRAINT fk_match_matched_sample
++        FOREIGN KEY (matched_sample_id) REFERENCES dna_samples(sample_id)
++        ON DELETE CASCADE
+ );
+\ No newline at end of file
+```
+
+## 4.3 `database/seed.sql` (modified)
+
+Match 1 is **Pending Review** on purpose, so Phase 5's trigger can be demonstrated by confirming it.
+
+```diff
+@@ -84,4 +84,16 @@ INSERT INTO dna_samples (
+ (4, 2, 3, 2, 3, 'Buccal Swab', '2026-05-15', 'Freezer B-02', 'Reference sample from brother', NULL, NULL, 'Awaiting Analysis'),
+ (5, 2, NULL, 2, 3, 'Hair Strand', '2026-05-14', 'Evidence Room B-04', 'Hair strand from hostel room', '2026-05-20', 'DNA8C114A90', 'Analyzed'),
+ (6, 3, NULL, 3, 4, 'Bone Sample', '2026-01-25', 'Evidence Room C-01', 'Recovered remains sample', '2026-02-02', 'DNA5B7E20D1', 'Analyzed')
+-ON DUPLICATE KEY UPDATE sample_id = sample_id;
+\ No newline at end of file
++ON DUPLICATE KEY UPDATE sample_id = sample_id;
++
++-- Seed Data for dna_matches (Member 1 - Issue 4)
++-- Similarity gulo database/sql/dna_matches.sql er comparison query diye ber kora:
++--   Sample 1 (DNA7F2A91C4) vs Sample 2 (DNA7F2A91C9) = 10/11 = 90.91% High   (John Doe evidence vs father)
++--   Sample 5 (DNA8C114A90) vs Sample 2 (DNA7F2A91C9) =  3/11 = 27.27% Low    (Jane Smith evidence vs John er father)
++INSERT INTO dna_matches (
++    match_id, unknown_sample_id, matched_sample_id, similarity_percentage,
++    confidence_level, match_date, match_status, match_method
++) VALUES
++(1, 1, 2, 90.91, 'High', '2026-03-02', 'Pending Review', 'Computed'),
++(2, 5, 2, 27.27, 'Low', '2026-05-21', 'Rejected', 'Computed')
++ON DUPLICATE KEY UPDATE match_id = match_id;
+\ No newline at end of file
+```
+
+---
+
+## 4.4 `backend/models/dnaMatchModel.js` (new)
+
+| Function | What it does |
+|---|---|
+| `matchSelect` | Joined SELECT: the match + both samples (person name, family name/relationship, sample type, profile code, lab) |
+| `scopeCondition(user)` | Role filter: Officer → `EXISTS` on `case_files`. Technician → lab subquery on either sample |
+| `findAllMatches(filters, user)` | List with `status` / `confidence` / `personId` / `caseId` / `sampleId` filters + scope |
+| `findMatchById(id, user)` | One match, or `null` if missing or out of scope |
+| `compareProfileCodes(unknownId, matchedId)` | Runs **query 1** (recursive CTE) and returns codes, length, matching positions and similarity |
+| `findMatchBetween(a, b)` | Query 7: duplicate check in both directions |
+| `createMatch(values)` | INSERT with `CURDATE()` and `'Pending Review'`, then returns the joined row |
+| `updateMatchStatus(id, status)` | Query 8 (only updates a Pending Review match) |
+| `deleteMatchById(id)` | DELETE |
+
+```js
+import pool from '../config/db.js' // MySQL connection pool import kora holo
+// Shob query age database/sql/dna_matches.sql e raw SQL hishebe test kora hoyeche
+
+// Reusable joined SELECT: match + duita sample (unknown = u, matched = ms) er person, family, lab info
+// dna_samples table duibar JOIN kora hoyeche alada alias diye
+const matchSelect = `
+  SELECT
+    m.match_id,
+    m.unknown_sample_id,
+    m.matched_sample_id,
+    m.similarity_percentage,
+    m.confidence_level,
+    m.match_date,
+    m.match_status,
+    m.match_method,
+    u.person_id AS unknown_person_id,
+    CONCAT(up.first_name, ' ', up.last_name) AS unknown_person_name,
+    u.family_id AS unknown_family_id,
+    CONCAT(uf.first_name, ' ', uf.last_name) AS unknown_family_name,
+    uf.relationship AS unknown_family_relationship,
+    u.sample_type AS unknown_sample_type,
+    u.dna_profile_code AS unknown_profile_code,
+    ul.lab_name AS unknown_lab_name,
+    ms.person_id AS matched_person_id,
+    CONCAT(mp.first_name, ' ', mp.last_name) AS matched_person_name,
+    mp.status AS matched_person_status,
+    ms.family_id AS matched_family_id,
+    CONCAT(mf.first_name, ' ', mf.last_name) AS matched_family_name,
+    mf.relationship AS matched_family_relationship,
+    ms.sample_type AS matched_sample_type,
+    ms.dna_profile_code AS matched_profile_code,
+    ml.lab_name AS matched_lab_name
+  FROM dna_matches m
+  INNER JOIN dna_samples u ON u.sample_id = m.unknown_sample_id
+  INNER JOIN missing_persons up ON up.person_id = u.person_id
+  LEFT JOIN family_members uf ON uf.family_id = u.family_id
+  LEFT JOIN dna_labs ul ON ul.lab_id = u.lab_id
+  INNER JOIN dna_samples ms ON ms.sample_id = m.matched_sample_id
+  INNER JOIN missing_persons mp ON mp.person_id = ms.person_id
+  LEFT JOIN family_members mf ON mf.family_id = ms.family_id
+  LEFT JOIN dna_labs ml ON ml.lab_id = ms.lab_id
+`
+
+// Role onujayi match dekhar SQL condition — match er JE KONO ekta sample user er scope e thakle dekhbe
+function scopeCondition(user) {
+  if (!user || user.role === 'Admin') {
+    return { sql: '', params: [] } // Admin shob match dekhbe
+  }
+
+  if (user.role === 'Officer') {
+    // Kono ekta sample er missing person officer er assigned case e thakle
+    return {
+      sql: ` AND EXISTS (
+        SELECT 1 FROM case_files cf_scope
+        WHERE cf_scope.officer_id = ?
+          AND cf_scope.person_id IN (u.person_id, ms.person_id)
+      )`,
+      params: [user.officerId ?? 0],
+    }
+  }
+
+  if (user.role === 'Lab Technician') {
+    // Kono ekta sample technician er lab e thakle
+    const labSubquery = 'SELECT lt_scope.lab_id FROM lab_technicians lt_scope WHERE lt_scope.user_id = ? OR lt_scope.technician_id = ?'
+    return {
+      sql: ` AND (u.lab_id IN (${labSubquery}) OR ms.lab_id IN (${labSubquery}))`,
+      params: [user.userId ?? 0, user.technicianId ?? 0, user.userId ?? 0, user.technicianId ?? 0],
+    }
+  }
+
+  return { sql: ' AND 1 = 0', params: [] } // Unknown role → kichu na
+}
+
+// Shob match list (filter + role scope)
+export async function findAllMatches({ status, confidence, personId, caseId, sampleId } = {}, user = null) {
+  let sql = `${matchSelect} WHERE 1 = 1`
+  const params = []
+
+  if (status) {
+    sql += ' AND m.match_status = ?'
+    params.push(status)
+  }
+
+  if (confidence) {
+    sql += ' AND m.confidence_level = ?'
+    params.push(confidence)
+  }
+
+  if (personId) {
+    // Missing person er kono sample (unknown ba matched) thakle
+    sql += ' AND (u.person_id = ? OR ms.person_id = ?)'
+    params.push(personId, personId)
+  }
+
+  if (caseId) {
+    // Case er missing person er kono sample thakle
+    sql += ' AND EXISTS (SELECT 1 FROM case_files cf_filter WHERE cf_filter.case_id = ? AND cf_filter.person_id IN (u.person_id, ms.person_id))'
+    params.push(caseId)
+  }
+
+  if (sampleId) {
+    sql += ' AND (m.unknown_sample_id = ? OR m.matched_sample_id = ?)'
+    params.push(sampleId, sampleId)
+  }
+
+  const scope = scopeCondition(user)
+  sql += scope.sql
+  params.push(...scope.params)
+
+  sql += ' ORDER BY m.match_id DESC'
+
+  const [rows] = await pool.execute(sql, params)
+  return rows
+}
+
+// Ekta match er details (scope shoho) — access na thakle null
+export async function findMatchById(id, user = null) {
+  const scope = scopeCondition(user)
+  const [rows] = await pool.execute(
+    `${matchSelect} WHERE m.match_id = ?${scope.sql} LIMIT 1`,
+    [id, ...scope.params]
+  )
+
+  return rows[0] || null
+}
+
+// Option 1: duita sample er DNA profile code position-by-position compare (recursive CTE — dna_matches.sql query 1)
+// similarity = mile jawa position / boro code er length * 100
+export async function compareProfileCodes(unknownSampleId, matchedSampleId) {
+  const [rows] = await pool.execute(
+    `
+    WITH RECURSIVE
+    codes AS (
+      SELECT
+        u.dna_profile_code AS unknown_code,
+        m.dna_profile_code AS matched_code,
+        GREATEST(CHAR_LENGTH(u.dna_profile_code), CHAR_LENGTH(m.dna_profile_code)) AS max_length
+      FROM dna_samples u
+      INNER JOIN dna_samples m ON m.sample_id = ?
+      WHERE u.sample_id = ?
+    ),
+    positions AS (
+      SELECT 1 AS pos
+      UNION ALL
+      SELECT p.pos + 1
+      FROM positions p
+      INNER JOIN codes c ON p.pos < c.max_length
+    )
+    SELECT
+      c.unknown_code,
+      c.matched_code,
+      c.max_length,
+      SUM(SUBSTRING(c.unknown_code, p.pos, 1) = SUBSTRING(c.matched_code, p.pos, 1)) AS matching_positions,
+      ROUND(SUM(SUBSTRING(c.unknown_code, p.pos, 1) = SUBSTRING(c.matched_code, p.pos, 1)) / c.max_length * 100, 2) AS similarity_percentage
+    FROM codes c
+    CROSS JOIN positions p
+    GROUP BY c.unknown_code, c.matched_code, c.max_length
+    `,
+    [matchedSampleId, unknownSampleId]
+  )
+
+  return rows[0] || null
+}
+
+// Ei duita sample age theke (je kono direction e) compare kora hoyeche kina
+export async function findMatchBetween(sampleA, sampleB) {
+  const [rows] = await pool.execute(
+    `
+    SELECT match_id
+    FROM dna_matches
+    WHERE (unknown_sample_id = ? AND matched_sample_id = ?)
+       OR (unknown_sample_id = ? AND matched_sample_id = ?)
+    LIMIT 1
+    `,
+    [sampleA, sampleB, sampleB, sampleA]
+  )
+
+  return rows[0] || null
+}
+
+// Notun match record save — status shob somoy 'Pending Review' diye shuru
+export async function createMatch({ unknownSampleId, matchedSampleId, similarityPercentage, confidenceLevel, matchMethod }) {
+  const [result] = await pool.execute(
+    `
+    INSERT INTO dna_matches
+      (unknown_sample_id, matched_sample_id, similarity_percentage, confidence_level, match_date, match_status, match_method)
+    VALUES (?, ?, ?, ?, CURDATE(), 'Pending Review', ?)
+    `,
+    [unknownSampleId, matchedSampleId, similarityPercentage, confidenceLevel, matchMethod]
+  )
+
+  return findMatchById(result.insertId)
+}
+
+// Review: shudhu 'Pending Review' match Confirmed/Rejected kora jay (WHERE e check)
+export async function updateMatchStatus(id, matchStatus) {
+  const [result] = await pool.execute(
+    `
+    UPDATE dna_matches
+    SET match_status = ?
+    WHERE match_id = ?
+      AND match_status = 'Pending Review'
+    `,
+    [matchStatus, id]
+  )
+
+  return result.affectedRows
+}
+
+// Match delete
+export async function deleteMatchById(id) {
+  const [result] = await pool.execute(
+    'DELETE FROM dna_matches WHERE match_id = ?',
+    [id]
+  )
+
+  return result.affectedRows
+}
+```
+
+## 4.5 `backend/controllers/dnaMatchController.js` (new)
+
+| Function | What it does |
+|---|---|
+| `confidenceFor(similarity)` | 90/80 thresholds (same as the SQL `CASE`) |
+| `formatMatch(row)` | API object with camelCase + snake_case keys (the snake_case ones are for `MatchesList`) and nested `unknownSample` / `matchedSample` objects with a readable `provider` |
+| `validatePair(body, user)` | Both ids present and different → both samples in the user's scope (reuses `dnaSampleModel.findSampleById`) → unknown is not a family reference → both Analyzed with a profile code |
+| `listMatches` / `getMatch` | Filters validated, scoped queries |
+| `compareSamples` | Validate → SQL comparison → returns the preview + `existingMatchId` |
+| `createMatch` | Validate → duplicate check → **Manual** (Admin/Officer, 0–100) or **Computed** (SQL) → insert. `ER_DUP_ENTRY` → 409 |
+| `reviewMatch` | Only Confirmed/Rejected, only from Pending Review, scoped |
+| `deleteMatch` | Admin only; Confirmed matches are protected |
+
+```js
+import {
+  findAllMatches,
+  findMatchById,
+  compareProfileCodes,
+  findMatchBetween,
+  createMatch as dbCreateMatch,
+  updateMatchStatus as dbUpdateMatchStatus,
+  deleteMatchById as dbDeleteMatch,
+} from '../models/dnaMatchModel.js'
+import { findSampleById } from '../models/dnaSampleModel.js' // sample access check er jonno reuse
+
+// Match er allowed status ar confidence value
+export const MATCH_STATUSES = ['Pending Review', 'Confirmed', 'Rejected']
+const REVIEW_STATUSES = ['Confirmed', 'Rejected'] // review e ei duita te change kora jay
+const CONFIDENCE_LEVELS = ['High', 'Medium', 'Low']
+
+// Similarity theke confidence level (dna_matches.sql er CASE er sathe same threshold)
+function confidenceFor(similarity) {
+  if (similarity >= 90) return 'High'
+  if (similarity >= 80) return 'Medium'
+  return 'Low'
+}
+
+// Database er DATE ke YYYY-MM-DD format e convert
+function formatDate(value) {
+  if (!value) return null
+  if (typeof value === 'string') return value.slice(0, 10)
+
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+// Sample ta kar — family reference hole "Name (Relationship)", noile missing person er naam
+function sampleProvider(familyName, relationship, personName) {
+  return familyName ? `${familyName} (${relationship})` : personName
+}
+
+// Database row ke API response object e convert (camelCase + snake_case — MatchesList component er jonno)
+export function formatMatch(row) {
+  if (!row) return null
+
+  const similarity = Number(row.similarity_percentage)
+
+  return {
+    id: row.match_id,
+    matchId: row.match_id,
+    match_id: row.match_id,
+    unknownSampleId: row.unknown_sample_id,
+    unknown_sample_id: row.unknown_sample_id,
+    matchedSampleId: row.matched_sample_id,
+    matched_sample_id: row.matched_sample_id,
+    similarityPercentage: similarity,
+    similarity_percentage: similarity,
+    confidenceLevel: row.confidence_level,
+    confidence_level: row.confidence_level,
+    matchDate: formatDate(row.match_date),
+    match_date: formatDate(row.match_date),
+    matchStatus: row.match_status,
+    match_status: row.match_status,
+    matchMethod: row.match_method,
+    // Unknown (evidence) sample er info
+    unknownSample: {
+      id: row.unknown_sample_id,
+      personId: row.unknown_person_id,
+      personName: row.unknown_person_name,
+      provider: sampleProvider(row.unknown_family_name, row.unknown_family_relationship, row.unknown_person_name),
+      sampleType: row.unknown_sample_type,
+      profileCode: row.unknown_profile_code,
+      labName: row.unknown_lab_name,
+    },
+    // Matched (reference) sample er info
+    matchedSample: {
+      id: row.matched_sample_id,
+      personId: row.matched_person_id,
+      personName: row.matched_person_name,
+      personStatus: row.matched_person_status,
+      provider: sampleProvider(row.matched_family_name, row.matched_family_relationship, row.matched_person_name),
+      isFamilyReference: Boolean(row.matched_family_id),
+      sampleType: row.matched_sample_type,
+      profileCode: row.matched_profile_code,
+      labName: row.matched_lab_name,
+    },
+  }
+}
+
+// URL/body theke asha id valid positive integer kina
+function parseId(value) {
+  const id = Number(value)
+  if (!Number.isInteger(id) || id <= 0) return null
+  return id
+}
+
+// snake_case ba camelCase — je kono naam er field pora
+function readField(body, ...names) {
+  for (const name of names) {
+    if (Object.prototype.hasOwnProperty.call(body, name)) {
+      return { provided: true, value: body[name] }
+    }
+  }
+
+  return { provided: false, value: undefined }
+}
+
+// Compare/create er age duita sample check kore — error thakle { status, message }
+async function validatePair(body, user) {
+  const unknownSampleId = parseId(readField(body, 'unknown_sample_id', 'unknownSampleId').value)
+  const matchedSampleId = parseId(readField(body, 'matched_sample_id', 'matchedSampleId').value)
+
+  if (!unknownSampleId || !matchedSampleId) {
+    return { error: { status: 400, message: 'Unknown sample ID and matched sample ID are required.' } }
+  }
+
+  if (unknownSampleId === matchedSampleId) {
+    return { error: { status: 400, message: 'A sample cannot be compared with itself.' } }
+  }
+
+  // User er scope e na thakle null ashbe (officer = nijer case, technician = nijer lab)
+  const unknown = await findSampleById(unknownSampleId, user)
+  if (!unknown) {
+    return { error: { status: 404, message: 'Unknown sample not found.' } }
+  }
+
+  const matched = await findSampleById(matchedSampleId, user)
+  if (!matched) {
+    return { error: { status: 404, message: 'Matched sample not found.' } }
+  }
+
+  // Unknown sample hobe evidence/missing person er sample — family reference na
+  if (unknown.family_id) {
+    return { error: { status: 400, message: 'The unknown sample must be a missing person / evidence sample, not a family reference.' } }
+  }
+
+  // Analysis chara profile code thake na — compare kora jabe na
+  if (unknown.status !== 'Analyzed' || !unknown.dna_profile_code || matched.status !== 'Analyzed' || !matched.dna_profile_code) {
+    return { error: { status: 400, message: 'Both samples must be analyzed with a DNA profile code before comparison.' } }
+  }
+
+  return { unknownSampleId, matchedSampleId }
+}
+
+// GET /api/dna-matches — role onujayi scoped match list
+export async function listMatches(req, res) {
+  try {
+    const status = req.query.status?.trim() || ''
+    const confidence = req.query.confidence?.trim() || ''
+
+    if (status && !MATCH_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid match status filter.' })
+    }
+
+    if (confidence && !CONFIDENCE_LEVELS.includes(confidence)) {
+      return res.status(400).json({ success: false, message: 'Invalid confidence filter.' })
+    }
+
+    const matches = await findAllMatches(
+      {
+        status: status || undefined,
+        confidence: confidence || undefined,
+        personId: parseId(req.query.person_id ?? req.query.personId) || undefined,
+        caseId: parseId(req.query.case_id ?? req.query.caseId) || undefined,
+        sampleId: parseId(req.query.sample_id ?? req.query.sampleId) || undefined,
+      },
+      req.session.user
+    )
+
+    return res.status(200).json({ success: true, matches: matches.map(formatMatch) })
+  } catch (error) {
+    console.error('List DNA matches error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+// GET /api/dna-matches/:id — ekta match er details
+export async function getMatch(req, res) {
+  try {
+    const id = parseId(req.params.id)
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Invalid match id.' })
+    }
+
+    const match = await findMatchById(id, req.session.user)
+    if (!match) {
+      return res.status(404).json({ success: false, message: 'DNA match not found.' })
+    }
+
+    return res.status(200).json({ success: true, match: formatMatch(match) })
+  } catch (error) {
+    console.error('Get DNA match error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+// POST /api/dna-matches/compare — shudhu comparison result dekhay (save kore na) — preview er jonno
+export async function compareSamples(req, res) {
+  try {
+    const pair = await validatePair(req.body || {}, req.session.user)
+    if (pair.error) {
+      return res.status(pair.error.status).json({ success: false, message: pair.error.message })
+    }
+
+    const result = await compareProfileCodes(pair.unknownSampleId, pair.matchedSampleId)
+    const similarity = Number(result.similarity_percentage)
+    const existing = await findMatchBetween(pair.unknownSampleId, pair.matchedSampleId) // age save kora ache kina
+
+    return res.status(200).json({
+      success: true,
+      comparison: {
+        unknownSampleId: pair.unknownSampleId,
+        matchedSampleId: pair.matchedSampleId,
+        unknownProfileCode: result.unknown_code,
+        matchedProfileCode: result.matched_code,
+        codeLength: Number(result.max_length),
+        matchingPositions: Number(result.matching_positions),
+        similarityPercentage: similarity,
+        confidenceLevel: confidenceFor(similarity),
+        existingMatchId: existing?.match_id ?? null,
+      },
+    })
+  } catch (error) {
+    console.error('Compare DNA samples error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+// POST /api/dna-matches — match record create
+// Option 1: similarity na dile SQL diye compute (Computed)
+// Option 2: Admin/Officer similarityPercentage dile sheta use (Manual)
+export async function createMatch(req, res) {
+  try {
+    const body = req.body || {}
+    const user = req.session.user
+
+    const pair = await validatePair(body, user)
+    if (pair.error) {
+      return res.status(pair.error.status).json({ success: false, message: pair.error.message })
+    }
+
+    // Same jora age compare kora thakle notun record na
+    if (await findMatchBetween(pair.unknownSampleId, pair.matchedSampleId)) {
+      return res.status(409).json({ success: false, message: 'These two samples have already been compared.' })
+    }
+
+    const manualField = readField(body, 'similarity_percentage', 'similarityPercentage')
+    const isManual = manualField.provided && manualField.value !== null && manualField.value !== ''
+
+    let similarity
+    if (isManual) {
+      // Manual similarity shudhu Admin/Officer dite parbe — technician ke compute use korte hobe
+      if (user.role === 'Lab Technician') {
+        return res.status(403).json({ success: false, message: 'Only Admin and Officer can enter similarity manually.' })
+      }
+
+      similarity = Number(manualField.value)
+      if (!Number.isFinite(similarity) || similarity < 0 || similarity > 100) {
+        return res.status(400).json({ success: false, message: 'Similarity percentage must be a number between 0 and 100.' })
+      }
+      similarity = Math.round(similarity * 100) / 100 // DECIMAL(5,2) er jonno 2 decimal
+    } else {
+      const result = await compareProfileCodes(pair.unknownSampleId, pair.matchedSampleId)
+      similarity = Number(result.similarity_percentage)
+    }
+
+    const match = await dbCreateMatch({
+      unknownSampleId: pair.unknownSampleId,
+      matchedSampleId: pair.matchedSampleId,
+      similarityPercentage: similarity,
+      confidenceLevel: confidenceFor(similarity),
+      matchMethod: isManual ? 'Manual' : 'Computed',
+    })
+
+    return res.status(201).json({
+      success: true,
+      message: 'DNA match recorded successfully.',
+      match: formatMatch(match),
+    })
+  } catch (error) {
+    console.error('Create DNA match error:', error)
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ success: false, message: 'These two samples have already been compared.' })
+    }
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+// PUT /api/dna-matches/:id/status — review: Pending Review → Confirmed / Rejected
+// (Issue 5 er trigger 'Confirmed' hole missing person ke 'Identified' korbe)
+export async function reviewMatch(req, res) {
+  try {
+    const id = parseId(req.params.id)
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Invalid match id.' })
+    }
+
+    const matchStatus = typeof req.body?.matchStatus === 'string'
+      ? req.body.matchStatus.trim()
+      : typeof req.body?.match_status === 'string' ? req.body.match_status.trim() : ''
+
+    if (!REVIEW_STATUSES.includes(matchStatus)) {
+      return res.status(400).json({ success: false, message: 'Match status must be Confirmed or Rejected.' })
+    }
+
+    const existing = await findMatchById(id, req.session.user)
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'DNA match not found.' })
+    }
+
+    // Ekbar review hoye gele abar change kora jabe na
+    if (existing.match_status !== 'Pending Review') {
+      return res.status(409).json({ success: false, message: 'Only matches pending review can be updated.' })
+    }
+
+    await dbUpdateMatchStatus(id, matchStatus)
+    const match = await findMatchById(id)
+
+    return res.status(200).json({
+      success: true,
+      message: `DNA match ${matchStatus.toLowerCase()}.`,
+      match: formatMatch(match),
+    })
+  } catch (error) {
+    console.error('Review DNA match error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+// DELETE /api/dna-matches/:id — shudhu Admin, ar Confirmed match delete kora jabe na
+export async function deleteMatch(req, res) {
+  try {
+    const id = parseId(req.params.id)
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Invalid match id.' })
+    }
+
+    const existing = await findMatchById(id)
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'DNA match not found.' })
+    }
+
+    // Confirmed match identification er proof — delete kora jabe na
+    if (existing.match_status === 'Confirmed') {
+      return res.status(409).json({ success: false, message: 'Confirmed matches cannot be deleted.' })
+    }
+
+    await dbDeleteMatch(id)
+
+    return res.status(200).json({ success: true, message: 'DNA match deleted successfully.' })
+  } catch (error) {
+    console.error('Delete DNA match error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+```
+
+## 4.6 `backend/routes/dnaMatchRoutes.js` (new)
+
+```js
+import express from 'express'
+
+import {
+  listMatches,
+  getMatch,
+  compareSamples,
+  createMatch,
+  reviewMatch,
+  deleteMatch,
+} from '../controllers/dnaMatchController.js'
+import { requireAuth } from '../middleware/authMiddleware.js'
+import { requireRole } from '../middleware/roleMiddleware.js'
+
+const router = express.Router()
+
+// Tinjonei match dekhte parbe (controller role onujayi filter kore)
+router.get('/', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), listMatches)
+router.get('/:id', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), getMatch)
+
+// Technician/officer/admin duita sample select kore comparison run korte parbe
+router.post('/compare', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), compareSamples)
+router.post('/', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), createMatch)
+
+// Match confirm/reject — investigation er decision, tai shudhu Admin + Officer
+router.put('/:id/status', requireAuth, requireRole('Admin', 'Officer'), reviewMatch)
+
+// Vul match record delete — shudhu Admin
+router.delete('/:id', requireAuth, requireRole('Admin'), deleteMatch)
+
+export default router
+```
+
+## 4.7 `backend/server.js` (modified)
+
+```diff
+@@ -19,6 +19,7 @@ import familyMemberRoutes from './routes/familyMemberRoutes.js';
+ import reportRoutes from './routes/reportRoutes.js'
+ import adminStatsRoutes from './routes/adminStatsRoutes.js'
+ import dnaSampleRoutes from './routes/dnaSampleRoutes.js' // DNA Sample module (Member 1 - Issue 1)
++import dnaMatchRoutes from './routes/dnaMatchRoutes.js' // DNA Match module (Member 1 - Issue 4)
+ 
+ const app = express()
+ 
+@@ -59,6 +60,7 @@ app.use('/api/family-members', familyMemberRoutes);
+ app.use('/api/reports', reportRoutes)
+ app.use('/api/admin/counts', adminStatsRoutes)
+ app.use('/api/dna-samples', dnaSampleRoutes) // DNA sample CRUD endpoints
++app.use('/api/dna-matches', dnaMatchRoutes) // DNA comparison + match endpoints
+ 
+ async function startServer() {
+   try {
+```
+
+---
+
+## 4.8 `frontend/src/services/dnaService.js` (modified)
+
+The mock `USE_MOCK_MATCHES`, `isMockDna` and `buildMatches` were removed. `getMatchesByPerson` / `getMatchesByCase` now call the real API, so the **Missing Person Details → DNA Matches tab now shows real data**.
+
+```diff
+@@ -1,26 +1,6 @@
+ import api from './api'
+ 
+-// dnaService: DNA sample gulo ekhon real backend (/api/dna-samples) theke ashe.
+-// DNA match API Issue 4 e toiri hobe — totokkhon match gulo mock thakbe.
+-const USE_MOCK_MATCHES = true
+-
+-// Match data ekhono mock kina (MatchesList e "(Sample data)" label dekhanor jonno)
+-export const isMockDna = () => USE_MOCK_MATCHES
+-
+-function buildMatches(id) {
+-  const matchKey = id ?? 'ANY'
+-  const seed = Number(id) || 1
+-  const similarity = 70 + (seed * 7) % 30
+-  return [{
+-    match_id: `MOCK-M-${matchKey}-1`,
+-    unknown_sample_id: `MOCK-S-${matchKey}-1`,
+-    matched_sample_id: `MOCK-S-${matchKey}-2`,
+-    similarity_percentage: similarity,
+-    confidence_level: similarity >= 90 ? 'High' : similarity >= 80 ? 'Medium' : 'Low',
+-    match_date: '2026-09-01',
+-    match_status: 'Pending Review',
+-  }]
+-}
++// dnaService: DNA sample (/api/dna-samples) ar DNA match (/api/dna-matches) — duitai real backend theke ashe.
+ 
+ // ---------- DNA Samples (real API) ----------
+ 
+@@ -100,26 +80,55 @@ export async function getTechnicians() {
+   return response.data.data ?? []
+ }
+ 
+-// ---------- DNA Matches (Issue 4 porjonto mock) ----------
++// ---------- DNA Matches (real API — Issue 4) ----------
+ 
+-export async function getMatchesByPerson(personId) {
+-  if (USE_MOCK_MATCHES) {
+-    return Promise.resolve(buildMatches(personId))
+-  }
++// Match list — params: { status, confidence, person_id, case_id, sample_id }
++export async function getMatches(params = {}) {
++  const response = await api.get('/dna-matches', { params })
++  return response.data.matches ?? []
++}
+ 
+-  // TODO: Member 1 - Issue 4 e /api/dna-matches toiri hole connect hobe
+-  throw new Error('dnaService: dna matches API not implemented')
++// Ekta match er details
++export async function getMatchById(id) {
++  const response = await api.get(`/dna-matches/${id}`)
++  return response.data.match
+ }
+ 
++// Duita sample compare (save kore na) — { unknownSampleId, matchedSampleId }
++export async function compareSamples(data) {
++  const response = await api.post('/dna-matches/compare', data)
++  return response.data.comparison
++}
++
++// Match save — similarityPercentage dile Manual (Admin/Officer), na dile Computed
++export async function createMatch(data) {
++  const response = await api.post('/dna-matches', data)
++  return response.data.match
++}
++
++// Review: 'Confirmed' ba 'Rejected'
++export async function updateMatchStatus(id, matchStatus) {
++  const response = await api.put(`/dna-matches/${id}/status`, { matchStatus })
++  return response.data.match
++}
++
++// Match delete (Admin)
++export async function deleteMatch(id) {
++  const response = await api.delete(`/dna-matches/${id}`)
++  return response.data
++}
++
++// Missing person details page er DNA Matches tab er jonno
++export async function getMatchesByPerson(personId) {
++  return getMatches({ person_id: personId })
++}
++
++// Case details page er DNA Matches section er jonno
+ export async function getMatchesByCase(caseId) {
+-  if (USE_MOCK_MATCHES) {
+-    return Promise.resolve(buildMatches(caseId))
+-  }
+-  throw new Error('dnaService: dna matches API not implemented')
++  return getMatches({ case_id: caseId })
+ }
+ 
+ export default {
+-  isMockDna,
+   getSamples,
+   getSampleById,
+   createSample,
+@@ -132,6 +141,12 @@ export default {
+   getLabSummary,
+   getLabs,
+   getTechnicians,
++  getMatches,
++  getMatchById,
++  compareSamples,
++  createMatch,
++  updateMatchStatus,
++  deleteMatch,
+   getMatchesByPerson,
+   getMatchesByCase,
+ }
+```
+
+## 4.9 `frontend/src/components/MatchesList.jsx` (modified)
+
+```jsx
+import React from 'react'
+import { Link } from 'react-router-dom'
+import { StatusBadge } from './Ui'
+
+// Match gulo ekhon real API (/api/dna-matches) theke ashe, tai "(Sample data)" mock label ar lagbe na
+// Match ID te click korle match details page e jabe
+export default function MatchesList({ matches = [] }) {
+  if (!matches || !matches.length) return <div className="alert alert-secondary">No DNA matches available.</div>
+
+  return (
+    <div>
+      <div className="mb-2 small text-muted">DNA Matches</div>
+      <div className="table-responsive">
+        <table className="table table-sm">
+          <thead>
+            <tr><th>Match</th><th>Unknown</th><th>Matched</th><th>Similarity</th><th>Confidence</th><th>Date</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {matches.map(m => (
+              <tr key={m.match_id}>
+                <td><Link to={`/dna-matches/${m.match_id}`}>#{m.match_id}</Link></td>
+                <td>#{m.unknown_sample_id}{m.unknownSample && <small className="d-block text-secondary">{m.unknownSample.provider}</small>}</td>
+                <td>#{m.matched_sample_id}{m.matchedSample && <small className="d-block text-secondary">{m.matchedSample.provider}</small>}</td>
+                <td>{m.similarity_percentage}%</td>
+                <td><StatusBadge value={m.confidence_level}/></td>
+                <td>{m.match_date}</td>
+                <td><StatusBadge value={m.match_status}/></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+```
+
+## 4.10 `frontend/src/pages/Laboratory.jsx` (modified)
+
+**Other changes in this file:**
+
+- the imports now include the match functions from `dnaService`;
+- `import { useData }` and the mock helpers `sampleOwner`, `technicianLab`, `labCanAccessSample`, `describeSample`, `NotFound` and `AccessDenied` were **removed**;
+- `SampleDetails` has a new **Compare** button for analyzed evidence samples, linking to `/dna-matches/new?unknownSampleId=ID`:
+
+```jsx
+{/* Analyzed evidence sample hole shorashori comparison shuru (Issue 4) */}
+{sample.status === 'Analyzed' && !sample.familyId && <Link className="btn btn-outline-primary" to={`/dna-matches/new?unknownSampleId=${sample.id}`}>Compare</Link>}
+```
+
+**New match module code:**
+
+| Component | What it does |
+|---|---|
+| `CodeComparison` | Shows both profile codes character by character. **Green** means the same character at that position, **red** means different. It shows on screen what the SQL comparison calculates |
+| `Matches()` | Real list (respects `?personId=`). Client-side search + Confidence/Review filters. Shows provider names, similarity, method and status. **New Comparison** button |
+| `MatchForm()` | Loads **analyzed** samples in the user's scope. Unknown dropdown = samples with no family link. Matched dropdown = any other sample. **Run Comparison** = preview with similarity, positions, confidence and `CodeComparison`, and warns if the pair already exists. Admin/Officer get a **manual similarity** checkbox (Option 2). **Save Match** goes to the details page |
+| `MatchDetails()` | Hero card (unknown ↔ similarity ↔ matched). Compared samples with links and the code comparison. Match record (date, method, confidence, status). **Confirm / Reject** for Admin/Officer while Pending Review (the confirm dialog warns that the person will be marked Identified, which is Phase 5). **Delete** for Admin unless Confirmed. Technicians see person names without links |
+
+```jsx
+// ---------- DNA Match module (real API — Member 1 Issue 4) ----------
+
+const MATCH_STATUSES = ['Pending Review', 'Confirmed', 'Rejected']
+const CONFIDENCE_LEVELS = ['High', 'Medium', 'Low']
+
+// Sample er short description: "#12 — Rafiqul Islam (Father)"
+const sampleLabel = sample => `#${sample.id} — ${sampleProvider(sample)} · ${sample.sampleType} · ${sample.dnaProfileCode}`
+
+// Duita profile code position-by-position dekhay — je position e character mile sheta shobuj
+// (backend er SQL comparison je vabe kaj kore, UI te shetai visually bojhano)
+function CodeComparison({ first, second }) {
+  const length = Math.max(first?.length || 0, second?.length || 0)
+  const positions = Array.from({ length }, (_, index) => index)
+  const cell = (char, same) => ({ display: 'inline-block', width: '1.6rem', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, borderRadius: 4, margin: 1, padding: '2px 0', background: same ? '#d1e7dd' : '#f8d7da' })
+  return (
+    <div className="overflow-auto">
+      {[first, second].map((code, row) => (
+        <div key={row} className="text-nowrap">
+          {positions.map(index => {
+            const same = first?.[index] !== undefined && first?.[index] === second?.[index]
+            return <span key={index} style={cell(code?.[index], same)}>{code?.[index] ?? '·'}</span>
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// DNA match list page — backend role onujayi filter kore pathay
+export function Matches() {
+  const { role } = useAuth()
+  const [params] = useSearchParams()
+  const linkedPerson = params.get('personId') || '' // missing person page theke ashle shudhu tar match
+  const [matches, setMatches] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
+  const [filters, setFilters] = useState({ confidence: '', status: '' })
+
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    getMatches(linkedPerson ? { person_id: linkedPerson } : {})
+      .then(rows => { if (mounted) setMatches(rows) })
+      .catch(requestError => { if (mounted) setError(errorMessage(requestError, 'Failed to load DNA matches.')) })
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [linkedPerson])
+
+  // Search (sample id, provider, person name) + dropdown filter client side e
+  const rows = useMemo(() => matches.filter(item =>
+    search({ id: item.id, a: item.unknownSample.provider, b: item.matchedSample.provider, pa: item.unknownSample.personName, pb: item.matchedSample.personName, sa: item.unknownSampleId, sb: item.matchedSampleId }, query) &&
+    (!filters.confidence || item.confidenceLevel === filters.confidence) &&
+    (!filters.status || item.matchStatus === filters.status)
+  ), [matches, query, filters])
+
+  return (
+    <>
+      <PageHeader
+        title="DNA Matches"
+        subtitle={linkedPerson ? 'DNA comparison results tied to the selected missing person.' : role === 'Lab Technician' ? 'Comparison results involving samples from your laboratory.' : 'DNA profile comparison results for investigation review.'}
+        action={<Link to="/dna-matches/new" className="btn btn-primary">New Comparison</Link>}
+      />
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      <SearchFilters onSearchChange={setQuery} onClear={() => setFilters({ confidence: '', status: '' })}>
+        <Filter label="Confidence" value={filters.confidence} values={CONFIDENCE_LEVELS} onChange={confidence => setFilters({ ...filters, confidence })}/>
+        <Filter label="Review" value={filters.status} values={MATCH_STATUSES} onChange={status => setFilters({ ...filters, status })}/>
+      </SearchFilters>
+      <div className="card">
+        <div className="table-responsive">
+          <table className="table table-hover align-middle mb-0">
+            <thead><tr><th>Match</th><th>Unknown Sample</th><th>Matched Sample</th><th>Similarity</th><th>Confidence</th><th>Method</th><th>Match Date</th><th>Status</th><th/></tr></thead>
+            <tbody>
+              {loading && <tr><td colSpan="9" className="text-center text-secondary py-4">Loading DNA matches...</td></tr>}
+              {!loading && rows.map(item => (
+                <tr key={item.id}>
+                  <td className="fw-semibold">#{item.id}</td>
+                  <td>#{item.unknownSampleId}<small className="d-block text-secondary">{item.unknownSample.provider}</small></td>
+                  <td>#{item.matchedSampleId}<small className="d-block text-secondary">{item.matchedSample.provider}</small></td>
+                  <td className="fw-bold">{item.similarityPercentage}%</td>
+                  <td><StatusBadge value={item.confidenceLevel}/></td>
+                  <td>{item.matchMethod}</td>
+                  <td>{item.matchDate}</td>
+                  <td><StatusBadge value={item.matchStatus}/></td>
+                  <td><TableAction to={`/dna-matches/${item.id}`}/></td>
+                </tr>
+              ))}
+              {!loading && !rows.length && <tr><td colSpan="9" className="text-center text-secondary py-4">No matching DNA comparisons found.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// Notun comparison page: duita analyzed sample select → Run Comparison (preview) → Save Match
+// Option 1: SQL compute (default), Option 2: Admin/Officer manual similarity
+export function MatchForm() {
+  const { role } = useAuth()
+  const nav = useNavigate()
+  const [params] = useSearchParams()
+  const [samples, setSamples] = useState([])
+  const [form, setForm] = useState({ unknownSampleId: params.get('unknownSampleId') || '', matchedSampleId: '', manual: false, similarityPercentage: '' })
+  const [comparison, setComparison] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+  const canEnterManually = role === 'Admin' || role === 'Officer' // Option 2 shudhu Admin/Officer
+
+  // Shudhu analyzed sample (profile code ache) load — backend role scope o apply kore
+  useEffect(() => {
+    let mounted = true
+    getSamples({ status: 'Analyzed' })
+      .then(rows => { if (mounted) setSamples(rows.filter(sample => sample.dnaProfileCode)) })
+      .catch(requestError => { if (mounted) setError(errorMessage(requestError, 'Failed to load analyzed samples.')) })
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [])
+
+  const change = event => {
+    const { name, value, type, checked } = event.target
+    setForm({ ...form, [name]: type === 'checkbox' ? checked : value })
+    if (name === 'unknownSampleId' || name === 'matchedSampleId') setComparison(null) // sample change hole purono result baad
+  }
+
+  const pairPayload = () => ({ unknownSampleId: Number(form.unknownSampleId), matchedSampleId: Number(form.matchedSampleId) })
+
+  // Preview — database e save hoy na
+  const runComparison = async () => {
+    try {
+      setWorking(true)
+      setError('')
+      setComparison(await compareSamples(pairPayload()))
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Comparison failed.'))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const save = async event => {
+    event.preventDefault()
+    try {
+      setWorking(true)
+      setError('')
+      const payload = pairPayload()
+      if (form.manual) payload.similarityPercentage = Number(form.similarityPercentage) // Option 2
+      const match = await createMatch(payload)
+      nav(`/dna-matches/${match.id}`)
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Failed to save the DNA match.'))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  // Unknown = evidence/missing person sample (family reference na), Matched = je kono onno analyzed sample
+  const unknownOptions = samples.filter(sample => !sample.familyId)
+  const matchedOptions = samples.filter(sample => String(sample.id) !== form.unknownSampleId)
+  const bothSelected = form.unknownSampleId && form.matchedSampleId
+
+  if (loading) return <div className="card"><div className="card-body text-center text-secondary py-4">Loading analyzed samples...</div></div>
+
+  return (
+    <>
+      <PageHeader title="New DNA Comparison" subtitle="Select an unknown/evidence sample and a reference sample, compare their DNA profile codes, and record the match."/>
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      <form className="card mb-4" onSubmit={save}>
+        <div className="card-body">
+          <div className="row g-3">
+            <div className="col-md-6">
+              <label className="form-label">Unknown / Evidence Sample</label>
+              <select name="unknownSampleId" className="form-select" value={form.unknownSampleId} onChange={change} required>
+                <option value="">Select unknown sample</option>
+                {unknownOptions.map(sample => <option key={sample.id} value={String(sample.id)}>{sampleLabel(sample)}</option>)}
+              </select>
+            </div>
+            <div className="col-md-6">
+              <label className="form-label">Matched / Reference Sample</label>
+              <select name="matchedSampleId" className="form-select" value={form.matchedSampleId} onChange={change} required>
+                <option value="">Select reference sample</option>
+                {matchedOptions.map(sample => <option key={sample.id} value={String(sample.id)}>{sampleLabel(sample)}</option>)}
+              </select>
+            </div>
+            {canEnterManually && (
+              <div className="col-12">
+                <div className="form-check">
+                  <input id="manual-similarity" name="manual" type="checkbox" className="form-check-input" checked={form.manual} onChange={change}/>
+                  <label htmlFor="manual-similarity" className="form-check-label">Enter similarity percentage manually</label>
+                </div>
+              </div>
+            )}
+            {form.manual && (
+              <div className="col-md-4">
+                <label className="form-label">Similarity Percentage</label>
+                <input name="similarityPercentage" type="number" min="0" max="100" step="0.01" className="form-control" value={form.similarityPercentage} onChange={change} required/>
+              </div>
+            )}
+          </div>
+          {!unknownOptions.length && <p className="text-secondary small mt-3 mb-0">No analyzed evidence samples are available in your scope yet.</p>}
+        </div>
+        <div className="card-footer bg-white text-end">
+          <Link to="/dna-matches" className="btn btn-light me-2">Cancel</Link>
+          {!form.manual && <button type="button" className="btn btn-outline-primary me-2" disabled={!bothSelected || working} onClick={runComparison}>Run Comparison</button>}
+          <button className="btn btn-primary" disabled={!bothSelected || working || Boolean(comparison?.existingMatchId)}>{working ? 'Working...' : 'Save Match'}</button>
+        </div>
+      </form>
+
+      {/* Comparison preview result */}
+      {comparison && (
+        <Card title="Comparison result">
+          {comparison.existingMatchId && <div className="alert alert-warning">These samples were already compared. <Link to={`/dna-matches/${comparison.existingMatchId}`}>View match #{comparison.existingMatchId}</Link></div>}
+          <div className="d-flex flex-wrap gap-4 mb-3">
+            <span>Similarity<b className="d-block fs-4">{comparison.similarityPercentage}%</b></span>
+            <span>Matching positions<b className="d-block fs-4">{comparison.matchingPositions} / {comparison.codeLength}</b></span>
+            <span>Confidence<b className="d-block mt-1"><StatusBadge value={comparison.confidenceLevel}/></b></span>
+          </div>
+          <CodeComparison first={comparison.unknownProfileCode} second={comparison.matchedProfileCode}/>
+        </Card>
+      )}
+    </>
+  )
+}
+
+// Match details page — Admin/Officer review (Confirm/Reject) korte pare
+export function MatchDetails() {
+  const { id } = useParams()
+  const { role } = useAuth()
+  const nav = useNavigate()
+  const [match, setMatch] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [working, setWorking] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    getMatchById(id)
+      .then(row => { if (mounted) setMatch(row) })
+      .catch(requestError => { if (mounted) setError(errorMessage(requestError, 'Failed to load the DNA match.')) })
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [id])
+
+  // Confirm / Reject — Confirmed hole (Issue 5 trigger) missing person 'Identified' hobe
+  const review = async matchStatus => {
+    const note = matchStatus === 'Confirmed' ? ' This will mark the matched missing person as Identified.' : ''
+    if (!window.confirm(`Mark match #${match.id} as ${matchStatus}?${note}`)) return
+    try {
+      setWorking(true)
+      setError('')
+      setMatch(await updateMatchStatus(match.id, matchStatus))
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Failed to update the match.'))
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const remove = async () => {
+    if (!window.confirm(`Delete match #${match.id}? This action cannot be undone.`)) return
+    try {
+      await deleteMatch(match.id)
+      nav('/dna-matches')
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Failed to delete the match.'))
+    }
+  }
+
+  if (loading) return <div className="card"><div className="card-body text-center text-secondary py-4">Loading DNA match...</div></div>
+  if (!match) return <div className="alert alert-warning">{error || 'This DNA match could not be found.'}</div>
+
+  const canReview = (role === 'Admin' || role === 'Officer') && match.matchStatus === 'Pending Review'
+  const canDelete = role === 'Admin' && match.matchStatus !== 'Confirmed'
+  const isTechnician = role === 'Lab Technician' // technician investigation (person) page e link pabe na
+  const personLink = sample => isTechnician ? sample.personName : <Link to={`/missing-persons/${sample.personId}`}>{sample.personName}</Link>
+
+  return (
+    <>
+      <PageHeader
+        title={`DNA Match #${match.id}`}
+        subtitle="DNA profile comparison result"
+        action={<>
+          {canReview && <button type="button" className="btn btn-success" disabled={working} onClick={() => review('Confirmed')}>Confirm Match</button>}
+          {canReview && <button type="button" className="btn btn-outline-danger" disabled={working} onClick={() => review('Rejected')}>Reject Match</button>}
+          {canDelete && <button type="button" className="btn btn-outline-secondary" onClick={remove}>Delete</button>}
+        </>}
+      />
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      <div className="match-hero card mb-4">
+        <div className="card-body">
+          <div><span className="eyebrow">UNKNOWN SAMPLE</span><h3>#{match.unknownSampleId}</h3><small>{match.unknownSample.provider}</small></div>
+          <div className="match-score"><b>{match.similarityPercentage}%</b><span>Similarity</span><StatusBadge value={`${match.confidenceLevel} Confidence`}/></div>
+          <div className="text-lg-end"><span className="eyebrow">MATCHED SAMPLE</span><h3>#{match.matchedSampleId}</h3><small>{match.matchedSample.provider}</small></div>
+        </div>
+      </div>
+      <div className="row g-4">
+        <div className="col-md-6">
+          <Card title="Compared samples">
+            <p>Unknown: <Link to={`/dna-samples/${match.unknownSampleId}`}>#{match.unknownSampleId}</Link> — {match.unknownSample.sampleType}, {match.unknownSample.labName || '—'}<br/><small className="text-secondary">Investigation: {personLink(match.unknownSample)}</small></p>
+            <p>Matched: <Link to={`/dna-samples/${match.matchedSampleId}`}>#{match.matchedSampleId}</Link> — {match.matchedSample.sampleType}, {match.matchedSample.labName || '—'}<br/><small className="text-secondary">{match.matchedSample.isFamilyReference ? 'Family reference for' : 'Sample of'}: {personLink(match.matchedSample)} ({match.matchedSample.personStatus})</small></p>
+            <b className="d-block mb-2">Profile code comparison</b>
+            <CodeComparison first={match.unknownSample.profileCode} second={match.matchedSample.profileCode}/>
+          </Card>
+        </div>
+        <div className="col-md-6">
+          <Card title="Match record">
+            <p>Match date: <b>{match.matchDate}</b></p>
+            <p>Method: <b>{match.matchMethod === 'Manual' ? 'Manual similarity entry' : 'Computed from profile codes'}</b></p>
+            <p>Confidence: <StatusBadge value={match.confidenceLevel}/></p>
+            <p className="mb-0">Review status: <StatusBadge value={match.matchStatus}/></p>
+          </Card>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function Filter({ label, value, values, onChange }) { return <div className="col-md-2"><label className="form-label">{label}</label><select className="form-select" value={value} onChange={event => onChange(event.target.value)}><option value="">All {label.toLowerCase()}s</option>{values.map(item => <option key={item}>{item}</option>)}</select></div> }
+function Card({ title, children }) { return <div className="card h-100"><div className="card-header bg-white"><strong>{title}</strong></div><div className="card-body">{children}</div></div> }
+```
+
+## 4.11 `frontend/src/routes/AppRoutes.jsx` (modified)
+
+```diff
+@@ -22,6 +22,7 @@ import IntersectionReport from '../pages/IntersectionReport'
+ import {
+   DNAAnalysis,
+   MatchDetails,
++  MatchForm,
+   Matches,
+   SampleDetails,
+   SampleForm,
+@@ -258,6 +259,16 @@ export default function AppRoutes() {
+           }
+         />
+ 
++        {/* Notun DNA comparison (Issue 4) — tinjonei duita sample compare korte pare */}
++        <Route
++          path="dna-matches/new"
++          element={
++            <ProtectedRoute allowedRoles={['Admin', 'Officer', 'Lab Technician']}>
++              <MatchForm />
++            </ProtectedRoute>
++          }
++        />
++
+         <Route
+           path="dna-matches/:id"
+           element={
+```
+
+---
+
+## Phase 4 testing
+
+**SQL:** `dna_matches.sql` ran on local MySQL. Comparing seed samples 1 and 2 gave **10/11 = 90.91% High**. The spec example `ABC12345` vs `ABC12346` gave **87.50%**. The officer, technician and person views returned the correct rows. The review UPDATE worked. The test rows were deleted. The constraints were checked directly: a duplicate pair gave `ER_DUP_ENTRY`, and similarity 150 gave `ER_CHECK_CONSTRAINT_VIOLATED`.
+
+**API:** tested with curl as Admin, Officer 1 (case: John Doe), Officer 2 (case: Jane Smith), Technician 1 (lab 1) and Technician 4 (lab 3):
+
+| Test | Result |
+|---|---|
+| No login | 401 |
+| List: Admin / Officer 1 / Officer 2 / Tech 1 / Tech 4 | 2,1 / 2,1 / 2 / 2,1 / (none) |
+| Filters `person_id`, `case_id`, `status`, `confidence`; invalid status | Correct rows; 400 |
+| Officer 2 / Tech 4 open match 1 | 404 |
+| Compare 1 vs 2 | 90.91% High, 10/11, `existingMatchId: 1` |
+| Compare 6 vs 1 (cross-case) | 27.27% Low |
+| Same sample / family reference as unknown / unanalyzed sample / missing id | 400 each |
+| Officer 2 compares Officer 1's samples | 404 |
+| Admin creates 6 vs 1 (computed) | 201 Computed 27.27% Low |
+| Create 1 vs 6 (reversed) / 1 vs 2 (seeded) | 409 / 409 |
+| Admin manual 81.456 | 201 **Manual 81.46% Medium** |
+| Admin manual 150 / "abc" | 400 / 400 |
+| Tech analyzes sample 3, then tries manual 99 | 403 "Only Admin and Officer ..." |
+| Tech creates 1 vs 3 (computed) | 201 90.91% High |
+| Tech 4 uses a lab-1 sample | 404 |
+| Tech reviews | 403 |
+| Officer: invalid status / Officer 2 reviews / Officer 1 confirms / confirms again | 400 / 404 / **200 Confirmed** / 409 |
+| Officer deletes | 403 |
+| Admin deletes a Confirmed match / a Pending match | 409 / 200 |
+
+Afterwards the test matches were deleted, match 1 was set back to Pending Review, sample 3 was restored to its seed values, and the test users were removed.
+
+**Frontend:** `oxlint` found no issues and `vite build` succeeded. `Laboratory.jsx` has no mock or `DataContext` code left. The pages were not clicked through in a browser.
+
+## Known gaps after Phase 4
+
+- Confirming a match does **not yet** change the missing person's status. The SQL trigger comes in Phase 5.
+- The Officer and Lab Technician dashboards (`Dashboards.jsx`) still show mock DNA counts (Phase 7).
+
+---
+
+<!-- Phase 5 onwards will be added below as each phase is completed. -->

@@ -22,6 +22,7 @@ import IntersectionReport from '../pages/IntersectionReport'
 import {
   DNAAnalysis,
   MatchDetails,
+  MatchForm,
   Matches,
   SampleDetails,
   SampleForm,
@@ -254,6 +255,16 @@ export default function AppRoutes() {
               ]}
             >
               <Matches />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Notun DNA comparison (Issue 4) — tinjonei duita sample compare korte pare */}
+        <Route
+          path="dna-matches/new"
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Officer', 'Lab Technician']}>
+              <MatchForm />
             </ProtectedRoute>
           }
         />

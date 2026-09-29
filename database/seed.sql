@@ -85,3 +85,15 @@ INSERT INTO dna_samples (
 (5, 2, NULL, 2, 3, 'Hair Strand', '2026-05-14', 'Evidence Room B-04', 'Hair strand from hostel room', '2026-05-20', 'DNA8C114A90', 'Analyzed'),
 (6, 3, NULL, 3, 4, 'Bone Sample', '2026-01-25', 'Evidence Room C-01', 'Recovered remains sample', '2026-02-02', 'DNA5B7E20D1', 'Analyzed')
 ON DUPLICATE KEY UPDATE sample_id = sample_id;
+
+-- Seed Data for dna_matches (Member 1 - Issue 4)
+-- Similarity gulo database/sql/dna_matches.sql er comparison query diye ber kora:
+--   Sample 1 (DNA7F2A91C4) vs Sample 2 (DNA7F2A91C9) = 10/11 = 90.91% High   (John Doe evidence vs father)
+--   Sample 5 (DNA8C114A90) vs Sample 2 (DNA7F2A91C9) =  3/11 = 27.27% Low    (Jane Smith evidence vs John er father)
+INSERT INTO dna_matches (
+    match_id, unknown_sample_id, matched_sample_id, similarity_percentage,
+    confidence_level, match_date, match_status, match_method
+) VALUES
+(1, 1, 2, 90.91, 'High', '2026-03-02', 'Pending Review', 'Computed'),
+(2, 5, 2, 27.27, 'Low', '2026-05-21', 'Rejected', 'Computed')
+ON DUPLICATE KEY UPDATE match_id = match_id;

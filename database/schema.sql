@@ -228,3 +228,26 @@ CREATE TABLE IF NOT EXISTS dna_samples (
         FOREIGN KEY (technician_id) REFERENCES lab_technicians(technician_id)
         ON DELETE RESTRICT
 );
+
+-- DNA Matches Table (Member 1 - Issue 4)
+-- Raw SQL + query gulo: database/sql/dna_matches.sql
+CREATE TABLE IF NOT EXISTS dna_matches (
+    match_id INT AUTO_INCREMENT PRIMARY KEY,
+    unknown_sample_id INT NOT NULL,          -- FK: unknown/evidence sample
+    matched_sample_id INT NOT NULL,          -- FK: reference sample
+    similarity_percentage DECIMAL(5,2) NOT NULL,
+    confidence_level VARCHAR(10) NOT NULL,   -- High / Medium / Low
+    match_date DATE NOT NULL,
+    match_status VARCHAR(20) NOT NULL DEFAULT 'Pending Review', -- Pending Review / Confirmed / Rejected
+    match_method VARCHAR(20) NOT NULL DEFAULT 'Computed',       -- Computed / Manual
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT uq_match_pair UNIQUE (unknown_sample_id, matched_sample_id),
+    CONSTRAINT chk_match_similarity CHECK (similarity_percentage BETWEEN 0 AND 100),
+    CONSTRAINT fk_match_unknown_sample
+        FOREIGN KEY (unknown_sample_id) REFERENCES dna_samples(sample_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_match_matched_sample
+        FOREIGN KEY (matched_sample_id) REFERENCES dna_samples(sample_id)
+        ON DELETE CASCADE
+);
