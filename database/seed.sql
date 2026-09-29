@@ -71,3 +71,17 @@ INSERT INTO family_members (
 (1, 'Rafiqul', 'Islam', 'Father', 'Male', '01711000001', 'rafiqul@example.com', '1975123456789', 'B+', 'Dhanmondi, Dhaka', 'Willing to provide DNA reference sample'),
 (1, 'Salma', 'Begum', 'Mother', 'Female', '01711000002', 'salma@example.com', '1980123456789', 'O+', 'Dhanmondi, Dhaka', 'Primary family contact'),
 (2, 'Tanvir', 'Ahmed', 'Brother', 'Male', '01819000003', 'tanvir@example.com', '1995123456789', 'A+', 'Agrabad, Chattogram', 'Reported the missing case');
+
+-- Seed Data for dna_samples (Member 1 - Issue 1)
+-- family_id NULL = missing person/evidence sample, family_id thakle = family reference sample
+INSERT INTO dna_samples (
+    sample_id, person_id, family_id, lab_id, technician_id, sample_type, collection_date,
+    storage_location, remarks, analysis_date, dna_profile_code, status
+) VALUES
+(1, 1, NULL, 1, 1, 'Personal Belonging', '2026-02-20', 'Evidence Room A-03', 'Toothbrush collected from residence', '2026-02-28', 'DNA7F2A91C4', 'Analyzed'),
+(2, 1, 1, 1, 2, 'Buccal Swab', '2026-02-22', 'Cold Storage A-12', 'Reference sample from father', '2026-03-01', 'DNA7F2A91C9', 'Analyzed'),
+(3, 1, 2, 1, NULL, 'Blood Sample', '2026-02-22', 'Cold Storage A-13', 'Reference sample from mother', NULL, NULL, 'Awaiting Analysis'),
+(4, 2, 3, 2, 3, 'Buccal Swab', '2026-05-15', 'Freezer B-02', 'Reference sample from brother', NULL, NULL, 'Awaiting Analysis'),
+(5, 2, NULL, 2, 3, 'Hair Strand', '2026-05-14', 'Evidence Room B-04', 'Hair strand from hostel room', '2026-05-20', 'DNA8C114A90', 'Analyzed'),
+(6, 3, NULL, 3, 4, 'Bone Sample', '2026-01-25', 'Evidence Room C-01', 'Recovered remains sample', '2026-02-02', 'DNA5B7E20D1', 'Analyzed')
+ON DUPLICATE KEY UPDATE sample_id = sample_id;

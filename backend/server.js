@@ -18,6 +18,7 @@ import dnaAnalyticsRoutes from './routes/dnaAnalyticsRoutes.js';
 import familyMemberRoutes from './routes/familyMemberRoutes.js';
 import reportRoutes from './routes/reportRoutes.js'
 import adminStatsRoutes from './routes/adminStatsRoutes.js'
+import dnaSampleRoutes from './routes/dnaSampleRoutes.js' // DNA Sample module (Member 1 - Issue 1)
 
 const app = express()
 
@@ -57,6 +58,7 @@ app.use('/api/analytics/dna', dnaAnalyticsRoutes);
 app.use('/api/family-members', familyMemberRoutes);
 app.use('/api/reports', reportRoutes)
 app.use('/api/admin/counts', adminStatsRoutes)
+app.use('/api/dna-samples', dnaSampleRoutes) // DNA sample CRUD endpoints
 
 async function startServer() {
   try {

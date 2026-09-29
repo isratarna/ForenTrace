@@ -197,3 +197,34 @@ CREATE TABLE IF NOT EXISTS family_members (
         FOREIGN KEY (person_id) REFERENCES missing_persons(person_id)
         ON DELETE CASCADE
 );
+
+-- DNA Samples Table (Member 1 - Issue 1)
+-- Raw SQL + query gulo: database/sql/dna_samples.sql
+CREATE TABLE IF NOT EXISTS dna_samples (
+    sample_id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,                 -- FK: je missing person er investigation er sample
+    family_id INT NULL,                     -- FK: family reference sample hole family_id, noile NULL
+    lab_id INT NULL,                        -- FK: assigned DNA lab
+    technician_id INT NULL,                 -- FK: assigned lab technician (optional)
+    sample_type VARCHAR(100) NOT NULL,
+    collection_date DATE NOT NULL,
+    storage_location VARCHAR(150) NULL,
+    remarks TEXT NULL,
+    analysis_date DATE NULL,                -- technician analysis shesh korle set hobe
+    dna_profile_code VARCHAR(100) NULL,     -- analysis er por DNA profile code
+    status VARCHAR(30) NOT NULL DEFAULT 'Awaiting Analysis',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_sample_person
+        FOREIGN KEY (person_id) REFERENCES missing_persons(person_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_sample_family
+        FOREIGN KEY (family_id) REFERENCES family_members(family_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_sample_lab
+        FOREIGN KEY (lab_id) REFERENCES dna_labs(lab_id)
+        ON DELETE RESTRICT,
+    CONSTRAINT fk_sample_technician
+        FOREIGN KEY (technician_id) REFERENCES lab_technicians(technician_id)
+        ON DELETE RESTRICT
+);

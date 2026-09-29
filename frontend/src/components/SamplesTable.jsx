@@ -1,14 +1,13 @@
 import React from 'react'
 import { StatusBadge } from './Ui'
-import dnaService from '../services/dnaService'
 
+// Sample gulo ekhon real API theke ashe, tai "(Sample data)" mock label ar lagbe na
 export default function SamplesTable({ samples = [] }) {
-  const mockLabel = dnaService.isMockDna() ? ' (Sample data)' : ''
   if (!samples || !samples.length) return <div className="alert alert-secondary">No DNA samples available.</div>
 
   return (
     <div>
-      <div className="mb-2 small text-muted">DNA Samples{mockLabel}</div>
+      <div className="mb-2 small text-muted">DNA Samples</div>
       <div className="table-responsive">
         <table className="table table-sm">
           <thead>

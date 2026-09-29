@@ -1,8 +1,19 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PageHeader, SearchFilters, StatusBadge, TableAction } from '../components/Ui'
 import { useData } from '../data/DataContext'
 import { useAuth } from '../context/AuthContext'
+import {
+  createSample,
+  deleteSample,
+  getLabs,
+  getSampleById,
+  getSamples,
+  getTechnicians,
+  updateSample,
+} from '../services/dnaService'
+import { getMissingPersons } from '../services/missingPersonService'
+import { getFamilyMembersByPerson } from '../services/familyMemberService'
 
 const search = (row, query) => !query || Object.values(row).some(value => String(value ?? '').toLowerCase().includes(query.toLowerCase()))
 const Field = ({ label, name, type = 'text', select, options = [], value, onChange, required }) => <div className="col-md-6"><label className="form-label">{label}</label>{select ? <select name={name} className="form-select" value={value} onChange={onChange} required={required}><option value="">Select {label}</option>{options.map(item => <option key={item.value ?? item} value={item.value ?? item}>{item.label ?? item}</option>)}</select> : <input name={name} type={type} className="form-control" value={value} onChange={onChange} required={required}/>}</div>
@@ -10,19 +21,335 @@ const sampleOwner = (sample, data) => sample.familyMemberId ? data.familyMembers
 const technicianLab = (user, data) => user?.lab || data.technicians.find(item => item.email === user?.email || item.name === user?.name)?.lab || ''
 const labCanAccessSample = (role, user, data, sample) => role !== 'Lab Technician' || sample.lab === technicianLab(user, data)
 
+// ---------- DNA Sample module (real API — Member 1 Issue 1) ----------
+
+const SAMPLE_STATUSES = ['Awaiting Analysis', 'In Analysis', 'Analyzed', 'Rejected'] // backend er SAMPLE_STATUSES er sathe mil
+const SAMPLE_SOURCES = ['Missing Person / Evidence', 'Family Reference'] // family_id thakle Family Reference
+const SAMPLE_TYPES = ['Buccal Swab', 'Blood Sample', 'Hair Strand', 'Bone Sample', 'Tissue Sample', 'Personal Belonging']
+const errorMessage = (error, fallback) => error.response?.data?.message || fallback // backend er error message dekhano
+const today = () => new Date().toISOString().slice(0, 10)
+const emptySampleForm = { personId: '', familyId: '', labId: '', technicianId: '', sampleType: '', collectionDate: '', storageLocation: '', remarks: '' }
+
+// Sample ta kar — family reference hole family member er naam + relationship, noile missing person
+const sampleProvider = sample => sample.familyMemberName ? `${sample.familyMemberName} (${sample.familyRelationship})` : sample.personName
+
+// Form er state ke backend er payload e convert kore (faka optional id → null)
+function toSamplePayload(form) {
+  return {
+    personId: Number(form.personId),
+    familyId: form.familyId ? Number(form.familyId) : null,
+    labId: Number(form.labId),
+    technicianId: form.technicianId ? Number(form.technicianId) : null,
+    sampleType: form.sampleType,
+    collectionDate: form.collectionDate,
+    storageLocation: form.storageLocation.trim() || null,
+    remarks: form.remarks.trim() || null,
+  }
+}
+
+// DNA sample list page — backend role onujayi already filter kore pathay
 export function Samples() {
-  const { role, user } = useAuth(); const { data } = useData(); const [params] = useSearchParams(); const linkedPerson = params.get('personId') || ''; const [query, setQuery] = useState(''); const [filters, setFilters] = useState({ status: '', source: '' }); const assignedLab = technicianLab(user, data); const rows = data.samples.filter(item => (!linkedPerson || item.personId === linkedPerson) && (role !== 'Lab Technician' || item.lab === assignedLab) && search(item, query) && (!filters.status || item.status === filters.status) && (!filters.source || item.source === filters.source))
-  return <><PageHeader title="DNA Samples" subtitle={linkedPerson ? 'Samples linked to the selected missing person.' : role === 'Lab Technician' ? `DNA sample records assigned to ${assignedLab || 'your laboratory'}.` : 'DNA sample collection and analysis records.'} action={role === 'Officer' ? <Link to={`/dna-samples/new${linkedPerson ? `?personId=${linkedPerson}` : ''}`} className="btn btn-primary">Register DNA Sample</Link> : null}/><SearchFilters onSearchChange={setQuery} onClear={() => setFilters({ status: '', source: '' })}><Filter label="Analysis" value={filters.status} values={['Awaiting Analysis', 'Analyzed']} onChange={status => setFilters({ ...filters, status })}/><Filter label="Source" value={filters.source} values={['Missing Person', 'Family Member', 'Personal Belonging', 'Unidentified Remains']} onChange={source => setFilters({ ...filters, source })}/></SearchFilters><div className="card"><div className="table-responsive"><table className="table table-hover align-middle mb-0"><thead><tr><th>Sample ID</th><th>Source</th><th>Sample Type</th><th>Person / Family</th><th>Case</th><th>Lab</th><th>Collection Date</th><th>Analysis</th><th>Actions</th></tr></thead><tbody>{rows.map(item => <tr key={item.id}><td className="fw-semibold">{item.id}</td><td>{item.source}</td><td>{item.type}</td><td>{sampleOwner(item, data)}</td><td>{data.cases.find(caseItem => caseItem.id === item.caseId)?.id || '—'}</td><td>{item.lab}</td><td>{item.collected}</td><td><StatusBadge value={item.status}/></td><td className="text-nowrap"><TableAction to={`/dna-samples/${item.id}`}/>{role === 'Lab Technician' && item.status === 'Awaiting Analysis' && <Link className="btn btn-sm btn-primary ms-1" to={`/lab/analysis/${item.id}`}>Analyze</Link>}</td></tr>)}{!rows.length && <tr><td colSpan="9" className="text-center text-secondary py-4">No matching samples found.</td></tr>}</tbody></table></div></div></>
+  const { role } = useAuth()
+  const [params] = useSearchParams()
+  const linkedPerson = params.get('personId') || '' // missing person page theke ashle shudhu tar sample
+  const [samples, setSamples] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [deletingId, setDeletingId] = useState(null)
+  const [query, setQuery] = useState('')
+  const [filters, setFilters] = useState({ status: '', source: '' })
+
+  // Backend theke sample list load kora
+  const refreshSamples = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError('')
+      setSamples(await getSamples(linkedPerson ? { person_id: linkedPerson } : {}))
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Failed to load DNA samples.'))
+    } finally {
+      setLoading(false)
+    }
+  }, [linkedPerson])
+
+  useEffect(() => { refreshSamples() }, [refreshSamples])
+
+  // Search + dropdown filter client side e apply kora
+  const rows = useMemo(() => samples.filter(item =>
+    search(item, query) &&
+    (!filters.status || item.status === filters.status) &&
+    (!filters.source || item.source === filters.source)
+  ), [samples, query, filters])
+
+  const remove = async sample => {
+    if (!window.confirm(`Delete DNA sample #${sample.id}? This action cannot be undone.`)) return
+    try {
+      setDeletingId(sample.id)
+      setError('')
+      await deleteSample(sample.id)
+      await refreshSamples()
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Failed to delete the DNA sample.'))
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const canManage = role === 'Admin' || role === 'Officer' // register/edit/delete permission
+
+  return (
+    <>
+      <PageHeader
+        title="DNA Samples"
+        subtitle={linkedPerson ? 'Samples linked to the selected missing person.' : role === 'Lab Technician' ? 'DNA sample records assigned to your laboratory.' : role === 'Officer' ? 'DNA samples for your assigned investigation cases.' : 'DNA sample collection and analysis records.'}
+        action={canManage ? <Link to={`/dna-samples/new${linkedPerson ? `?personId=${linkedPerson}` : ''}`} className="btn btn-primary">Register DNA Sample</Link> : null}
+      />
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      <SearchFilters onSearchChange={setQuery} onClear={() => setFilters({ status: '', source: '' })}>
+        <Filter label="State" value={filters.status} values={SAMPLE_STATUSES} onChange={status => setFilters({ ...filters, status })}/>
+        <Filter label="Source" value={filters.source} values={SAMPLE_SOURCES} onChange={source => setFilters({ ...filters, source })}/>
+      </SearchFilters>
+      <div className="card">
+        <div className="table-responsive">
+          <table className="table table-hover align-middle mb-0">
+            <thead><tr><th>Sample ID</th><th>Source</th><th>Sample Type</th><th>Person / Family</th><th>Case</th><th>Lab</th><th>Collection Date</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+              {loading && <tr><td colSpan="9" className="text-center text-secondary py-4">Loading DNA samples...</td></tr>}
+              {!loading && rows.map(item => (
+                <tr key={item.id}>
+                  <td className="fw-semibold">#{item.id}</td>
+                  <td>{item.source}</td>
+                  <td>{item.sampleType}</td>
+                  <td>{sampleProvider(item)}{item.familyMemberName && <small className="d-block text-secondary">for {item.personName}</small>}</td>
+                  <td>{item.caseId ? (role === 'Lab Technician' ? `#${item.caseId}` : <Link to={`/cases/${item.caseId}`}>#{item.caseId}</Link>) : '—'}</td>
+                  <td>{item.labName || '—'}</td>
+                  <td>{item.collectionDate}</td>
+                  <td><StatusBadge value={item.status}/></td>
+                  <td className="text-nowrap">
+                    <TableAction to={`/dna-samples/${item.id}`}/>
+                    {role === 'Lab Technician' && item.status === 'Awaiting Analysis' && <Link className="btn btn-sm btn-primary ms-1" to={`/lab/analysis/${item.id}`}>Analyze</Link>}
+                    {canManage && <Link className="btn btn-sm btn-outline-secondary ms-1" to={`/dna-samples/${item.id}/edit`}>Edit</Link>}
+                    {canManage && <button type="button" className="btn btn-sm btn-outline-danger ms-1" disabled={deletingId === item.id} onClick={() => remove(item)}>{deletingId === item.id ? 'Deleting...' : 'Delete'}</button>}
+                  </td>
+                </tr>
+              ))}
+              {!loading && !rows.length && <tr><td colSpan="9" className="text-center text-secondary py-4">No matching samples found.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  )
 }
 
+// Register + Edit dutoi ei form diye hoy (URL e :id thakle edit mode)
 export function SampleForm() {
-  const nav = useNavigate(); const [params] = useSearchParams(); const { data, addSample } = useData(); const [form, setForm] = useState({ source: '', personId: params.get('personId') || '', familyMemberId: '', caseId: '', lab: '', type: '', collected: '', storage: '', remarks: '' }); const change = event => { const next = { ...form, [event.target.name]: event.target.value }; if (event.target.name === 'personId') { next.familyMemberId = ''; next.caseId = data.cases.find(item => item.personId === event.target.value)?.id || '' } setForm(next) }; const personOptions = data.missingPeople.map(person => ({ value: person.id, label: `${person.id} — ${person.firstName} ${person.lastName}` })); const familyOptions = data.familyMembers.filter(member => member.personId === form.personId).map(member => ({ value: member.id, label: `${member.id} — ${member.name} (${member.relation})` })); const caseOptions = data.cases.filter(item => item.personId === form.personId).map(item => ({ value: item.id, label: item.id }))
-  return <><PageHeader title="Register DNA Sample" subtitle="Record DNA source, provider, lab assignment, and related investigation case."/><form className="card" onSubmit={event => { event.preventDefault(); const record = addSample(form); nav(`/dna-samples/${record.id}`) }}><div className="card-body"><div className="row g-3"><Field label="DNA Source" name="source" select required value={form.source} onChange={change} options={['Missing Person', 'Family Member', 'Personal Belonging', 'Unidentified Remains']}/><Field label="Missing Person" name="personId" select required value={form.personId} onChange={change} options={personOptions}/>{form.source === 'Family Member' && <Field label="Family Member" name="familyMemberId" select required value={form.familyMemberId} onChange={change} options={familyOptions}/>}<Field label="Related Case" name="caseId" select required value={form.caseId} onChange={change} options={caseOptions}/><Field label="DNA Lab" name="lab" select required value={form.lab} onChange={change} options={data.labs.map(lab => lab.name)}/><Field label="Sample Type" name="type" select required value={form.type} onChange={change} options={['Buccal swab', 'Blood sample', 'Hair strand', 'Bone sample']}/><Field label="Collection Date" name="collected" type="date" required value={form.collected} onChange={change}/><Field label="Storage Location" name="storage" required value={form.storage} onChange={change}/><div className="col-12"><label className="form-label">Collection Remarks</label><textarea name="remarks" value={form.remarks} onChange={change} className="form-control" rows="4"/></div></div></div><div className="card-footer bg-white text-end"><Link to="/dna-samples" className="btn btn-light me-2">Cancel</Link><button className="btn btn-primary">Save DNA Sample</button></div></form></>
+  const { id } = useParams()
+  const editing = Boolean(id)
+  const nav = useNavigate()
+  const [params] = useSearchParams()
+  const [form, setForm] = useState({ ...emptySampleForm, personId: params.get('personId') || '', collectionDate: today() })
+  const [lookups, setLookups] = useState({ people: [], labs: [], technicians: [] })
+  const [familyMembers, setFamilyMembers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  // Dropdown er data (missing person, lab, technician) + edit mode e existing sample load
+  useEffect(() => {
+    let mounted = true
+    async function load() {
+      try {
+        const [people, labs, technicians, sample] = await Promise.all([
+          getMissingPersons(),
+          getLabs(),
+          getTechnicians(),
+          editing ? getSampleById(id) : Promise.resolve(null),
+        ])
+        if (!mounted) return
+        setLookups({ people, labs, technicians })
+        if (sample) {
+          // Existing sample er value diye form fill kora
+          setForm({
+            personId: String(sample.personId),
+            familyId: sample.familyId ? String(sample.familyId) : '',
+            labId: sample.labId ? String(sample.labId) : '',
+            technicianId: sample.technicianId ? String(sample.technicianId) : '',
+            sampleType: sample.sampleType,
+            collectionDate: sample.collectionDate || '',
+            storageLocation: sample.storageLocation || '',
+            remarks: sample.remarks || '',
+          })
+        }
+      } catch (requestError) {
+        if (mounted) setError(errorMessage(requestError, 'Failed to load the sample form.'))
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+    load()
+    return () => { mounted = false }
+  }, [editing, id])
+
+  // Missing person change hole shudhu tar family member gulo load hobe
+  useEffect(() => {
+    if (!form.personId) { setFamilyMembers([]); return }
+    let mounted = true
+    getFamilyMembersByPerson(form.personId)
+      .then(rows => { if (mounted) setFamilyMembers(Array.isArray(rows) ? rows : []) })
+      .catch(() => { if (mounted) setFamilyMembers([]) })
+    return () => { mounted = false }
+  }, [form.personId])
+
+  const change = event => {
+    const next = { ...form, [event.target.name]: event.target.value }
+    if (event.target.name === 'personId') next.familyId = '' // person change hole purono family selection baad
+    if (event.target.name === 'labId') next.technicianId = '' // lab change hole purono technician baad
+    setForm(next)
+  }
+
+  const submit = async event => {
+    event.preventDefault()
+    try {
+      setSaving(true)
+      setError('')
+      const payload = toSamplePayload(form)
+      const saved = editing ? await updateSample(id, payload) : await createSample(payload)
+      nav(`/dna-samples/${saved.id}`)
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Failed to save the DNA sample.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Dropdown option gulo
+  const personOptions = lookups.people.map(person => ({ value: String(person.id), label: `${person.id} — ${person.name}` }))
+  const familyOptions = familyMembers.map(member => ({ value: String(member.family_id), label: `${member.first_name} ${member.last_name} (${member.relationship})` }))
+  const labOptions = lookups.labs.map(lab => ({ value: String(lab.lab_id), label: lab.lab_name }))
+  const technicianOptions = lookups.technicians
+    .filter(tech => String(tech.lab_id) === form.labId) // shudhu selected lab er technician
+    .map(tech => ({ value: String(tech.technician_id), label: `${tech.first_name} ${tech.last_name} — ${tech.designation}` }))
+
+  if (loading) return <div className="card"><div className="card-body text-center text-secondary py-4">Loading sample form...</div></div>
+
+  return (
+    <>
+      <PageHeader title={editing ? `Edit DNA Sample #${id}` : 'Register DNA Sample'} subtitle="Record the DNA provider, laboratory assignment, and collection details."/>
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      <form className="card" onSubmit={submit}>
+        <div className="card-body">
+          <div className="row g-3">
+            <Field label="Missing Person" name="personId" select required value={form.personId} onChange={change} options={personOptions}/>
+            <div className="col-md-6">
+              <label className="form-label">Family Member (reference sample)</label>
+              <select name="familyId" className="form-select" value={form.familyId} onChange={change} disabled={!form.personId}>
+                <option value="">None — missing person / evidence sample</option>
+                {familyOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            <Field label="DNA Lab" name="labId" select required value={form.labId} onChange={change} options={labOptions}/>
+            <div className="col-md-6">
+              <label className="form-label">Assigned Technician (optional)</label>
+              <select name="technicianId" className="form-select" value={form.technicianId} onChange={change} disabled={!form.labId}>
+                <option value="">Not assigned</option>
+                {technicianOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            <Field label="Sample Type" name="sampleType" select required value={form.sampleType} onChange={change} options={SAMPLE_TYPES.includes(form.sampleType) || !form.sampleType ? SAMPLE_TYPES : [form.sampleType, ...SAMPLE_TYPES]}/>
+            <Field label="Collection Date" name="collectionDate" type="date" required value={form.collectionDate} onChange={change}/>
+            <Field label="Storage Location" name="storageLocation" value={form.storageLocation} onChange={change}/>
+            <div className="col-12"><label className="form-label">Collection Remarks</label><textarea name="remarks" value={form.remarks} onChange={change} className="form-control" rows="4"/></div>
+          </div>
+        </div>
+        <div className="card-footer bg-white text-end">
+          <Link to={editing ? `/dna-samples/${id}` : '/dna-samples'} className="btn btn-light me-2">Cancel</Link>
+          <button className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : editing ? 'Save Changes' : 'Save DNA Sample'}</button>
+        </div>
+      </form>
+    </>
+  )
 }
 
+// Ekta sample er details page — backend scope er baire hole 404 dey
 export function SampleDetails() {
-  const { id } = useParams(); const { role, user } = useAuth(); const { data } = useData(); const sample = data.samples.find(item => item.id === id); if (!sample) return <NotFound label="DNA sample"/>; if (!labCanAccessSample(role, user, data, sample)) return <AccessDenied/>; const person = data.missingPeople.find(item => item.id === sample.personId); const member = sample.familyMemberId ? data.familyMembers.find(item => item.id === sample.familyMemberId) : null; const relatedCase = data.cases.find(item => item.id === sample.caseId)
-  return <><PageHeader title={sample.id} subtitle="DNA sample record" action={role === 'Lab Technician' && sample.status === 'Awaiting Analysis' ? <Link className="btn btn-primary" to={`/lab/analysis/${sample.id}`}>Analyze Sample</Link> : null}/><div className="row g-4"><div className="col-lg-6"><Card title="Collection and relationship information"><div className="detail-grid"><span>DNA source<b>{sample.source}</b></span><span>Sample type<b>{sample.type}</b></span><span>Provider / owner<b>{sampleOwner(sample, data)}</b></span><span>Missing person<b>{person ? role === 'Lab Technician' ? `${person.firstName} ${person.lastName}` : <Link to={`/missing-persons/${person.id}`}>{person.firstName} {person.lastName}</Link> : '—'}</b></span><span>Family member<b>{member?.name || '—'}</b></span><span>Related case<b>{relatedCase ? role === 'Lab Technician' ? relatedCase.id : <Link to={`/cases/${relatedCase.id}`}>{relatedCase.id}</Link> : '—'}</b></span><span>Collection date<b>{sample.collected}</b></span><span>Storage location<b>{sample.storage}</b></span><span>Assigned laboratory<b>{sample.lab}</b></span></div></Card></div><div className="col-lg-6"><Card title="Analysis information"><div className="d-flex justify-content-between mb-3"><span>Current state</span><StatusBadge value={sample.status}/></div><div className="detail-grid"><span>Analysis date<b>{sample.analysis}</b></span><span>DNA profile code<b>{sample.profile}</b></span></div><hr/><b>Laboratory remarks</b><p className="mb-0 mt-1">{sample.remarks || '—'}</p></Card></div></div></>
+  const { id } = useParams()
+  const { role } = useAuth()
+  const nav = useNavigate()
+  const [sample, setSample] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    getSampleById(id)
+      .then(row => { if (mounted) setSample(row) })
+      .catch(requestError => { if (mounted) setError(errorMessage(requestError, 'Failed to load the DNA sample.')) })
+      .finally(() => { if (mounted) setLoading(false) })
+    return () => { mounted = false }
+  }, [id])
+
+  const remove = async () => {
+    if (!window.confirm(`Delete DNA sample #${sample.id}? This action cannot be undone.`)) return
+    try {
+      await deleteSample(sample.id)
+      nav('/dna-samples')
+    } catch (requestError) {
+      setError(errorMessage(requestError, 'Failed to delete the DNA sample.'))
+    }
+  }
+
+  if (loading) return <div className="card"><div className="card-body text-center text-secondary py-4">Loading DNA sample...</div></div>
+  if (!sample) return <div className="alert alert-warning">{error || 'This DNA sample could not be found.'}</div>
+
+  const canManage = role === 'Admin' || role === 'Officer'
+  const isTechnician = role === 'Lab Technician' // technician investigation page e link pabe na
+
+  return (
+    <>
+      <PageHeader
+        title={`DNA Sample #${sample.id}`}
+        subtitle="DNA sample record"
+        action={<>
+          {isTechnician && sample.status === 'Awaiting Analysis' && <Link className="btn btn-primary" to={`/lab/analysis/${sample.id}`}>Analyze Sample</Link>}
+          {canManage && <Link className="btn btn-outline-secondary" to={`/dna-samples/${sample.id}/edit`}>Edit</Link>}
+          {canManage && <button type="button" className="btn btn-outline-danger" onClick={remove}>Delete</button>}
+        </>}
+      />
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      <div className="row g-4">
+        <div className="col-lg-6">
+          <Card title="Collection and relationship information">
+            <div className="detail-grid">
+              <span>DNA source<b>{sample.source}</b></span>
+              <span>Sample type<b>{sample.sampleType}</b></span>
+              <span>Provider / owner<b>{sampleProvider(sample)}</b></span>
+              <span>Missing person<b>{isTechnician ? sample.personName : <Link to={`/missing-persons/${sample.personId}`}>{sample.personName}</Link>}</b></span>
+              <span>Family member<b>{sample.familyMemberName ? `${sample.familyMemberName} (${sample.familyRelationship})` : '—'}</b></span>
+              <span>Related case<b>{sample.caseId ? (isTechnician ? `#${sample.caseId}` : <Link to={`/cases/${sample.caseId}`}>#{sample.caseId}</Link>) : '—'}</b></span>
+              <span>Collection date<b>{sample.collectionDate}</b></span>
+              <span>Storage location<b>{sample.storageLocation || '—'}</b></span>
+              <span>Assigned laboratory<b>{sample.labName || '—'}</b></span>
+              <span>Assigned technician<b>{sample.technicianName || '—'}</b></span>
+            </div>
+          </Card>
+        </div>
+        <div className="col-lg-6">
+          <Card title="Analysis information">
+            <div className="d-flex justify-content-between mb-3"><span>Current state</span><StatusBadge value={sample.status}/></div>
+            <div className="detail-grid">
+              <span>Analysis date<b>{sample.analysisDate || '—'}</b></span>
+              <span>DNA profile code<b>{sample.dnaProfileCode || '—'}</b></span>
+            </div>
+            <hr/>
+            <b>Remarks</b>
+            <p className="mb-0 mt-1">{sample.remarks || '—'}</p>
+          </Card>
+        </div>
+      </div>
+    </>
+  )
 }
 
 export function DNAAnalysis() {

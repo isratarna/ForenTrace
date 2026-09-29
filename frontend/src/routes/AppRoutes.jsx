@@ -194,7 +194,17 @@ export default function AppRoutes() {
         <Route
           path="dna-samples/new"
           element={
-            <ProtectedRoute allowedRoles={['Officer']}>
+            <ProtectedRoute allowedRoles={['Admin', 'Officer']}>
+              <SampleForm />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* DNA sample edit — backend er PUT /api/dna-samples/:id er motoi Admin + Officer */}
+        <Route
+          path="dna-samples/:id/edit"
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Officer']}>
               <SampleForm />
             </ProtectedRoute>
           }

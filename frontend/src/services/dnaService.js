@@ -1,23 +1,11 @@
-// dnaService: provides DNA samples and matches. Uses mock data until backend endpoints exist.
-const USE_MOCK = true
+import api from './api'
 
-// When mock is enabled, generate simple sample and match rows per requested id.
-export const isMockDna = () => USE_MOCK
+// dnaService: DNA sample gulo ekhon real backend (/api/dna-samples) theke ashe.
+// DNA match API Issue 4 e toiri hobe — totokkhon match gulo mock thakbe.
+const USE_MOCK_MATCHES = true
 
-function buildSamples(id, { personId = null, caseId = null } = {}) {
-  const sampleKey = id ?? 'ANY'
-  const sampleRows = [1, 2].map(index => ({
-    sample_id: `MOCK-S-${sampleKey}-${index}`,
-    person_id: personId,
-    family_id: null,
-    sample_type: 'Buccal swab',
-    collection_date: '2026-09-01',
-    dna_profile_code: index === 1 ? `MOCK-DNA-${sampleKey}-1` : null,
-    status: index === 1 ? 'Analyzed' : 'Awaiting Analysis',
-    case_id: caseId,
-  }))
-  return sampleRows
-}
+// Match data ekhono mock kina (MatchesList e "(Sample data)" label dekhanor jonno)
+export const isMockDna = () => USE_MOCK_MATCHES
 
 function buildMatches(id) {
   const matchKey = id ?? 'ANY'
@@ -34,35 +22,75 @@ function buildMatches(id) {
   }]
 }
 
-// Public functions
-export async function getSamplesByPerson(personId) {
-  if (USE_MOCK) {
-    return Promise.resolve(buildSamples(personId, { personId }))
-  }
+// ---------- DNA Samples (real API) ----------
 
-  // TODO: Member 1 - wire to real API when /api/dna-samples exists
-  // Example: return api.get(`/dna-samples?person_id=${personId}`).then(r => r.data)
-  throw new Error('dnaService: dna samples API not implemented')
+// Sample list — params: { search, status, person_id, family_id, lab_id, case_id }
+export async function getSamples(params = {}) {
+  const response = await api.get('/dna-samples', { params })
+  return response.data.samples ?? []
 }
 
+// Ekta sample er details
+export async function getSampleById(id) {
+  const response = await api.get(`/dna-samples/${id}`)
+  return response.data.sample
+}
+
+// Notun sample register
+export async function createSample(data) {
+  const response = await api.post('/dna-samples', data)
+  return response.data.sample
+}
+
+// Sample er collection info update
+export async function updateSample(id, data) {
+  const response = await api.put(`/dna-samples/${id}`, data)
+  return response.data.sample
+}
+
+// Sample delete
+export async function deleteSample(id) {
+  const response = await api.delete(`/dna-samples/${id}`)
+  return response.data
+}
+
+// Missing person details page er DNA Samples tab er jonno
+export async function getSamplesByPerson(personId) {
+  return getSamples({ person_id: personId })
+}
+
+// Case details page er DNA Samples section er jonno
+export async function getSamplesByCase(caseId) {
+  return getSamples({ case_id: caseId })
+}
+
+// ---------- Lab lookups (sample form er dropdown er jonno) ----------
+
+// Shob DNA lab (GET /api/labs → { success, data })
+export async function getLabs() {
+  const response = await api.get('/labs')
+  return response.data.data ?? []
+}
+
+// Shob lab technician (GET /api/technicians → { success, data })
+export async function getTechnicians() {
+  const response = await api.get('/technicians')
+  return response.data.data ?? []
+}
+
+// ---------- DNA Matches (Issue 4 porjonto mock) ----------
+
 export async function getMatchesByPerson(personId) {
-  if (USE_MOCK) {
+  if (USE_MOCK_MATCHES) {
     return Promise.resolve(buildMatches(personId))
   }
 
-  // TODO: Member 1 - wire to real API when /api/dna-matches exists
+  // TODO: Member 1 - Issue 4 e /api/dna-matches toiri hole connect hobe
   throw new Error('dnaService: dna matches API not implemented')
 }
 
-export async function getSamplesByCase(caseId) {
-  if (USE_MOCK) {
-    return Promise.resolve(buildSamples(caseId, { caseId }))
-  }
-  throw new Error('dnaService: dna samples API not implemented')
-}
-
 export async function getMatchesByCase(caseId) {
-  if (USE_MOCK) {
+  if (USE_MOCK_MATCHES) {
     return Promise.resolve(buildMatches(caseId))
   }
   throw new Error('dnaService: dna matches API not implemented')
@@ -70,8 +98,15 @@ export async function getMatchesByCase(caseId) {
 
 export default {
   isMockDna,
+  getSamples,
+  getSampleById,
+  createSample,
+  updateSample,
+  deleteSample,
   getSamplesByPerson,
-  getMatchesByPerson,
   getSamplesByCase,
+  getLabs,
+  getTechnicians,
+  getMatchesByPerson,
   getMatchesByCase,
 }
