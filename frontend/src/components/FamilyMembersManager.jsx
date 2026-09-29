@@ -34,7 +34,7 @@ const initialDnaFormState = {
   status: 'Collected',
 };
 
-export default function FamilyMembersManager({ personId = null }) {
+export default function FamilyMembersManager({ personId = null, allowDnaRegistration = true }) {
   const navigate = useNavigate();
   const [members, setMembers] = useState([]);
   const [missingPersons, setMissingPersons] = useState([]);
@@ -590,12 +590,14 @@ export default function FamilyMembersManager({ personId = null }) {
                       <td>{m.address || 'N/A'}</td>
                       <td className="text-end">
                         <div className="d-flex justify-content-end gap-2">
-                          <button
-                            className="btn btn-sm btn-outline-info"
-                            onClick={() => handleOpenDnaModal(m)}
-                          >
-                            Register DNA
-                          </button>
+                          {allowDnaRegistration && (
+                            <button
+                              className="btn btn-sm btn-outline-info"
+                              onClick={() => handleOpenDnaModal(m)}
+                            >
+                              Register DNA
+                            </button>
+                          )}
                           <button
                             className="btn btn-sm btn-outline-primary"
                             onClick={() => handleOpenEdit(m)}

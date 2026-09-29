@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { MetricCard, PageHeader, StatusBadge } from '../components/Ui'
 import missingPersonService from '../services/missingPersonService'
+import caseService from '../services/caseService'
+import dnaService from '../services/dnaService'
+import SamplesTable from '../components/SamplesTable'
+import MatchesList from '../components/MatchesList'
+import FamilyMembersManager from '../components/FamilyMembersManager'
 import { useAuth } from '../context/AuthContext'
 
 const STATUSES = ['Missing', 'Identified']
@@ -282,6 +287,59 @@ export function MissingPersonDetails() {
       .catch(requestError => setError(errorMessage(requestError, 'Failed to load the missing person.')))
   }, [id])
 
+  // Tabbed details (Overview, Case, Family Members, DNA Samples, DNA Matches)
+  const [activeTab, setActiveTab] = useState('overview')
+
+  // Case tab state
+  const [caseData, setCaseData] = useState(null)
+  const [caseLoading, setCaseLoading] = useState(false)
+  const [caseError, setCaseError] = useState(null)
+
+  // DNA samples/matches state
+  const [samples, setSamples] = useState([])
+  const [samplesLoading, setSamplesLoading] = useState(false)
+  const [samplesError, setSamplesError] = useState(null)
+
+  const [matches, setMatches] = useState([])
+  const [matchesLoading, setMatchesLoading] = useState(false)
+  const [matchesError, setMatchesError] = useState(null)
+
+  useEffect(() => {
+    if (!person?.caseId || activeTab !== 'case') return
+    let mounted = true
+    setCaseLoading(true)
+    setCaseError(null)
+    caseService.getCaseById(person.caseId)
+      .then(c => { if (!mounted) return; setCaseData(c) })
+      .catch(err => { if (!mounted) return; setCaseError('Failed to load case') })
+      .finally(() => { if (mounted) setCaseLoading(false) })
+    return () => { mounted = false }
+  }, [activeTab, person?.caseId])
+
+  useEffect(() => {
+    if (!person?.id || activeTab !== 'dna-samples') return
+    let mounted = true
+    setSamplesLoading(true)
+    setSamplesError(null)
+    dnaService.getSamplesByPerson(person.id)
+      .then(rows => { if (!mounted) return; setSamples(rows) })
+      .catch(err => { if (!mounted) return; setSamplesError('Failed to load DNA samples') })
+      .finally(() => { if (mounted) setSamplesLoading(false) })
+    return () => { mounted = false }
+  }, [activeTab, person?.id])
+
+  useEffect(() => {
+    if (!person?.id || activeTab !== 'dna-matches') return
+    let mounted = true
+    setMatchesLoading(true)
+    setMatchesError(null)
+    dnaService.getMatchesByPerson(person.id)
+      .then(rows => { if (!mounted) return; setMatches(rows) })
+      .catch(err => { if (!mounted) return; setMatchesError('Failed to load DNA matches') })
+      .finally(() => { if (mounted) setMatchesLoading(false) })
+    return () => { mounted = false }
+  }, [activeTab, person?.id])
+
   if (error && !person) return <div className="alert alert-danger" role="alert">{error}</div>
   if (!person) return <div className="card"><div className="card-body text-center text-secondary py-4">Loading missing person...</div></div>
 
@@ -333,7 +391,6 @@ export function MissingPersonDetails() {
       setDeleting(false)
     }
   }
-
   return (
     <>
       <PageHeader
@@ -347,7 +404,9 @@ export function MissingPersonDetails() {
           </>
         )}
       </PageHeader>
+
       {error && <div className="alert alert-danger" role="alert">{error}</div>}
+
       <div className="row g-4">
         <div className="col-lg-4">
           <div className="card text-center p-3">
@@ -361,6 +420,7 @@ export function MissingPersonDetails() {
             <StatusBadge value={person.status} />
           </div>
         </div>
+
         <div className="col-lg-8">
           <div className="card">
             <div className="card-header bg-white"><strong>Complete record</strong></div>
@@ -374,6 +434,70 @@ export function MissingPersonDetails() {
               <p className="mb-0"><strong>Description:</strong> {person.description || 'No description provided.'}</p>
             </div>
           </div>
+
+          {/* Tabs */}
+          <div className="mt-4">
+            <div className="btn-group mb-3" role="tablist">
+              <button className={`btn btn-sm ${activeTab === 'overview' ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setActiveTab('overview')}>Overview</button>
+              <button className={`btn btn-sm ${activeTab === 'case' ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setActiveTab('case')}>Case</button>
+              <button className={`btn btn-sm ${activeTab === 'family' ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setActiveTab('family')}>Family Members</button>
+              <button className={`btn btn-sm ${activeTab === 'dna-samples' ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setActiveTab('dna-samples')}>DNA Samples</button>
+              <button className={`btn btn-sm ${activeTab === 'dna-matches' ? 'btn-primary' : 'btn-outline-secondary'}`} onClick={() => setActiveTab('dna-matches')}>DNA Matches</button>
+            </div>
+
+            <div className="card">
+              <div className="card-body">
+                {activeTab === 'overview' && (
+                  <div>
+                    <h5 className="mb-2">Overview</h5>
+                    <p className="text-secondary">Basic missing-person record and status.</p>
+                    {/* reuse the details already shown above; nothing else to render */}
+                  </div>
+                )}
+
+                {activeTab === 'case' && (
+                  <div>
+                    <h5 className="mb-2">Case</h5>
+                    {caseLoading && <div className="text-secondary">Loading case...</div>}
+                    {caseError && <div className="alert alert-danger">{caseError}</div>}
+                    {!person.caseId && <div className="alert alert-secondary">No case linked.</div>}
+                    {person.caseId && caseData && (
+                      <div className="card p-3">
+                        <div className="d-flex justify-content-between align-items-start"><div><strong>Case #{caseData.id}</strong><div className="text-secondary small">{caseData.reportDate} · {caseData.priority} · <StatusBadge value={caseData.status} /></div></div><div><Link to={`/cases/${caseData.id}`} className="btn btn-sm btn-outline-primary">View case</Link></div></div>
+                        <p className="mt-2 mb-0">{caseData.notes || 'No notes'}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeTab === 'family' && (
+                  <div>
+                    <h5 className="mb-2">Family Members</h5>
+                    <FamilyMembersManager personId={person.id} allowDnaRegistration={false} />
+                  </div>
+                )}
+
+                {activeTab === 'dna-samples' && (
+                  <div>
+                    <h5 className="mb-2">DNA Samples</h5>
+                    {samplesLoading && <div className="text-secondary">Loading samples...</div>}
+                    {samplesError && <div className="alert alert-danger">{samplesError}</div>}
+                    {!samplesLoading && !samplesError && <SamplesTable samples={samples} />}
+                  </div>
+                )}
+
+                {activeTab === 'dna-matches' && (
+                  <div>
+                    <h5 className="mb-2">DNA Matches</h5>
+                    {matchesLoading && <div className="text-secondary">Loading matches...</div>}
+                    {matchesError && <div className="alert alert-danger">{matchesError}</div>}
+                    {!matchesLoading && !matchesError && <MatchesList matches={matches} />}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </>

@@ -23,9 +23,7 @@ export function Dashboard({ type }) {
         caseService.getCaseStatistics(),
         adminStatsService.getAdminCounts(),
       ])
-      // Temporary logs to verify API response field names (remove after verification)
-      console.log('CASE_STATS_RESPONSE', caseStats)
-      console.log('ADMIN_COUNTS_RESPONSE', counts)
+      
       setCaseSummary(caseStats.summary || null)
       setAdminCounts(counts || null)
     } catch (err) {

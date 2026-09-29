@@ -35,6 +35,8 @@ function normalizeMissingPerson(record) {
     city: person.city ?? '',
     description: person.description ?? '',
     status: person.status ?? '',
+    caseId: person.caseId ?? person.case_id ?? null,
+    hasCase: person.hasCase ?? !!(person.caseId ?? person.case_id ?? false),
   }
 }
 
