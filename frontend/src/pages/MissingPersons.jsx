@@ -149,7 +149,7 @@ export function MissingPersons() {
       <PageHeader
         title="Missing Persons"
         subtitle="Live registry of reported missing individuals."
-        action={role === 'Officer' ? <Link to="/missing-persons/new" className="btn btn-primary">Register person</Link> : null}
+        action={['Admin', 'Officer'].includes(role) ? <Link to="/missing-persons/new" className="btn btn-primary">Register person</Link> : null}
       />
       {stats && (
         <div className="row g-3 mb-4">

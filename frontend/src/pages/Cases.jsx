@@ -226,7 +226,7 @@ export function Cases() {
 
   return (
     <>
-      <PageHeader title="Investigation Cases" subtitle="Investigation case files associated with missing persons." action={role === 'Officer' ? <Link to="/cases/new" className="btn btn-primary">Create Case</Link> : null} />
+      <PageHeader title="Investigation Cases" subtitle="Investigation case files associated with missing persons." action={['Admin', 'Officer'].includes(role) ? <Link to="/cases/new" className="btn btn-primary">Create Case</Link> : null} />
       {error && <div className="alert alert-danger" role="alert">{error}</div>}
       {warning && <div className="alert alert-warning" role="alert">{warning}</div>}
       <div className="row g-3 mb-4">

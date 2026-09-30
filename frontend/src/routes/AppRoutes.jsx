@@ -69,8 +69,14 @@ export default function AppRoutes() {
         element={<Login />}
       />
 
-      <Route path="/dna-labs" element={<DnaLabsPage />} />
-      <Route path="/lab-technicians" element={<LabTechniciansPage />} />
+      <Route
+        path="/dna-labs"
+        element={
+          <ProtectedRoute allowedRoles={['Admin']}>
+            <DnaLabsPage />
+          </ProtectedRoute>
+        }
+      />
 
       <Route
         path="/unauthorized"
@@ -172,12 +178,12 @@ export default function AppRoutes() {
         />
 
 
-        {/* OFFICER-ONLY CREATE OPERATIONS */}
+        {/* INVESTIGATION CREATE OPERATIONS */}
 
         <Route
           path="missing-persons/new"
           element={
-            <ProtectedRoute allowedRoles={['Officer']}>
+            <ProtectedRoute allowedRoles={['Admin', 'Officer']}>
               <MissingPersonForm />
             </ProtectedRoute>
           }
@@ -186,7 +192,7 @@ export default function AppRoutes() {
         <Route
           path="cases/new"
           element={
-            <ProtectedRoute allowedRoles={['Officer']}>
+            <ProtectedRoute allowedRoles={['Admin', 'Officer']}>
               <CaseForm />
             </ProtectedRoute>
           }
