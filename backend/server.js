@@ -16,6 +16,8 @@ import dnaLabRoutes from './routes/dnaLabRoutes.js';
 import labTechnicianRoutes from './routes/labTechnicianRoutes.js';
 import dnaAnalyticsRoutes from './routes/dnaAnalyticsRoutes.js';
 
+import chatbotRoutes from './routes/chatbotRoutes.js';
+
 const app = express()
 
 app.use(
@@ -51,6 +53,8 @@ app.use('/api/missing-persons', missingPersonRoutes)
 app.use('/api/labs', dnaLabRoutes);
 app.use('/api/technicians', labTechnicianRoutes);
 app.use('/api/analytics/dna', dnaAnalyticsRoutes);
+
+app.use('/api/chatbot', chatbotRoutes);
 
 async function startServer() {
   try {
