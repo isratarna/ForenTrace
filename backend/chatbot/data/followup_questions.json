@@ -1,0 +1,38 @@
+{
+  "description": "Follow-up search-side test (step 7). prev = the previous question, q = the new one. kind: followup (should be answered from the previous topic's entry = expect), change_unrelated (topic change to something off-topic: should be blocked, ⚠ if it passes), change_faq (topic change to a different FAQ topic: should be answered from the NEW topic's entry = expect, not pulled to the old one). Run: node chatbot/followupTest.js",
+  "questions": [
+    { "kind": "followup", "prev": "How do I register a DNA sample?", "q": "Who can do that?", "expect": "How do I register (add, create, collect) a DNA sample" },
+    { "kind": "followup", "prev": "How do I create an investigation case?", "q": "Can I edit it later?", "expect": "How do I create (open, register) an investigation case" },
+    { "kind": "followup", "prev": "What are the DNA sample statuses?", "q": "Where do I find them?", "expect": "What are the DNA sample statuses" },
+    { "kind": "followup", "prev": "What is a family reference sample?", "q": "Who gives this sample?", "expect": "What is a family reference DNA sample" },
+    { "kind": "followup", "prev": "What are the case statuses?", "q": "What do these mean for the missing person?", "expect": ["What do the case statuses", "What are the missing person statuses"], "note": "the question itself asks about the missing person, so the missing person statuses entry is also a right answer" },
+    { "kind": "followup", "prev": "What reports are available?", "q": "Can I download those as a file?", "expect": "What reports are available" },
+    { "kind": "followup", "prev": "What can a lab technician do?", "q": "Can they confirm a match?", "expect": "a lab technician's permissions (duties, tasks)" },
+    { "kind": "followup", "prev": "What does the dashboard show?", "q": "What else is there?", "expect": "What does the dashboard show" },
+    { "kind": "followup", "prev": "What can a police officer do?", "q": "Can he delete a DNA match?", "expect": "What can a police officer (investigating officer) do" },
+    { "kind": "followup", "prev": "What can a lab technician do?", "q": "Can she register samples?", "expect": "a lab technician's permissions (duties, tasks)" },
+    { "kind": "followup", "prev": "Who creates officer accounts?", "q": "Who approves him?", "expect": "Who creates officer accounts" },
+    { "kind": "followup", "prev": "How do I register a missing person?", "q": "What details do I need about her?", "expect": "How do I register (add, report) a missing (lost) person" },
+    { "kind": "followup", "prev": "What is a DNA profile code?", "q": "Who enters this code?", "expect": ["What is a DNA profile code?", "How does a lab technician analyse"] },
+    { "kind": "followup", "prev": "What happens after a match is confirmed?", "q": "And after a rejection?", "expect": ["What happens after (when) a DNA match is confirmed", "What do the DNA match statuses"] },
+    { "kind": "followup", "prev": "How do I register a DNA sample?", "q": "Which role?", "expect": "How do I register (add, create, collect) a DNA sample" },
+    { "kind": "followup", "prev": "How do I change my password?", "q": "Any other way?", "expect": "How do I change (update, reset) my password" },
+    { "kind": "followup", "prev": "What is the similarity percentage?", "q": "And the confidence level?", "expect": ["What is the confidence level", "What is the similarity percentage"] },
+    { "kind": "followup", "prev": "How do I register a DNA sample?", "q": "What about for a family member instead?", "expect": ["How do I register a family reference DNA sample", "How do I register (add, create, collect) a DNA sample"], "note": "7 words, no pronoun: only the proposed rule sees it. The register-DNA-sample entry is also a right answer (its form has the family member field for reference samples)" },
+    { "kind": "followup", "prev": "How do I create an investigation case?", "q": "Which officer should be chosen for the case?", "expect": "How do I create (open, register) an investigation case", "note": "8 words, no pronoun: the plan rule misses it, the proposed rule sees it (starts with 'Which')" },
+
+    { "kind": "change_unrelated", "prev": "How do I register a DNA sample?", "q": "Is it raining?" },
+    { "kind": "change_unrelated", "prev": "What can a lab technician do?", "q": "Tell me a joke" },
+    { "kind": "change_unrelated", "prev": "What is ForenTrace?", "q": "Can you sing it for me?" },
+    { "kind": "change_unrelated", "prev": "How does DNA matching work?", "q": "Cook rice how?" },
+    { "kind": "change_unrelated", "prev": "What are the case statuses?", "q": "What is the best phone to buy under 20000 taka?" },
+    { "kind": "change_unrelated", "prev": "How do I log out?", "q": "Who won the last football world cup final?" },
+
+    { "kind": "change_faq", "prev": "How do I register a DNA sample?", "q": "How do I change my password?", "expect": "How do I change (update, reset) my password" },
+    { "kind": "change_faq", "prev": "What can a lab technician do?", "q": "Log out how?", "expect": "How do I log out (sign out)" },
+    { "kind": "change_faq", "prev": "How do I create an investigation case?", "q": "What is a DNA profile code?", "expect": "What is a DNA profile code?" },
+    { "kind": "change_faq", "prev": "What is a family reference sample?", "q": "What does the dashboard show?", "expect": "What does the dashboard show" },
+    { "kind": "change_faq", "prev": "How do I register a missing person?", "q": "Is my data secure?", "expect": "Is my data secure" },
+    { "kind": "change_faq", "prev": "What reports are available?", "q": "How does it protect passwords?", "expect": "Is my data secure" }
+  ]
+}

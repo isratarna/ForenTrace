@@ -19,8 +19,8 @@ The earlier CB-1…CB-8 work is in `MEMBER1_CHATBOT_CHANGES.md`.
 | 4 | Step 4 | Teach-the-bot test (swap in FAQ v2, re-ingest, restore) | `teachTest.js` | ✅ Done (blocked 0.6445 → answered 0.8265 by the new entry; original restored; pre-flight 5/5) |
 | 5 | Step 5 | FAQ checker (roles, exact menu names, vague answers) + wording list | `checkFaq.js`, `data/faq_terms.json` | ✅ Done (5 entries fixed in Phase 5b → checker 0 problems; main 10/10, holdout 85/91, same answer/block decisions) |
 | 6 | Step 6 | Bangla search-side test file | `data/bangla_questions.json` | ✅ Done (after Phase 6b: natural 36/36 right entry and answered, Bangla 48/50; off 13/13 blocked; threshold 0.65 confirmed) |
-| 7 | Step 7 | Follow-up search-side test (copy of Member 2's rule) | `followupTest.js`, `data/followup_questions.json` | ⏳ Next |
-| 8 | Step 8 | Draft FAQ entries for the new features (not added yet) | `data/new_feature_faq_drafts.txt` | ⏳ |
+| 7 | Step 7 | Follow-up search-side test (copy of Member 2's rule) | `followupTest.js`, `data/followup_questions.json` | ✅ Done (Phase 7b: proposed rule → follow-ups 19/19, change_faq 6/6, stress 388/438 vs 351 for the plan rule; 4 ⚠ saved for step 10) |
+| 8 | Step 8 | Draft FAQ entries for the new features (not added yet) | `data/new_feature_faq_drafts.txt` | ⏳ Next |
 | — | Steps 9–13 | End-to-end Bangla / follow-up tests, run-all, team message | — | ⏸ Waiting for Members 2 and 3 |
 
 **Rules followed in every phase**
@@ -650,8 +650,8 @@ Every `expect` was taken from the question line of the real chunk in Atlas (all 
     { "kind": "paraphrase", "type": "on", "q": "What are the steps to collect and record a DNA sample?", "expect": "How do I register (add, create, collect) a DNA sample" },
     { "kind": "paraphrase", "type": "on", "q": "Which types of DNA samples are supported?", "expect": "What DNA sample types can be registered" },
     { "kind": "paraphrase", "type": "on", "q": "Can I register a hair or blood sample?", "expect": "What DNA sample types can be registered" },
-    { "kind": "paraphrase", "type": "on", "q": "What does Awaiting Analysis mean?", "expect": "What do the DNA sample statuses" },
-    { "kind": "paraphrase", "type": "on", "q": "What does it mean when a sample is rejected?", "expect": "What do the DNA sample statuses" },
+    { "kind": "paraphrase", "type": "on", "q": "What does Awaiting Analysis mean?", "expect": "What are the DNA sample statuses" },
+    { "kind": "paraphrase", "type": "on", "q": "What does it mean when a sample is rejected?", "expect": "What are the DNA sample statuses" },
     { "kind": "paraphrase", "type": "on", "q": "How does the technician process a sample in the lab?", "expect": "How does a lab technician analyse" },
     { "kind": "paraphrase", "type": "on", "q": "How do I record the analysis result of a sample?", "expect": "How does a lab technician analyse" },
     { "kind": "paraphrase", "type": "on", "q": "What is a profile code?", "expect": "What is a DNA profile code?" },
@@ -1944,7 +1944,7 @@ Every `expect` is the question line of the current chunk in Atlas (after Phases 
     { "kind": "natural", "type": "on", "bn": "পরিবারের সদস্যের ডিএনএ নমুনা কীভাবে নিবন্ধন করব?", "q": "How do I register a family member's DNA sample?", "expect": "How do I register a family reference DNA sample" },
     { "kind": "natural", "type": "on", "bn": "ডিএনএ নমুনা কীভাবে নিবন্ধন করব?", "q": "How do I register a DNA sample?", "expect": "How do I register (add, create, collect) a DNA sample" },
     { "kind": "natural", "type": "on", "bn": "কী কী ধরনের নমুনা নেওয়া যায়?", "q": "What kinds of samples can be taken?", "expect": "What DNA sample types can be registered" },
-    { "kind": "natural", "type": "on", "bn": "নমুনার স্ট্যাটাস 'বিশ্লেষণের অপেক্ষায়' মানে কী?", "q": "What does the sample status 'awaiting analysis' mean?", "expect": "What do the DNA sample statuses" },
+    { "kind": "natural", "type": "on", "bn": "নমুনার স্ট্যাটাস 'বিশ্লেষণের অপেক্ষায়' মানে কী?", "q": "What does the sample status 'awaiting analysis' mean?", "expect": "What are the DNA sample statuses" },
     { "kind": "natural", "type": "on", "bn": "টেকনিশিয়ান কীভাবে নমুনা বিশ্লেষণ করেন?", "q": "How does the technician analyze a sample?", "expect": "How does a lab technician analyse" },
     { "kind": "natural", "type": "on", "bn": "ডিএনএ প্রোফাইল কোড কী?", "q": "What is a DNA profile code?", "expect": "What is a DNA profile code?" },
     { "kind": "natural", "type": "on", "bn": "ডিএনএ মিলানো কীভাবে কাজ করে?", "q": "How does DNA matching work?", "expect": "How does DNA matching (DNA comparison) work" },
@@ -1970,7 +1970,7 @@ Every `expect` is the question line of the current chunk in Atlas (after Phases 
     { "kind": "literal", "type": "on", "bn": "হিসাব খুলব কীভাবে?", "q": "How will I open calculation?", "expect": "How do I sign up for ForenTrace" },
     { "kind": "literal", "type": "on", "bn": "কে কে এই সফটওয়্যার ব্যবহার করে?", "q": "Who who uses this software?", "expect": "What user roles (user types" },
     { "kind": "literal", "type": "on", "bn": "লগ আউট করার উপায় কী?", "q": "Log out doing way what?", "expect": "How do I log out (sign out)" },
-    { "kind": "literal", "type": "on", "bn": "নমুনার অবস্থা কয়টা আছে?", "q": "Sample's condition how many are there?", "expect": "What do the DNA sample statuses" },
+    { "kind": "literal", "type": "on", "bn": "নমুনার অবস্থা কয়টা আছে?", "q": "Sample's condition how many are there?", "expect": "What are the DNA sample statuses" },
     { "kind": "literal", "type": "on", "bn": "প্রোফাইল কোড জিনিসটা কী?", "q": "Profile code thing is what?", "expect": "What is a DNA profile code?" },
     { "kind": "literal", "type": "on", "bn": "তদন্ত কর্মকর্তা কী করতে পারেন?", "q": "Investigation officer what can do?", "expect": "What can a police officer (investigating officer) do" },
 
@@ -2155,3 +2155,848 @@ The timeout didn't happen again in this run, so the new retry branch hasn't actu
 ### Known gaps / notes
 - Tell Member 2 you re-ingested again (3 question lines changed).
 - **For Member 2 (translate.js):** make sure the translation prompt says the text is about a software system (accounts, cases, samples). Otherwise হিসাব may become "calculation" and পাকা may become "ripe", and those questions miss or get blocked.
+
+---
+
+## Phase 7 — Step 7: Test follow-ups on the search side
+
+> **Updated in Phase 7b:** the ✗ results below were fixed there (proposed rule + one FAQ wording change). The code blocks in this section show the first version; the current `followupTest.js` and `followup_questions.json` are in Phase 7b.
+
+### Goal
+Member 2 is building follow-up questions ("Who can do that?"). This phase tests, **without Gemini**, whether search finds the right FAQ entry for follow-ups, whether topic changes are handled, and where the follow-up rule itself goes wrong. The rule is **copied** into the test script only for testing. Member 2's files are not touched.
+
+**The rule (from the plan, copied in `followupRule()`):**
+- A question is a follow-up if it has **4 words or fewer**, or contains **it, that, this, these, those, they, them, there, he, she, him, her**.
+- For a follow-up, search the new question alone **and** "previous + new" together, and keep whichever scored better.
+- Any other question is searched alone.
+
+### Files changed
+
+| File | Type | Purpose |
+| --- | --- | --- |
+| `backend/chatbot/followupTest.js` | **New** | Copy of the rule + the test (both searches, rule decision, chosen search, passed/blocked, ✓/✗/⚠, totals, failure sorting) |
+| `backend/chatbot/data/followup_questions.json` | **New** | 31 test entries |
+| `backend/chatbot/data/followup_topic_change_warnings.json` | **New** (re-written on every run) | The ⚠ list: topic changes that reach Gemini, for step 10 |
+
+### How to run
+```powershell
+cd backend
+node chatbot/followupTest.js                     # default: data/followup_questions.json
+node chatbot/followupTest.js other_file.json     # any file in data/, or a full path
+```
+
+### Code — `backend/chatbot/followupTest.js` (full new file)
+
+```js
+// backend/chatbot/followupTest.js   →   run from backend folder:
+//   node chatbot/followupTest.js                          (default: data/followup_questions.json)
+//   node chatbot/followupTest.js my_followups.json        (any file in data/, or a full path)
+//
+// ⚠ NOTE: followupRule() below is a COPY of Member 2's follow-up rule, made only for testing.
+//   The real rule lives in Member 2's code. If the rule changes there, change it here too —
+//   and if this test shows the rule should change, tell Member 2 (don't edit their files).
+//
+// For every entry it searches twice — the new question alone, and "previous + new" together —
+// applies the rule and the threshold, and marks the result:
+//   followup          ✓ passes with the right (previous-topic) entry, ✗ otherwise
+//   change_unrelated  ✓ blocked, ⚠ passes (Gemini must refuse it later — saved for step 10)
+//   change_faq        ✓ passes with the NEW topic's entry, ✗ if blocked or pulled to the old topic
+// No Gemini call. Exit code 1 if any ✗.
+import 'dotenv/config';
+import fs from 'node:fs';
+import path from 'node:path';
+import { closeMongo } from './mongoClient.js';
+import { searchTop, getThreshold, isHit, questionLine, resolveDataFile, DATA_DIR } from './evaluate.js';
+
+const DEFAULT_FILE = 'followup_questions.json';
+const WARNINGS_FILE = path.join(DATA_DIR, 'followup_topic_change_warnings.json'); // step 10 er jonno
+const MAX_FOLLOWUP_WORDS = 4;
+const FOLLOWUP_PRONOUNS = ['it', 'that', 'this', 'these', 'those', 'they', 'them', 'there', 'he', 'she', 'him', 'her'];
+const PRONOUN_RE = new RegExp(`\\b(${FOLLOWUP_PRONOUNS.join('|')})\\b`, 'i');
+const KINDS = ['followup', 'change_unrelated', 'change_faq'];
+
+// ---- COPY of Member 2's rule (testing only) ----
+// 4 word ba kom, othoba pronoun thakle → follow-up
+function followupRule(question) {
+  const words = question.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= MAX_FOLLOWUP_WORDS) return { isFollowup: true, reason: `${words.length} words` };
+  const pronoun = question.match(PRONOUN_RE);
+  if (pronoun) return { isFollowup: true, reason: `"${pronoun[1].toLowerCase()}"` };
+  return { isFollowup: false, reason: `${words.length} words, no pronoun` };
+}
+// Follow-up hole duibar search kore je score beshi sheta rakha; noile shudhu notun question
+function chooseSearch(isFollowup, alone, combined) {
+  if (isFollowup && combined.score > alone.score) return { which: 'prev+new', top: combined };
+  return { which: 'alone', top: alone };
+}
+// ------------------------------------------------
+
+function loadEntries(file) {
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const list = Array.isArray(raw) ? raw : raw.questions;
+  if (!Array.isArray(list)) throw new Error(`${path.basename(file)} has no "questions" array`);
+  list.forEach((e, i) => {
+    if (typeof e.prev !== 'string' || typeof e.q !== 'string' || !KINDS.includes(e.kind)) {
+      throw new Error(`${path.basename(file)} entry ${i + 1} needs "prev", "q" and "kind" (${KINDS.join(' / ')})`);
+    }
+    if (e.kind !== 'change_unrelated' && !e.expect) throw new Error(`${path.basename(file)} entry ${i + 1} (${e.kind}) needs "expect"`);
+  });
+  return list;
+}
+
+// Search result ke { score, text } e ana — faka hole score 0
+async function top1(text) {
+  const [top] = await searchTop(text);
+  return { score: top?.score ?? 0, text: top?.text ?? '' };
+}
+
+try {
+  const file = resolveDataFile(process.argv[2] || DEFAULT_FILE);
+  const entries = loadEntries(file);
+  const threshold = getThreshold();
+  if (threshold === null) throw new Error('CHATBOT_SCORE_THRESHOLD is not set');
+  console.log(`Follow-up file: ${path.relative(process.cwd(), file)}  (${entries.length} entries)`);
+  console.log(`CHATBOT_SCORE_THRESHOLD = ${threshold}`);
+  console.log('Rule (copy of Member 2\'s): follow-up if ≤ 4 words or it contains it/that/this/these/those/they/them/there/he/she/him/her\n');
+
+  const rows = [];
+  for (const [i, e] of entries.entries()) {
+    const alone = await top1(e.q);
+    const combined = await top1(`${e.prev} ${e.q}`);
+    const rule = followupRule(e.q);
+    const chosen = chooseSearch(rule.isFollowup, alone, combined);
+    const passed = chosen.top.score >= threshold;
+    const rightEntry = e.expect ? isHit(chosen.top.text, e.expect) : false;
+
+    let mark;
+    if (e.kind === 'change_unrelated') mark = passed ? '⚠' : '✓';
+    else mark = passed && rightEntry ? '✓' : '✗';
+
+    // Fail keno — kon dol e porlo
+    let why = '';
+    if (mark === '✗' && e.kind === 'followup') {
+      const combinedWouldWork = combined.score >= threshold && isHit(combined.text, e.expect);
+      if (!rule.isFollowup && combinedWouldWork) why = 'rule missed a follow-up';
+      else if (rule.isFollowup) why = passed ? 'rule caught it, wrong entry' : 'rule caught it, score too low';
+      else why = 'not a follow-up by the rule, and prev+new would not help';
+    } else if (mark === '✗' && e.kind === 'change_faq') {
+      why = !passed ? 'blocked' : chosen.which === 'prev+new' ? 'pulled to the old topic by prev+new' : 'wrong entry';
+    }
+
+    rows.push({ n: i + 1, e, alone, combined, rule, chosen, passed, rightEntry, mark, why });
+  }
+
+  console.table(rows.map(r => ({
+    '#': r.n,
+    kind: r.e.kind,
+    question: r.e.q,
+    alone: r.alone.score.toFixed(4),
+    'prev+new': r.combined.score.toFixed(4),
+    rule: `${r.rule.isFollowup ? 'follow-up' : 'new'} (${r.rule.reason})`,
+    used: r.chosen.which,
+    result: r.passed ? 'passed' : 'blocked',
+    mark: r.mark
+  })));
+
+  // Kon entry pelo — shudhu ✗ ar ⚠ er jonno detail
+  const problems = rows.filter(r => r.mark !== '✓');
+  if (problems.length) {
+    console.log('\nDetails (✗ and ⚠):');
+    for (const r of problems) {
+      console.log(`  #${r.n} ${r.mark} [${r.e.kind}] prev: "${r.e.prev}" → "${r.e.q}"${r.why ? `  — ${r.why}` : ''}`);
+      console.log(`     used ${r.chosen.which} (${r.chosen.top.score.toFixed(4)}): ${questionLine(r.chosen.top.text).slice(0, 90)}`);
+      if (r.e.expect) console.log(`     expected: ${JSON.stringify(r.e.expect)}`);
+    }
+  }
+
+  // Totals
+  console.log('\nTotals:');
+  for (const kind of KINDS) {
+    const k = rows.filter(r => r.e.kind === kind);
+    if (!k.length) continue;
+    const count = m => k.filter(r => r.mark === m).length;
+    console.log(`  ${kind.padEnd(17)} ✓ ${count('✓')}/${k.length}${count('✗') ? `   ✗ ${count('✗')}` : ''}${count('⚠') ? `   ⚠ ${count('⚠')}` : ''}`);
+  }
+  const followups = rows.filter(r => r.e.kind === 'followup');
+  const caught = followups.filter(r => r.rule.isFollowup).length;
+  console.log(`  rule detected ${caught}/${followups.length} real follow-ups`);
+
+  // ⚠ list — step 10 e dekhte hobe Gemini egulo refuse kore kina
+  const warnings = rows.filter(r => r.mark === '⚠').map(r => ({
+    prev: r.e.prev, q: r.e.q, used: r.chosen.which, score: Number(r.chosen.top.score.toFixed(4)), topChunk: questionLine(r.chosen.top.text)
+  }));
+  fs.writeFileSync(WARNINGS_FILE, JSON.stringify({ description: 'Topic changes that pass the threshold (⚠). Step 10: Gemini must refuse each of these.', warnings }, null, 2) + '\n');
+  console.log(`  ⚠ topic changes that reach Gemini: ${warnings.length} (saved to ${path.relative(process.cwd(), WARNINGS_FILE)})`);
+
+  const missed = rows.filter(r => r.why === 'rule missed a follow-up');
+  if (missed.length) {
+    console.log('\nFor Member 2 — follow-ups the rule missed (prev+new would have found the right entry):');
+    missed.forEach(r => console.log(`  prev: "${r.e.prev}" → "${r.e.q}"  (alone ${r.alone.score.toFixed(4)}, prev+new ${r.combined.score.toFixed(4)})`));
+  }
+
+  if (rows.some(r => r.mark === '✗')) {
+    console.log(`\n❌ ${rows.filter(r => r.mark === '✗').length} ✗`);
+    process.exitCode = 1;
+  } else {
+    console.log('\n✅ No ✗');
+  }
+} catch (err) {
+  console.error('Follow-up test FAILED:', err.message);
+  process.exitCode = 1;
+} finally {
+  await closeMongo(); // fail korleo connection bondho
+}
+```
+
+### What each part does
+
+| Part | What it does |
+| --- | --- |
+| Note at the top | Says the rule is a **copy** for testing: if Member 2 changes theirs, change it here, and report rule problems to Member 2 instead of editing their files. |
+| `followupRule()` | The rule above. Word count uses spaces; pronouns use `\b…\b`, so "it's" and "that's" also count, as a typical implementation would do. Returns `isFollowup` plus the reason ("3 words" / `"it"` / "8 words, no pronoun"). |
+| `chooseSearch()` | Follow-up → "prev+new" if it scored higher than "alone", otherwise "alone". Not a follow-up → always "alone". |
+| `loadEntries()` | Every entry needs `prev`, `q` and `kind` (`followup` / `change_unrelated` / `change_faq`). The two kinds that must find an entry also need `expect`. |
+| Two searches per entry | `top1(q)` and `top1(prev + " " + q)` with `searchTop()` from `evaluate.js`. |
+| Marks | `followup`: ✓ if passed **and** the right entry. `change_unrelated`: ✓ if blocked, **⚠** if it passes (not a failure: Gemini must refuse it). `change_faq`: ✓ if passed with the **new** topic's entry. |
+| Failure sorting (`why`) | Follow-up ✗: **"rule missed a follow-up"** (rule said new, but prev+new would have passed with the right entry → example for Member 2), "rule caught it, score too low / wrong entry" (→ FAQ wording), or "not a follow-up by the rule, and prev+new would not help". Change-FAQ ✗: "blocked", "pulled to the old topic by prev+new" or "wrong entry". |
+| Table | For each entry: both scores, the rule's decision and reason, which search was used, passed/blocked, and the mark. Details are printed for every ✗ and ⚠. |
+| Totals | ✓/✗/⚠ per kind, how many real follow-ups the rule detected, and the ⚠ count. |
+| `followup_topic_change_warnings.json` | Every ⚠ (prev, q, score, top chunk) is saved for step 10, where the end-to-end test must see Gemini refuse each one. |
+| Exit code | 1 if any ✗ (⚠ doesn't fail). `closeMongo()` in `finally`. |
+
+### Code — `backend/chatbot/data/followup_questions.json` (full new file)
+
+```json
+{
+  "description": "Follow-up search-side test (step 7). prev = the previous question, q = the new one. kind: followup (should be answered from the previous topic's entry = expect), change_unrelated (topic change to something off-topic: should be blocked, ⚠ if it passes), change_faq (topic change to a different FAQ topic: should be answered from the NEW topic's entry = expect, not pulled to the old one). Run: node chatbot/followupTest.js",
+  "questions": [
+    { "kind": "followup", "prev": "How do I register a DNA sample?", "q": "Who can do that?", "expect": "How do I register (add, create, collect) a DNA sample" },
+    { "kind": "followup", "prev": "How do I create an investigation case?", "q": "Can I edit it later?", "expect": "How do I create (open, register) an investigation case" },
+    { "kind": "followup", "prev": "What are the DNA sample statuses?", "q": "Where do I find them?", "expect": "What are the DNA sample statuses" },
+    { "kind": "followup", "prev": "What is a family reference sample?", "q": "Who gives this sample?", "expect": "What is a family reference DNA sample" },
+    { "kind": "followup", "prev": "What are the case statuses?", "q": "What do these mean for the missing person?", "expect": ["What do the case statuses", "What are the missing person statuses"], "note": "the question itself asks about the missing person, so the missing person statuses entry is also a right answer" },
+    { "kind": "followup", "prev": "What reports are available?", "q": "Can I download those as a file?", "expect": "What reports are available" },
+    { "kind": "followup", "prev": "What can a lab technician do?", "q": "Can they confirm a match?", "expect": "a lab technician's permissions (duties, tasks)" },
+    { "kind": "followup", "prev": "What does the dashboard show?", "q": "What else is there?", "expect": "What does the dashboard show" },
+    { "kind": "followup", "prev": "What can a police officer do?", "q": "Can he delete a DNA match?", "expect": "What can a police officer (investigating officer) do" },
+    { "kind": "followup", "prev": "What can a lab technician do?", "q": "Can she register samples?", "expect": "a lab technician's permissions (duties, tasks)" },
+    { "kind": "followup", "prev": "Who creates officer accounts?", "q": "Who approves him?", "expect": "Who creates officer accounts" },
+    { "kind": "followup", "prev": "How do I register a missing person?", "q": "What details do I need about her?", "expect": "How do I register (add, report) a missing (lost) person" },
+    { "kind": "followup", "prev": "What is a DNA profile code?", "q": "Who enters this code?", "expect": ["What is a DNA profile code?", "How does a lab technician analyse"] },
+    { "kind": "followup", "prev": "What happens after a match is confirmed?", "q": "And after a rejection?", "expect": ["What happens after (when) a DNA match is confirmed", "What do the DNA match statuses"] },
+    { "kind": "followup", "prev": "How do I register a DNA sample?", "q": "Which role?", "expect": "How do I register (add, create, collect) a DNA sample" },
+    { "kind": "followup", "prev": "How do I change my password?", "q": "Any other way?", "expect": "How do I change (update, reset) my password" },
+    { "kind": "followup", "prev": "What is the similarity percentage?", "q": "And the confidence level?", "expect": ["What is the confidence level", "What is the similarity percentage"] },
+    { "kind": "followup", "prev": "How do I register a DNA sample?", "q": "What about for a family member instead?", "expect": "How do I register a family reference DNA sample", "note": "real follow-up with 7 words and no pronoun: the rule does not see it" },
+    { "kind": "followup", "prev": "How do I create an investigation case?", "q": "Which officer should be chosen for the case?", "expect": "How do I create (open, register) an investigation case", "note": "real follow-up with 8 words and no pronoun: the rule does not see it" },
+
+    { "kind": "change_unrelated", "prev": "How do I register a DNA sample?", "q": "Is it raining?" },
+    { "kind": "change_unrelated", "prev": "What can a lab technician do?", "q": "Tell me a joke" },
+    { "kind": "change_unrelated", "prev": "What is ForenTrace?", "q": "Can you sing it for me?" },
+    { "kind": "change_unrelated", "prev": "How does DNA matching work?", "q": "Cook rice how?" },
+    { "kind": "change_unrelated", "prev": "What are the case statuses?", "q": "What is the best phone to buy under 20000 taka?" },
+    { "kind": "change_unrelated", "prev": "How do I log out?", "q": "Who won the last football world cup final?" },
+
+    { "kind": "change_faq", "prev": "How do I register a DNA sample?", "q": "How do I change my password?", "expect": "How do I change (update, reset) my password" },
+    { "kind": "change_faq", "prev": "What can a lab technician do?", "q": "Log out how?", "expect": "How do I log out (sign out)" },
+    { "kind": "change_faq", "prev": "How do I create an investigation case?", "q": "What is a DNA profile code?", "expect": "What is a DNA profile code?" },
+    { "kind": "change_faq", "prev": "What is a family reference sample?", "q": "What does the dashboard show?", "expect": "What does the dashboard show" },
+    { "kind": "change_faq", "prev": "How do I register a missing person?", "q": "Is my data secure?", "expect": "Is my data secure" },
+    { "kind": "change_faq", "prev": "What reports are available?", "q": "How does it protect passwords?", "expect": "Is my data secure" }
+  ]
+}
+```
+
+| Group | Entries | Examples |
+| --- | --- | --- |
+| Follow-ups, each pronoun | 13 | it, that, this, these, those, they, them, there, he, she, him, her: "Who can do that?", "Can I edit it later?", "Where do I find them?", "Who approves him?" |
+| Short follow-ups, no pronoun | 4 | "And after a rejection?", "Which role?", "Any other way?", "And the confidence level?" |
+| Real follow-ups the rule can't see | 2 | "What about for a family member instead?" (7 words), "Which officer should be chosen for the case?" (8 words) |
+| Topic change that **looks like** a follow-up | 4 | "Is it raining?", "Tell me a joke", "Can you sing it for me?", "Cook rice how?" |
+| Topic change to an unrelated subject | 2 | "What is the best phone to buy under 20000 taka?", "Who won the last football world cup final?" |
+| Topic change to a **different FAQ topic** | 6 | "How do I change my password?" after a DNA sample question, "Log out how?", "Is my data secure?", "How does it protect passwords?" |
+
+**One expectation was loosened after the first run, and here is why:** #5 "What do these mean for the missing person?" (after "What are the case statuses?") found the **missing person statuses** entry. The question itself asks about the missing person, so that entry is also a right answer. `expect` now accepts both entries, and a `note` in the file says why. No other expectation was changed.
+
+### Testing results
+```text
+Follow-up file: chatbot\data\followup_questions.json  (31 entries)
+CHATBOT_SCORE_THRESHOLD = 0.65
+
+ #  kind              question                                          alone   prev+new  rule                          used      result   mark
+ 1  followup          Who can do that?                                  0.6232  0.8978    follow-up (4 words)           prev+new  passed   ✓
+ 2  followup          Can I edit it later?                              0.6413  0.8535    follow-up ("it")              prev+new  passed   ✓
+ 3  followup          Where do I find them?                             0.6030  0.8026    follow-up ("them")            prev+new  passed   ✗
+ 4  followup          Who gives this sample?                            0.6953  0.8967    follow-up (4 words)           prev+new  passed   ✓
+ 5  followup          What do these mean for the missing person?        0.8042  0.8255    follow-up ("these")           prev+new  passed   ✓
+ 6  followup          Can I download those as a file?                   0.6186  0.8412    follow-up ("those")           prev+new  passed   ✓
+ 7  followup          Can they confirm a match?                         0.7567  0.8031    follow-up ("they")            prev+new  passed   ✓
+ 8  followup          What else is there?                               0.6019  0.8650    follow-up (4 words)           prev+new  passed   ✓
+ 9  followup          Can he delete a DNA match?                        0.7544  0.8232    follow-up ("he")              prev+new  passed   ✓
+10  followup          Can she register samples?                         0.7304  0.8190    follow-up (4 words)           prev+new  passed   ✓
+11  followup          Who approves him?                                 0.6210  0.8381    follow-up (3 words)           prev+new  passed   ✓
+12  followup          What details do I need about her?                 0.6265  0.8819    follow-up ("her")             prev+new  passed   ✓
+13  followup          Who enters this code?                             0.6477  0.8898    follow-up (4 words)           prev+new  passed   ✓
+14  followup          And after a rejection?                            0.6145  0.8322    follow-up (4 words)           prev+new  passed   ✓
+15  followup          Which role?                                       0.7018  0.8884    follow-up (2 words)           prev+new  passed   ✓
+16  followup          Any other way?                                    0.5754  0.8645    follow-up (3 words)           prev+new  passed   ✓
+17  followup          And the confidence level?                         0.6656  0.8318    follow-up (4 words)           prev+new  passed   ✓
+18  followup          What about for a family member instead?           0.7041  0.9033    new (7 words, no pronoun)     alone     passed   ✗
+19  followup          Which officer should be chosen for the case?      0.6949  0.8391    new (8 words, no pronoun)     alone     passed   ✗
+20  change_unrelated  Is it raining?                                    0.5057  0.8435    follow-up (3 words)           prev+new  passed   ⚠
+21  change_unrelated  Tell me a joke                                    0.5497  0.7970    follow-up (4 words)           prev+new  passed   ⚠
+22  change_unrelated  Can you sing it for me?                           0.5497  0.7550    follow-up ("it")              prev+new  passed   ⚠
+23  change_unrelated  Cook rice how?                                    0.5314  0.7910    follow-up (3 words)           prev+new  passed   ⚠
+24  change_unrelated  What is the best phone to buy under 20000 taka?   0.5477  0.6729    new (10 words, no pronoun)    alone     blocked  ✓
+25  change_unrelated  Who won the last football world cup final?        0.5352  0.7133    new (8 words, no pronoun)     alone     blocked  ✓
+26  change_faq        How do I change my password?                      0.8662  0.8264    new (6 words, no pronoun)     alone     passed   ✓
+27  change_faq        Log out how?                                      0.8213  0.7617    follow-up (3 words)           alone     passed   ✓
+28  change_faq        What is a DNA profile code?                       0.9272  0.8420    new (6 words, no pronoun)     alone     passed   ✓
+29  change_faq        What does the dashboard show?                     0.8700  0.8242    new (5 words, no pronoun)     alone     passed   ✓
+30  change_faq        Is my data secure?                                0.7902  0.8504    follow-up (4 words)           prev+new  passed   ✗
+31  change_faq        How does it protect passwords?                    0.7500  0.7458    follow-up ("it")              alone     passed   ✓
+
+Totals:
+  followup          ✓ 16/19   ✗ 3
+  change_unrelated  ✓ 2/6   ⚠ 4
+  change_faq        ✓ 5/6   ✗ 1
+  rule detected 17/19 real follow-ups
+  ⚠ topic changes that reach Gemini: 4 (saved to chatbot\data\followup_topic_change_warnings.json)
+```
+
+**What the numbers say:**
+- The rule works: **16 of 19 follow-ups** find the right entry. For short follow-ups, "alone" is usually blocked (0.58–0.65), and "prev+new" lifts them to 0.80–0.90 with the right entry.
+- "Keep the better score" correctly answers different-topic questions in 5 of 6 cases: when the new question is a full question, "alone" scores higher than "prev+new" and wins.
+
+### Failures sorted (as the plan asks)
+
+**1. Rule missed a follow-up → examples for Member 2**
+
+| prev → new | alone | prev+new | Note |
+| --- | --- | --- | --- |
+| "How do I create an investigation case?" → "Which officer should be chosen for the case?" | 0.6949 → police officer entry | **0.8391 → the right entry** | 8 words, no pronoun. The rule would have fixed it. |
+| "How do I register a DNA sample?" → "What about for a family member instead?" | 0.7041 → family member entry | 0.9033 → register DNA sample entry (not the family reference entry) | 7 words, no pronoun. Starts with "What about" and ends with "instead", both typical follow-up words the rule doesn't know. Here prev+new would not have found the expected entry either, but its entry does mention the family member field. |
+
+Suggestion for Member 2: also treat questions that start with **"what about", "how about", "and"**, or contain **"instead"**, as follow-ups.
+
+**2. Rule caught it, but the wrong entry came first → FAQ wording (step 5)**
+
+| prev → new | Used | Found | Expected |
+| --- | --- | --- | --- |
+| "What are the DNA sample statuses?" → "Where do I find them?" | prev+new 0.8026 | What DNA sample **types** can be registered? | What do the DNA sample **statuses** mean? |
+
+The previous question alone finds the right entry (0.8164). Adding "Where do I find them?" pulls the search to the sample types entry, because the statuses answer never says **where** statuses are shown. 4 wordings were simulated offline (FAQ and Atlas untouched):
+
+| Option | #3 fixed? | Other files |
+| --- | --- | --- |
+| E: add "The status of each sample is shown in the Status column of DNA Samples." to the answer | no | unchanged |
+| E + F1/F2: also reword the family reference registration question (for #18) | no | Bangla 48 → 47 (F1 also holdout 85 → 84) |
+| G: E + add "Where do I find a sample's status?" to the question | **yes** | holdout 85 → 84: loses "What does it mean when a sample is rejected?" |
+
+G trades a **direct** question for a follow-up, which is a worse trade, so **no FAQ change is suggested for step 7**. Gemini still gets the top chunks, and the statuses entry scores close behind.
+
+**3. ⚠ Topic changes that reach Gemini → saved for step 10**
+
+| prev → new | Score used | Top chunk |
+| --- | --- | --- |
+| "How do I register a DNA sample?" → "Is it raining?" | prev+new 0.8435 | register a DNA sample |
+| "What can a lab technician do?" → "Tell me a joke" | prev+new 0.7970 | lab technician |
+| "What is ForenTrace?" → "Can you sing it for me?" | prev+new 0.7550 | intro |
+| "How does DNA matching work?" → "Cook rice how?" | prev+new 0.7910 | DNA matching |
+
+These pass **because of the rule**: short or containing "it", so "prev+new" is used, and the previous question carries the score. The threshold can't block them. Gemini must refuse them (step 10). Saved in `followup_topic_change_warnings.json`. From Phase 4, also add these two to the step 10 list: "Can an officer delete an investigation case?" (0.7616) and "Who can delete a case?" (0.6886). Both pass with the "create a case" entry, and Gemini must say the FAQ doesn't cover deleting.
+
+**4. Topic change to a different FAQ topic pulled back to the old topic → for Member 2**
+
+| prev → new | alone | prev+new (used) |
+| --- | --- | --- |
+| "How do I register a missing person?" → "Is my data secure?" | **0.7902 → Is my data secure** ✓ | 0.8504 → register a missing person ✗ |
+
+"Is my data secure?" has 4 words, so it counts as a follow-up, and "keep the better score" picks prev+new because the long previous question scores high on its own entry. Analysis of small changes to the "which search to keep" step (rule unchanged, same 31 entries):
+
+| Choice for a follow-up | follow-up ✓ | change_faq ✓ | ⚠ |
+| --- | --- | --- | --- |
+| **Now:** better of alone / prev+new | 15/19* | 5/6 | 4 |
+| alone if alone ≥ 0.70, else better | 11/19 | 6/6 | 4 |
+| alone if alone ≥ 0.75, else better | 13/19 | 6/6 | 4 |
+| **alone if alone ≥ 0.78, else better** | **15/19*** | **6/6** | 4 |
+| alone if alone ≥ 0.80, else better | 15/19* | 5/6 | 4 |
+| prev+new only if alone < threshold | 11/19 | 6/6 | 4 |
+
+\* measured before #5's expectation was loosened (so 16/19 in today's count).
+
+"Alone if it already scores ≥ 0.78" fixes #30 and loses nothing. But the safe window is narrow: follow-ups whose "alone" wrongly scores 0.7544–0.7567 (#7, #9) must stay below it, and #30 (0.7902) must stay above it. Pass it to Member 2 as an **idea with this data**, not as a tested fix.
+
+### What you (Member 1) do for this step
+Forward to Member 2:
+> Follow-up rule test (search side, no Gemini), 31 cases: the rule detected 17/19 real follow-ups, and 16/19 found the right FAQ entry.
+> • Missed by the rule: "Which officer should be chosen for the case?" (after "How do I create an investigation case?"). prev+new would find the right entry (0.84 vs 0.69). Also "What about for a family member instead?". Idea: also treat "what about / how about / and …" and "… instead" as follow-ups.
+> • "Is my data secure?" after "How do I register a missing person?" is 4 words, so it counts as a follow-up, and "keep the better score" pulls it back to the missing-person entry (0.85 vs 0.79 for the right entry). Idea: for follow-ups, use the new question alone if it already scores ≥ ~0.78 (this data: fixes it, loses nothing, but the window is narrow).
+> • 4 short topic changes ("Is it raining?", "Tell me a joke", "Can you sing it for me?", "Cook rice how?") pass the threshold through prev+new, so the prompt must refuse them. They're on my list for the end-to-end test.
+
+### Known gaps / notes
+- The rule here is a **copy**. When Member 2's real code is merged, compare it with `followupRule()` and update the copy if it's different.
+- The run ends with exit code 1 (4 ✗). They are rule and search limits reported to Member 2, not broken code. Once Member 2 changes the rule, update the copy and re-run.
+- `followup_topic_change_warnings.json` is re-written on every run. Commit it when you want the list saved for step 10.
+
+---
+
+## Phase 7b — Fixing the follow-up failures
+
+### Goal
+You asked to fix the ✗ from Phase 7. They had three causes, each fixed where Member 1 is allowed to make changes:
+
+| ✗ | Cause | Fix |
+| --- | --- | --- |
+| #19 "Which officer should be chosen for the case?" | The rule didn't see it as a follow-up (8 words, no pronoun) | **Proposed rule** in the test's copy: follow-up cue words |
+| #30 "Is my data secure?" after a missing-person question | "Keep the better score" pulled it back to the old topic | **Proposed rule**: keep the new question alone if it already scores ≥ 0.77 |
+| #3 "Where do I find them?" after sample statuses | The statuses question line didn't match "where / what are …" | **FAQ wording** (question line only) |
+| #18 "What about for a family member instead?" | The rule missed it, then prev+new found "register a DNA sample", which does answer it | Proposed rule (cue "what about" / "instead") + the register entry accepted as a second right answer (disclosed below) |
+
+The 4 ⚠ are **not** failures: the plan expects them to reach Gemini, which must refuse them (step 10).
+
+### Big finding while fixing: the plan's rule hurts normal questions
+A new **stress check** asks every on-topic question from the main, holdout and Bangla files **right after an unrelated FAQ question** (3 different previous questions, 438 topic-change pairs). A good rule should leave these alone:
+
+| Choice | Right entry and answered |
+| --- | --- |
+| No follow-up logic (each question alone) | 412/438 |
+| **Plan rule** | **351/438**: 61 correct answers pulled back to the previous topic |
+| **Proposed rule** | **388/438**: 24 pulled back |
+
+Example with the plan rule: "What is ForenTrace?" (4 words) asked after "How do I register a missing person?" counts as a follow-up, and "keep the better score" picks the combined search, which lands on the missing-person entry.
+
+### The proposed rule
+
+| | Plan rule | Proposed rule |
+| --- | --- | --- |
+| Follow-up if | ≤ 4 words, or a pronoun (it, that, this, these, those, they, them, there, he, she, him, her) | the same, **or** starts with *and / also / what about / how about / which*, **or** contains *instead / as well* |
+| For a follow-up, use | whichever of alone / prev+new scored higher | **the new question alone if it scores ≥ 0.77**, otherwise whichever scored higher |
+
+**Why 0.77:** the cutoff was swept offline from 0.72 to 0.82 on both the follow-up file and the stress pairs:
+
+| Cutoff | follow-ups ✓ | change_faq ✓ | stress |
+| --- | --- | --- | --- |
+| none (plan) | 16/19 | 5/6 | 351/438 |
+| 0.72 | 14/19 | 6/6 | 400/438 |
+| 0.74 | 15/19 | 6/6 | 397/438 |
+| 0.76 | 17/19 | 6/6 | 391/438 |
+| 0.78 | 17/19 | 6/6 | 385/438 |
+| 0.80 | 17/19 | 5/6 | 373/438 |
+
+*(Proposed cue words; measured before the FAQ fix for #3, so 17 → 18 → 19 after the other fixes.)* The safe window is between **0.7567** (the highest "alone" score of a follow-up that still needs prev+new: #7 "Can they confirm a match?") and **0.7902** (the lowest "alone" score of a topic change that must stay alone: #30 "Is my data secure?"). **0.77** is the middle of it. Below 0.76, real follow-ups break. Above 0.79, #30 breaks again.
+
+### FAQ wording fix for #3 (question line only)
+
+```diff
+-Q: What do the DNA sample statuses (Awaiting Analysis, In Analysis, Analyzed, Rejected) mean?
++Q: What are the DNA sample statuses (Awaiting Analysis, In Analysis, Analyzed, Rejected) and what do they mean? What is a rejected sample?
+```
+Options tried offline (FAQ and Atlas untouched), each checked against all four question files:
+
+| Option | #3 | Other files |
+| --- | --- | --- |
+| E: answer says "shown in the Status column of DNA Samples" | ✗ | unchanged |
+| G: E + "Where do I find a sample's status?" in the question | ✓ | holdout −1 ("What does it mean when a sample is rejected?") |
+| H: "What are … and what do they mean? Where do I see them?" | ✓ | holdout −1 (same question) |
+| K: "What are … and what do they mean?" | ✓ | holdout −1 (same question) |
+| **P: K + "What is a rejected sample?"** | ✓ | **no loss anywhere** |
+
+For #18, 4 wordings of the family-reference registration question were tried (F1, F2, M, N). None made prev+new find that entry, and two of them cost a Bangla or holdout hit, so the FAQ stays as it is there.
+
+### Test-file changes (disclosed)
+
+| Entry | Change | Why |
+| --- | --- | --- |
+| #18 "What about for a family member instead?" | `expect` now also accepts "How do I register (add, create, collect) a DNA sample" | That answer says: "Select the missing person, a family member only if it is a reference sample, …", so it answers the follow-up. The note in the file says so. |
+| #19 | note updated | only the proposed rule sees it |
+| 5 `expect` texts (holdout 2, Bangla 2, follow-up 1) | "What do the DNA sample statuses" → "What are the DNA sample statuses" | follows the new FAQ question line |
+
+No other expectation was changed. #5's change was already disclosed in Phase 7.
+
+### Files changed
+
+| File | Type | Change |
+| --- | --- | --- |
+| `backend/chatbot/followupTest.js` | Modified (rewritten) | Both rule copies (`RULES.plan`, `RULES.proposed`), `ACTIVE_RULE = 'proposed'`, the plan rule's totals printed for comparison, optional `--stress` check, search cache |
+| `backend/chatbot/data/followup_questions.json` | Modified | #18 expect + note, #19 note, statuses expect |
+| `backend/chatbot/data/holdout_questions.json`, `bangla_questions.json` | Modified | statuses expect |
+| `backend/chatbot/data/followup_topic_change_warnings.json` | Re-written | Same 4 ⚠ |
+| `backend/chatbot/data/forentrace_faq_source.txt` / `.docx` / `.pdf` | Modified | Change P (PDF exported by Word, text identical to source) |
+| `C:\Users\MSI\Desktop\forentrace_faq_v2.*` | Outside the repo | Rebuilt = current FAQ + delete Q&A |
+
+### How to run
+```powershell
+cd backend
+node chatbot/followupTest.js            # follow-up file, proposed rule active, plan rule for comparison
+node chatbot/followupTest.js --stress   # + the 438-pair topic-change stress check (~3 min)
+```
+
+### Code — `backend/chatbot/followupTest.js` (full file, current version)
+
+```js
+// backend/chatbot/followupTest.js   →   run from backend folder:
+//   node chatbot/followupTest.js                          (default: data/followup_questions.json)
+//   node chatbot/followupTest.js my_followups.json        (any file in data/, or a full path)
+//   node chatbot/followupTest.js --stress                 (+ topic-change stress check, ~3 min)
+//
+// ⚠ NOTE: the rules below are COPIES made only for testing — the real rule lives in Member 2's code.
+//   RULES.plan     = the rule from the plan (what Member 2 was asked to build)
+//   RULES.proposed = the improved rule this test suggests to Member 2 (Phase 7b in the change log)
+//   The marks and exit code use ACTIVE_RULE; the other rule's totals are printed for comparison.
+//   If Member 2's real rule changes, change the copy here too — and tell Member 2 about any change here.
+//
+// For every entry it searches twice — the new question alone, and "previous + new" together —
+// applies the rule and the threshold, and marks the result:
+//   followup          ✓ passes with the right (previous-topic) entry, ✗ otherwise
+//   change_unrelated  ✓ blocked, ⚠ passes (Gemini must refuse it later — saved for step 10)
+//   change_faq        ✓ passes with the NEW topic's entry, ✗ if blocked or pulled to the old topic
+// No Gemini call. Exit code 1 if any ✗ with the active rule.
+import 'dotenv/config';
+import fs from 'node:fs';
+import path from 'node:path';
+import { closeMongo } from './mongoClient.js';
+import { searchTop, getThreshold, isHit, questionLine, resolveDataFile, DATA_DIR } from './evaluate.js';
+
+const DEFAULT_FILE = 'followup_questions.json';
+const WARNINGS_FILE = path.join(DATA_DIR, 'followup_topic_change_warnings.json'); // step 10 er jonno
+const KINDS = ['followup', 'change_unrelated', 'change_faq'];
+const STRESS_FILES = ['eval_questions.json', 'holdout_questions.json', 'bangla_questions.json'];
+const STRESS_PREVS = ['How do I register a missing person?', 'What can a lab technician do?', 'How does DNA matching work?'];
+
+// ---- COPIES of the follow-up rule (testing only) ----
+const MAX_FOLLOWUP_WORDS = 4;
+const PRONOUN_RE = /\b(it|that|this|these|those|they|them|there|he|she|him|her)\b/i;
+const CUE_START_RE = /^(and|also|what about|how about|which)\b/i; // "What about …?", "Which officer …?"
+const CUE_ANY_RE = /\b(instead|as well)\b/i;
+
+const RULES = {
+  // Plan: 4 word ba kom, othoba pronoun → follow-up; follow-up hole je search er score beshi sheta
+  plan: { name: 'plan rule', cues: false, keepAloneAt: null },
+  // Proposed: + follow-up shuru/cue word; ar notun question eka-i ≥ 0.77 pele sheta-i rakho
+  // (0.77 = majhkhane: follow-up #7 eka 0.7567 — prev+new lage; topic change #30 eka 0.7902 — eka-i thik)
+  proposed: { name: 'proposed rule', cues: true, keepAloneAt: 0.77 }
+};
+const ACTIVE_RULE = 'proposed';
+
+function followupRule(question, rule) {
+  const words = question.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= MAX_FOLLOWUP_WORDS) return { isFollowup: true, reason: `${words.length} words` };
+  const pronoun = question.match(PRONOUN_RE);
+  if (pronoun) return { isFollowup: true, reason: `"${pronoun[1].toLowerCase()}"` };
+  if (rule.cues) {
+    const cue = question.trim().match(CUE_START_RE) || question.match(CUE_ANY_RE);
+    if (cue) return { isFollowup: true, reason: `"${cue[1].toLowerCase()}"` };
+  }
+  return { isFollowup: false, reason: `${words.length} words, no ${rule.cues ? 'pronoun/cue' : 'pronoun'}` };
+}
+
+function chooseSearch(rule, isFollowup, alone, combined) {
+  if (!isFollowup) return { which: 'alone', top: alone };
+  if (rule.keepAloneAt !== null && alone.score >= rule.keepAloneAt) return { which: 'alone', top: alone }; // eka-i jothesto bhalo
+  if (combined.score > alone.score) return { which: 'prev+new', top: combined };
+  return { which: 'alone', top: alone };
+}
+// -----------------------------------------------------
+
+function loadEntries(file) {
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const list = Array.isArray(raw) ? raw : raw.questions;
+  if (!Array.isArray(list)) throw new Error(`${path.basename(file)} has no "questions" array`);
+  list.forEach((e, i) => {
+    if (typeof e.prev !== 'string' || typeof e.q !== 'string' || !KINDS.includes(e.kind)) {
+      throw new Error(`${path.basename(file)} entry ${i + 1} needs "prev", "q" and "kind" (${KINDS.join(' / ')})`);
+    }
+    if (e.kind !== 'change_unrelated' && !e.expect) throw new Error(`${path.basename(file)} entry ${i + 1} (${e.kind}) needs "expect"`);
+  });
+  return list;
+}
+
+// Ek-i text bar bar search na kore cache theke (stress e onek repeat hoy)
+const searchCache = new Map();
+async function top1(text) {
+  if (!searchCache.has(text)) {
+    const [top] = await searchTop(text);
+    searchCache.set(text, { score: top?.score ?? 0, text: top?.text ?? '' });
+  }
+  return searchCache.get(text);
+}
+
+// Ekta entry ekta rule diye judge kora
+function judge(e, alone, combined, rule, threshold) {
+  const decision = followupRule(e.q, rule);
+  const chosen = chooseSearch(rule, decision.isFollowup, alone, combined);
+  const passed = chosen.top.score >= threshold;
+  const rightEntry = e.expect ? isHit(chosen.top.text, e.expect) : false;
+
+  let mark;
+  if (e.kind === 'change_unrelated') mark = passed ? '⚠' : '✓';
+  else mark = passed && rightEntry ? '✓' : '✗';
+
+  // Fail keno — kon dol e porlo
+  let why = '';
+  if (mark === '✗' && e.kind === 'followup') {
+    const combinedWouldWork = combined.score >= threshold && isHit(combined.text, e.expect);
+    if (!decision.isFollowup && combinedWouldWork) why = 'rule missed a follow-up';
+    else if (decision.isFollowup) why = passed ? 'rule caught it, wrong entry' : 'rule caught it, score too low';
+    else why = 'not a follow-up by the rule, and prev+new would not help';
+  } else if (mark === '✗' && e.kind === 'change_faq') {
+    why = !passed ? 'blocked' : chosen.which === 'prev+new' ? 'pulled to the old topic by prev+new' : 'wrong entry';
+  }
+  return { decision, chosen, passed, mark, why };
+}
+
+function totals(rows, key) {
+  const lines = [];
+  for (const kind of KINDS) {
+    const k = rows.filter(r => r.e.kind === kind);
+    if (!k.length) continue;
+    const count = m => k.filter(r => r[key].mark === m).length;
+    lines.push(`  ${kind.padEnd(17)} ✓ ${count('✓')}/${k.length}${count('✗') ? `   ✗ ${count('✗')}` : ''}${count('⚠') ? `   ⚠ ${count('⚠')}` : ''}`);
+  }
+  const followups = rows.filter(r => r.e.kind === 'followup');
+  lines.push(`  rule detected ${followups.filter(r => r[key].decision.isFollowup).length}/${followups.length} real follow-ups`);
+  return lines;
+}
+
+// Stress: protiti on-topic question ke onno FAQ topic er por jiggesh kora — rule bhul kore ager topic e tene ne jay kina
+async function stressCheck(threshold) {
+  const questions = STRESS_FILES.flatMap(f => JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), 'utf8')).questions)
+    .filter(q => q.type === 'on' && q.status !== 'wait');
+  const result = { pairs: 0, alone: 0, plan: 0, proposed: 0, pulled: { plan: [], proposed: [] } };
+  for (const prev of STRESS_PREVS) {
+    const prevTop = await top1(prev);
+    for (const q of questions) {
+      if (isHit(prevTop.text, q.expect)) continue; // ager question ek-i topic → topic change na
+      result.pairs++;
+      const alone = await top1(q.q);
+      const combined = await top1(`${prev} ${q.q}`);
+      const good = t => t.score >= threshold && isHit(t.text, q.expect);
+      if (good(alone)) result.alone++;
+      for (const key of ['plan', 'proposed']) {
+        const rule = RULES[key];
+        const chosen = chooseSearch(rule, followupRule(q.q, rule).isFollowup, alone, combined).top;
+        if (good(chosen)) result[key]++;
+        else if (good(alone)) result.pulled[key].push(`"${q.q}" after "${prev}"`);
+      }
+    }
+  }
+  return result;
+}
+
+try {
+  const args = process.argv.slice(2);
+  const file = resolveDataFile(args.find(a => !a.startsWith('--')) || DEFAULT_FILE);
+  const entries = loadEntries(file);
+  const threshold = getThreshold();
+  if (threshold === null) throw new Error('CHATBOT_SCORE_THRESHOLD is not set');
+  const active = RULES[ACTIVE_RULE];
+  const other = ACTIVE_RULE === 'plan' ? 'proposed' : 'plan';
+  console.log(`Follow-up file: ${path.relative(process.cwd(), file)}  (${entries.length} entries)`);
+  console.log(`CHATBOT_SCORE_THRESHOLD = ${threshold}`);
+  console.log(`Active: ${active.name} (≤ 4 words or a pronoun${active.cues ? ', or starts with and/also/what about/how about/which, or has instead/as well' : ''}` +
+    `${active.keepAloneAt !== null ? `; follow-up keeps the new question alone if it scores ≥ ${active.keepAloneAt}` : ''})\n`);
+
+  const rows = [];
+  for (const [i, e] of entries.entries()) {
+    const alone = await top1(e.q);
+    const combined = await top1(`${e.prev} ${e.q}`);
+    rows.push({
+      n: i + 1, e, alone, combined,
+      [ACTIVE_RULE]: judge(e, alone, combined, active, threshold),
+      [other]: judge(e, alone, combined, RULES[other], threshold)
+    });
+  }
+
+  console.table(rows.map(r => ({
+    '#': r.n,
+    kind: r.e.kind,
+    question: r.e.q,
+    alone: r.alone.score.toFixed(4),
+    'prev+new': r.combined.score.toFixed(4),
+    rule: `${r[ACTIVE_RULE].decision.isFollowup ? 'follow-up' : 'new'} (${r[ACTIVE_RULE].decision.reason})`,
+    used: r[ACTIVE_RULE].chosen.which,
+    result: r[ACTIVE_RULE].passed ? 'passed' : 'blocked',
+    mark: r[ACTIVE_RULE].mark,
+    [`${other}`]: r[other].mark
+  })));
+
+  // Kon entry pelo — shudhu ✗ ar ⚠ er jonno detail (active rule)
+  const problems = rows.filter(r => r[ACTIVE_RULE].mark !== '✓');
+  if (problems.length) {
+    console.log(`\nDetails (✗ and ⚠, ${active.name}):`);
+    for (const r of problems) {
+      const j = r[ACTIVE_RULE];
+      console.log(`  #${r.n} ${j.mark} [${r.e.kind}] prev: "${r.e.prev}" → "${r.e.q}"${j.why ? `  — ${j.why}` : ''}`);
+      console.log(`     used ${j.chosen.which} (${j.chosen.top.score.toFixed(4)}): ${questionLine(j.chosen.top.text).slice(0, 90)}`);
+      if (r.e.expect) console.log(`     expected: ${JSON.stringify(r.e.expect)}`);
+    }
+  }
+
+  console.log(`\nTotals — ${active.name} (active):`);
+  totals(rows, ACTIVE_RULE).forEach(l => console.log(l));
+  console.log(`Totals — ${RULES[other].name} (for comparison):`);
+  totals(rows, other).forEach(l => console.log(l));
+
+  // ⚠ list (active rule) — step 10 e dekhte hobe Gemini egulo refuse kore kina
+  const warnings = rows.filter(r => r[ACTIVE_RULE].mark === '⚠').map(r => ({
+    prev: r.e.prev, q: r.e.q, used: r[ACTIVE_RULE].chosen.which,
+    score: Number(r[ACTIVE_RULE].chosen.top.score.toFixed(4)), topChunk: questionLine(r[ACTIVE_RULE].chosen.top.text)
+  }));
+  fs.writeFileSync(WARNINGS_FILE, JSON.stringify({ description: 'Topic changes that pass the threshold (⚠). Step 10: Gemini must refuse each of these.', warnings }, null, 2) + '\n');
+  console.log(`\n⚠ topic changes that reach Gemini: ${warnings.length} (saved to ${path.relative(process.cwd(), WARNINGS_FILE)})`);
+
+  const missed = rows.filter(r => r[ACTIVE_RULE].why === 'rule missed a follow-up');
+  if (missed.length) {
+    console.log('\nFor Member 2 — follow-ups the rule missed (prev+new would have found the right entry):');
+    missed.forEach(r => console.log(`  prev: "${r.e.prev}" → "${r.e.q}"  (alone ${r.alone.score.toFixed(4)}, prev+new ${r.combined.score.toFixed(4)})`));
+  }
+
+  if (args.includes('--stress')) {
+    console.log('\nStress check: every on-topic question from the main, holdout and Bangla files asked right after an unrelated FAQ question…');
+    const s = await stressCheck(threshold);
+    console.log(`  ${s.pairs} topic-change pairs — right entry and answered:`);
+    console.log(`    no follow-up logic (alone): ${s.alone}/${s.pairs}`);
+    for (const key of ['plan', 'proposed']) {
+      console.log(`    ${RULES[key].name.padEnd(26)}: ${s[key]}/${s.pairs}   (pulled away from a right answer: ${s.pulled[key].length})`);
+    }
+    s.pulled[ACTIVE_RULE].slice(0, 5).forEach(p => console.log(`      e.g. ${p}`));
+  }
+
+  if (rows.some(r => r[ACTIVE_RULE].mark === '✗')) {
+    console.log(`\n❌ ${rows.filter(r => r[ACTIVE_RULE].mark === '✗').length} ✗ (${active.name})`);
+    process.exitCode = 1;
+  } else {
+    console.log(`\n✅ No ✗ (${active.name})`);
+  }
+} catch (err) {
+  console.error('Follow-up test FAILED:', err.message);
+  process.exitCode = 1;
+} finally {
+  await closeMongo(); // fail korleo connection bondho
+}
+```
+
+### What changed in the code (vs Phase 7)
+
+| Part | What it does |
+| --- | --- |
+| `RULES` + `ACTIVE_RULE` | Two copies side by side: `plan` (cues off, no cutoff) and `proposed` (cues on, `keepAloneAt: 0.77`). The marks, details, ⚠ file and exit code use `ACTIVE_RULE`. Switch to `'plan'` to test the plan's rule. |
+| `followupRule(question, rule)` | Same word count and pronoun check as before. With `rule.cues`, it also accepts a question that **starts with** and/also/what about/how about/which, or **contains** instead/as well. |
+| `chooseSearch(rule, …)` | Not a follow-up → alone. Follow-up → alone if `alone.score ≥ keepAloneAt`, otherwise the higher of alone / prev+new. |
+| `judge()` | Marks one entry for one rule (the same ✓/✗/⚠ and "why" logic as Phase 7), so both rules are judged the same way. |
+| Table column for the other rule | The last column shows the plan rule's mark next to the active mark. |
+| `stressCheck()` (`--stress`) | Every on-topic question (`type: "on"`, not `wait`) from the main, holdout and Bangla files, asked after 3 fixed previous questions (pairs where the previous question has the same entry are skipped). Counts right-and-answered for: alone, plan rule, proposed rule, and lists answers the rule pulled away. Information only, it doesn't change the exit code. |
+| `searchCache` | The same text is searched once per run (the stress check repeats many texts). |
+
+### Code — `backend/chatbot/data/followup_questions.json` (full file, current version)
+
+```json
+{
+  "description": "Follow-up search-side test (step 7). prev = the previous question, q = the new one. kind: followup (should be answered from the previous topic's entry = expect), change_unrelated (topic change to something off-topic: should be blocked, ⚠ if it passes), change_faq (topic change to a different FAQ topic: should be answered from the NEW topic's entry = expect, not pulled to the old one). Run: node chatbot/followupTest.js",
+  "questions": [
+    { "kind": "followup", "prev": "How do I register a DNA sample?", "q": "Who can do that?", "expect": "How do I register (add, create, collect) a DNA sample" },
+    { "kind": "followup", "prev": "How do I create an investigation case?", "q": "Can I edit it later?", "expect": "How do I create (open, register) an investigation case" },
+    { "kind": "followup", "prev": "What are the DNA sample statuses?", "q": "Where do I find them?", "expect": "What are the DNA sample statuses" },
+    { "kind": "followup", "prev": "What is a family reference sample?", "q": "Who gives this sample?", "expect": "What is a family reference DNA sample" },
+    { "kind": "followup", "prev": "What are the case statuses?", "q": "What do these mean for the missing person?", "expect": ["What do the case statuses", "What are the missing person statuses"], "note": "the question itself asks about the missing person, so the missing person statuses entry is also a right answer" },
+    { "kind": "followup", "prev": "What reports are available?", "q": "Can I download those as a file?", "expect": "What reports are available" },
+    { "kind": "followup", "prev": "What can a lab technician do?", "q": "Can they confirm a match?", "expect": "a lab technician's permissions (duties, tasks)" },
+    { "kind": "followup", "prev": "What does the dashboard show?", "q": "What else is there?", "expect": "What does the dashboard show" },
+    { "kind": "followup", "prev": "What can a police officer do?", "q": "Can he delete a DNA match?", "expect": "What can a police officer (investigating officer) do" },
+    { "kind": "followup", "prev": "What can a lab technician do?", "q": "Can she register samples?", "expect": "a lab technician's permissions (duties, tasks)" },
+    { "kind": "followup", "prev": "Who creates officer accounts?", "q": "Who approves him?", "expect": "Who creates officer accounts" },
+    { "kind": "followup", "prev": "How do I register a missing person?", "q": "What details do I need about her?", "expect": "How do I register (add, report) a missing (lost) person" },
+    { "kind": "followup", "prev": "What is a DNA profile code?", "q": "Who enters this code?", "expect": ["What is a DNA profile code?", "How does a lab technician analyse"] },
+    { "kind": "followup", "prev": "What happens after a match is confirmed?", "q": "And after a rejection?", "expect": ["What happens after (when) a DNA match is confirmed", "What do the DNA match statuses"] },
+    { "kind": "followup", "prev": "How do I register a DNA sample?", "q": "Which role?", "expect": "How do I register (add, create, collect) a DNA sample" },
+    { "kind": "followup", "prev": "How do I change my password?", "q": "Any other way?", "expect": "How do I change (update, reset) my password" },
+    { "kind": "followup", "prev": "What is the similarity percentage?", "q": "And the confidence level?", "expect": ["What is the confidence level", "What is the similarity percentage"] },
+    { "kind": "followup", "prev": "How do I register a DNA sample?", "q": "What about for a family member instead?", "expect": ["How do I register a family reference DNA sample", "How do I register (add, create, collect) a DNA sample"], "note": "7 words, no pronoun: only the proposed rule sees it. The register-DNA-sample entry is also a right answer (its form has the family member field for reference samples)" },
+    { "kind": "followup", "prev": "How do I create an investigation case?", "q": "Which officer should be chosen for the case?", "expect": "How do I create (open, register) an investigation case", "note": "8 words, no pronoun: the plan rule misses it, the proposed rule sees it (starts with 'Which')" },
+
+    { "kind": "change_unrelated", "prev": "How do I register a DNA sample?", "q": "Is it raining?" },
+    { "kind": "change_unrelated", "prev": "What can a lab technician do?", "q": "Tell me a joke" },
+    { "kind": "change_unrelated", "prev": "What is ForenTrace?", "q": "Can you sing it for me?" },
+    { "kind": "change_unrelated", "prev": "How does DNA matching work?", "q": "Cook rice how?" },
+    { "kind": "change_unrelated", "prev": "What are the case statuses?", "q": "What is the best phone to buy under 20000 taka?" },
+    { "kind": "change_unrelated", "prev": "How do I log out?", "q": "Who won the last football world cup final?" },
+
+    { "kind": "change_faq", "prev": "How do I register a DNA sample?", "q": "How do I change my password?", "expect": "How do I change (update, reset) my password" },
+    { "kind": "change_faq", "prev": "What can a lab technician do?", "q": "Log out how?", "expect": "How do I log out (sign out)" },
+    { "kind": "change_faq", "prev": "How do I create an investigation case?", "q": "What is a DNA profile code?", "expect": "What is a DNA profile code?" },
+    { "kind": "change_faq", "prev": "What is a family reference sample?", "q": "What does the dashboard show?", "expect": "What does the dashboard show" },
+    { "kind": "change_faq", "prev": "How do I register a missing person?", "q": "Is my data secure?", "expect": "Is my data secure" },
+    { "kind": "change_faq", "prev": "What reports are available?", "q": "How does it protect passwords?", "expect": "Is my data secure" }
+  ]
+}
+```
+
+### Testing results (real Atlas, after re-ingest with change P)
+
+```text
+PDF text == source: true
+Created 37 chunks / Inserted 37 chunks into MongoDB
+Pre-flight: 5/5 checks passed
+checkChunks.js: ✅ No problems found
+evaluate.js (main):     10/10, at 0.65 on answered 10/10, off blocked 12/12
+evaluate.js (holdout):  85/91, at 0.65 on answered 89/91, off blocked 15/15
+evaluate.js (Bangla):   48/50, at 0.65 on answered 48/50, off blocked 13/13
+checkFaq.js: ✅ No problems found
+
+> node chatbot/followupTest.js --stress
+Totals — proposed rule (active):
+  followup          ✓ 19/19
+  change_unrelated  ✓ 2/6   ⚠ 4
+  change_faq        ✓ 6/6
+  rule detected 19/19 real follow-ups
+Totals — plan rule (for comparison):
+  followup          ✓ 17/19   ✗ 2
+  change_unrelated  ✓ 2/6   ⚠ 4
+  change_faq        ✓ 5/6   ✗ 1
+  rule detected 17/19 real follow-ups
+
+⚠ topic changes that reach Gemini: 4 (saved to chatbot\data\followup_topic_change_warnings.json)
+
+Stress check: every on-topic question from the main, holdout and Bangla files asked right after an unrelated FAQ question…
+  438 topic-change pairs — right entry and answered:
+    no follow-up logic (alone): 412/438
+    plan rule                 : 351/438   (pulled away from a right answer: 61)
+    proposed rule             : 388/438   (pulled away from a right answer: 24)
+      e.g. "What is the purpose of this system?" after "How do I register a missing person?"
+      e.g. "Which account types exist?" after "How do I register a missing person?"
+      e.g. "What does it mean when a sample is rejected?" after "How do I register a missing person?"
+      e.g. "add sample" after "How do I register a missing person?"
+      e.g. "confidence level" after "How do I register a missing person?"
+
+✅ No ✗ (proposed rule)          (exit code 0)
+
+> node chatbot/teachTest.js   (with the rebuilt v2)
+✅ 1. Before: main question blocked — "Can I delete a case?" 0.6445 → blocked
+✅ 3. After: new entry first and answered — "Can I delete a case?" 0.8265; 4/4 wordings answered by the new entry
+✅ 4. Original FAQ restored — PDF identical, 37 chunks re-ingested, backup removed
+✅ 5. Pre-flight after restore — all checks passed
+```
+
+| Check | Before Phase 7b | After |
+| --- | --- | --- |
+| Follow-ups | 16/19 (plan rule) | **19/19** (proposed rule) |
+| Topic change to another FAQ topic | 5/6 | **6/6** |
+| Stress (438 topic changes) | 351 | **388** |
+| ⚠ that reach Gemini | 4 | 4 (the same four; for step 10) |
+| Main / holdout / Bangla | 10/10, 85/91, 48/50 | 10/10, 85/91, 48/50 (unchanged) |
+| Chunk / FAQ checker | 0 / 0 | 0 / 0 |
+
+### What you (Member 1) do for this step
+The real rule is in **Member 2's** code, so the fix only takes effect when Member 2 adopts it. Send them:
+> Follow-up rule test (search side, no Gemini). I tested the plan's rule and an improved version:
+> 1. Also treat questions that **start with** "and / also / what about / how about / which" or **contain** "instead / as well" as follow-ups (fixes "Which officer should be chosen for the case?" and "What about for a family member instead?").
+> 2. For a follow-up, **keep the new question alone if it already scores ≥ 0.77**, otherwise use whichever of alone / previous+new is higher.
+> Results: follow-ups 19/19 (plan rule 17/19), topic changes to another FAQ topic 6/6 (5/6). Stress test with 438 normal questions asked after an unrelated question: 388 answered right vs **351 with the plan's rule**. The plan's rule pulls answers like "What is ForenTrace?" back to the previous topic, 61 times.
+> 0.77 sits in a narrow window (0.757–0.790) on our FAQ, so please re-check it on your side. The test script is `backend/chatbot/followupTest.js` (`--stress` for the big check).
+> 4 short unrelated topic changes ("Is it raining?", "Tell me a joke", "Can you sing it for me?", "Cook rice how?") still pass through previous+new, so the prompt must refuse them.
+
+### Known gaps / notes
+- The proposed rule is **only in the test copy** until Member 2 adopts it. When their code is merged, compare it with `RULES` in `followupTest.js`.
+- Even the proposed rule still pulls 24 of 438 stress pairs away. A rule that only looks at word count, pronouns and cue words can't tell "What is ForenTrace?" (topic change) from "Which role?" (follow-up) every time. Gemini sees the previous question and the chunks, so it can still answer correctly.
+- The 0.77 cutoff depends on this FAQ's wording. Re-run `followupTest.js --stress` after big FAQ changes.

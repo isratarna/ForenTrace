@@ -23,7 +23,7 @@
     { "kind": "natural", "type": "on", "bn": "পরিবারের সদস্যের ডিএনএ নমুনা কীভাবে নিবন্ধন করব?", "q": "How do I register a family member's DNA sample?", "expect": "How do I register a family reference DNA sample" },
     { "kind": "natural", "type": "on", "bn": "ডিএনএ নমুনা কীভাবে নিবন্ধন করব?", "q": "How do I register a DNA sample?", "expect": "How do I register (add, create, collect) a DNA sample" },
     { "kind": "natural", "type": "on", "bn": "কী কী ধরনের নমুনা নেওয়া যায়?", "q": "What kinds of samples can be taken?", "expect": "What DNA sample types can be registered" },
-    { "kind": "natural", "type": "on", "bn": "নমুনার স্ট্যাটাস 'বিশ্লেষণের অপেক্ষায়' মানে কী?", "q": "What does the sample status 'awaiting analysis' mean?", "expect": "What do the DNA sample statuses" },
+    { "kind": "natural", "type": "on", "bn": "নমুনার স্ট্যাটাস 'বিশ্লেষণের অপেক্ষায়' মানে কী?", "q": "What does the sample status 'awaiting analysis' mean?", "expect": "What are the DNA sample statuses" },
     { "kind": "natural", "type": "on", "bn": "টেকনিশিয়ান কীভাবে নমুনা বিশ্লেষণ করেন?", "q": "How does the technician analyze a sample?", "expect": "How does a lab technician analyse" },
     { "kind": "natural", "type": "on", "bn": "ডিএনএ প্রোফাইল কোড কী?", "q": "What is a DNA profile code?", "expect": "What is a DNA profile code?" },
     { "kind": "natural", "type": "on", "bn": "ডিএনএ মিলানো কীভাবে কাজ করে?", "q": "How does DNA matching work?", "expect": "How does DNA matching (DNA comparison) work" },
@@ -49,7 +49,7 @@
     { "kind": "literal", "type": "on", "bn": "হিসাব খুলব কীভাবে?", "q": "How will I open calculation?", "expect": "How do I sign up for ForenTrace" },
     { "kind": "literal", "type": "on", "bn": "কে কে এই সফটওয়্যার ব্যবহার করে?", "q": "Who who uses this software?", "expect": "What user roles (user types" },
     { "kind": "literal", "type": "on", "bn": "লগ আউট করার উপায় কী?", "q": "Log out doing way what?", "expect": "How do I log out (sign out)" },
-    { "kind": "literal", "type": "on", "bn": "নমুনার অবস্থা কয়টা আছে?", "q": "Sample's condition how many are there?", "expect": "What do the DNA sample statuses" },
+    { "kind": "literal", "type": "on", "bn": "নমুনার অবস্থা কয়টা আছে?", "q": "Sample's condition how many are there?", "expect": "What are the DNA sample statuses" },
     { "kind": "literal", "type": "on", "bn": "প্রোফাইল কোড জিনিসটা কী?", "q": "Profile code thing is what?", "expect": "What is a DNA profile code?" },
     { "kind": "literal", "type": "on", "bn": "তদন্ত কর্মকর্তা কী করতে পারেন?", "q": "Investigation officer what can do?", "expect": "What can a police officer (investigating officer) do" },
 

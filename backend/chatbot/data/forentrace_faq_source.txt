@@ -45,7 +45,7 @@ Q: How do I register (add, create, collect) a DNA sample?
 A: Go to DNA Samples and click Register DNA Sample. Select the missing person, a family member only if it is a reference sample, the DNA lab, an optional technician, the sample type, collection date and storage location, then click Save DNA Sample. Only Admins and Officers can register DNA samples.
 Q: What DNA sample types can be registered?
 A: ForenTrace supports these sample types: Buccal Swab, Blood Sample, Hair Strand, Bone Sample, Tissue Sample and Personal Belonging. Admins and Officers choose the type in the Sample Type field when they click Register DNA Sample.
-Q: What do the DNA sample statuses (Awaiting Analysis, In Analysis, Analyzed, Rejected) mean?
+Q: What are the DNA sample statuses (Awaiting Analysis, In Analysis, Analyzed, Rejected) and what do they mean? What is a rejected sample?
 A: Awaiting Analysis means the sample is registered and waiting in the laboratory queue. In Analysis means a technician is processing it. Analyzed means the DNA profile code has been recorded. Rejected means the sample was unusable.
 Q: How does a lab technician analyse (process, test) a DNA sample and record the analysis result? What is the lab analysis workflow?
 A: The technician opens DNA Samples, which shows only their laboratory's samples, and clicks Analyze on a sample. On the Analyze Sample page they set the status to In Analysis, Analyzed or Rejected, enter the DNA profile code and laboratory remarks, then click Save Analysis. The DNA profile code is required when the status is Analyzed.
