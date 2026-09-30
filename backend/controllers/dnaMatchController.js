@@ -311,12 +311,20 @@ export async function reviewMatch(req, res) {
       return res.status(409).json({ success: false, message: 'Only matches pending review can be updated.' })
     }
 
+    // UPDATE er shathe shathe database trigger (trg_dna_match_confirmed_update — Issue 5)
+    // matched sample er missing person ke 'Identified' kore dey — ekhane alada code lage na
     await dbUpdateMatchStatus(id, matchStatus)
-    const match = await findMatchById(id)
+    const match = await findMatchById(id) // trigger er por fresh data (matched_person_status)
+
+    // Confirmed hole trigger er result response e janai
+    const identified = matchStatus === 'Confirmed' && match.matched_person_status === 'Identified'
+    const message = identified
+      ? `DNA match confirmed. ${match.matched_person_name} is now marked as Identified.`
+      : `DNA match ${matchStatus.toLowerCase()}.`
 
     return res.status(200).json({
       success: true,
-      message: `DNA match ${matchStatus.toLowerCase()}.`,
+      message,
       match: formatMatch(match),
     })
   } catch (error) {

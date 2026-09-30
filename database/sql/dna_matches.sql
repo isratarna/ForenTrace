@@ -127,27 +127,44 @@ SET @manual_match_id = LAST_INSERT_ID();
 
 -- 3. View all DNA matches with both sample details (Admin view)
 -- dna_samples table ke duibar JOIN (u = unknown, ms = matched) — self-join er moto alias
+-- Backend er matchSelect (dnaMatchModel.js) hubohu ei column gulo ney
 SELECT
     m.match_id,
     m.unknown_sample_id,
-    CONCAT(up.first_name, ' ', up.last_name) AS unknown_person_name,
-    u.dna_profile_code AS unknown_profile_code,
     m.matched_sample_id,
-    CONCAT(mp.first_name, ' ', mp.last_name) AS matched_person_name,
-    CONCAT(mf.first_name, ' ', mf.last_name) AS matched_family_name,
-    mf.relationship AS matched_family_relationship,
-    ms.dna_profile_code AS matched_profile_code,
     m.similarity_percentage,
     m.confidence_level,
     m.match_date,
     m.match_status,
-    m.match_method
+    m.match_method,
+    -- Unknown (evidence) sample er info
+    u.person_id AS unknown_person_id,
+    CONCAT(up.first_name, ' ', up.last_name) AS unknown_person_name,
+    u.family_id AS unknown_family_id,
+    CONCAT(uf.first_name, ' ', uf.last_name) AS unknown_family_name,
+    uf.relationship AS unknown_family_relationship,
+    u.sample_type AS unknown_sample_type,
+    u.dna_profile_code AS unknown_profile_code,
+    ul.lab_name AS unknown_lab_name,
+    -- Matched (reference) sample er info
+    ms.person_id AS matched_person_id,
+    CONCAT(mp.first_name, ' ', mp.last_name) AS matched_person_name,
+    mp.status AS matched_person_status,       -- trigger er por 'Identified' dekhabe (Issue 5)
+    ms.family_id AS matched_family_id,
+    CONCAT(mf.first_name, ' ', mf.last_name) AS matched_family_name,
+    mf.relationship AS matched_family_relationship,
+    ms.sample_type AS matched_sample_type,
+    ms.dna_profile_code AS matched_profile_code,
+    ml.lab_name AS matched_lab_name
 FROM dna_matches m
 INNER JOIN dna_samples u ON u.sample_id = m.unknown_sample_id
 INNER JOIN missing_persons up ON up.person_id = u.person_id
+LEFT JOIN family_members uf ON uf.family_id = u.family_id
+LEFT JOIN dna_labs ul ON ul.lab_id = u.lab_id
 INNER JOIN dna_samples ms ON ms.sample_id = m.matched_sample_id
 INNER JOIN missing_persons mp ON mp.person_id = ms.person_id
 LEFT JOIN family_members mf ON mf.family_id = ms.family_id
+LEFT JOIN dna_labs ml ON ml.lab_id = ms.lab_id
 ORDER BY m.match_id DESC;
 
 
@@ -209,3 +226,59 @@ WHERE match_id = @new_match_id;
 -- 10. Delete test matches (seed data jeno thik thake)
 DELETE FROM dna_matches
 WHERE match_id IN (@new_match_id, @manual_match_id);
+
+
+-- =========================================================
+-- Backend filter & delete queries (Member 1 - Issue 4)
+-- GET /api/dna-matches?status=&confidence=&person_id=&case_id=&sample_id=
+-- Backend (findAllMatches) shudhu je filter pathano hoy sheta AND diye jog kore —
+-- ekhane proti ta filter alada kore test kora holo.
+-- =========================================================
+
+-- 11a. Filter: match_status (e.g. shudhu 'Pending Review' — review baki ache)
+SELECT m.match_id, m.match_status
+FROM dna_matches m
+WHERE 1 = 1
+  AND m.match_status = 'Pending Review'
+ORDER BY m.match_id DESC;
+
+-- 11b. Filter: confidence_level
+SELECT m.match_id, m.similarity_percentage, m.confidence_level
+FROM dna_matches m
+WHERE 1 = 1
+  AND m.confidence_level = 'High'
+ORDER BY m.match_id DESC;
+
+-- 11c. Filter: case_id (Case Details er DNA Matches — case er missing person er kono sample thakle)
+SELECT m.match_id, m.unknown_sample_id, m.matched_sample_id
+FROM dna_matches m
+INNER JOIN dna_samples u ON u.sample_id = m.unknown_sample_id
+INNER JOIN dna_samples ms ON ms.sample_id = m.matched_sample_id
+WHERE 1 = 1
+  AND EXISTS (
+    SELECT 1
+    FROM case_files cf_filter
+    WHERE cf_filter.case_id = 1
+      AND cf_filter.person_id IN (u.person_id, ms.person_id)
+  )
+ORDER BY m.match_id DESC;
+
+-- 11d. Filter: sample_id (ekta sample je shob match e ache — unknown ba matched hishebe)
+SELECT m.match_id, m.unknown_sample_id, m.matched_sample_id
+FROM dna_matches m
+WHERE 1 = 1
+  AND (m.unknown_sample_id = 2 OR m.matched_sample_id = 2)
+ORDER BY m.match_id DESC;
+
+
+-- 12. Delete single match by id (DELETE /api/dna-matches/:id — shudhu Admin, Confirmed na hole)
+-- Test er jonno ekta temporary match banie sheta delete kora
+INSERT INTO dna_matches (unknown_sample_id, matched_sample_id, similarity_percentage, confidence_level, match_date, match_status, match_method)
+VALUES (6, 1, 27.27, 'Low', CURDATE(), 'Pending Review', 'Computed');
+SET @delete_match_id = LAST_INSERT_ID();
+
+-- Delete er age status check (controller: Confirmed hole 409)
+SELECT match_id, match_status FROM dna_matches WHERE match_id = @delete_match_id;
+
+DELETE FROM dna_matches
+WHERE match_id = @delete_match_id;

@@ -251,3 +251,34 @@ CREATE TABLE IF NOT EXISTS dna_matches (
         FOREIGN KEY (matched_sample_id) REFERENCES dna_samples(sample_id)
         ON DELETE CASCADE
 );
+
+-- Trigger: DNA match Confirmed hole missing person automatic 'Identified' (Member 1 - Issue 5)
+-- Raw SQL + test query gulo: database/sql/trigger.sql
+DROP TRIGGER IF EXISTS trg_dna_match_confirmed_update;
+DROP TRIGGER IF EXISTS trg_dna_match_confirmed_insert;
+DELIMITER //
+CREATE TRIGGER trg_dna_match_confirmed_update
+AFTER UPDATE ON dna_matches
+FOR EACH ROW
+BEGIN
+    -- Pending Review/Rejected theke notun kore 'Confirmed' holei
+    IF NEW.match_status = 'Confirmed' AND OLD.match_status <> 'Confirmed' THEN
+        UPDATE missing_persons
+        SET status = 'Identified'
+        WHERE person_id = (SELECT s.person_id FROM dna_samples s WHERE s.sample_id = NEW.matched_sample_id)
+          AND status <> 'Identified';
+    END IF;
+END //
+CREATE TRIGGER trg_dna_match_confirmed_insert
+AFTER INSERT ON dna_matches
+FOR EACH ROW
+BEGIN
+    -- Shorashori 'Confirmed' match insert holeo
+    IF NEW.match_status = 'Confirmed' THEN
+        UPDATE missing_persons
+        SET status = 'Identified'
+        WHERE person_id = (SELECT s.person_id FROM dna_samples s WHERE s.sample_id = NEW.matched_sample_id)
+          AND status <> 'Identified';
+    END IF;
+END //
+DELIMITER ;

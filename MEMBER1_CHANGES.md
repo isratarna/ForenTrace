@@ -17,7 +17,7 @@ This file records every change made for Member 1, phase by phase. Each phase mat
 | 2 | Issue 2: Family DNA Reference Integration | ✅ Done |
 | 3 | Issue 3: Laboratory DNA Analysis Workflow | ✅ Done |
 | 4 | Issue 4: DNA Matching Workflow | ✅ Done |
-| 5 | Issue 5: SQL Trigger (automatic identification update) | ⏳ Pending |
+| 5 | Issue 5: SQL Trigger (automatic identification update) | ✅ Done |
 | 6 | Issue 6: SQL UNION Report | ⏳ Pending |
 | 7 | Issue 7: Connect the lab frontend to the real backend | ⏳ Pending |
 
@@ -4857,4 +4857,676 @@ Afterwards the test matches were deleted, match 1 was set back to Pending Review
 
 ---
 
-<!-- Phase 5 onwards will be added below as each phase is completed. -->
+# Phase 5 — Issue 5: SQL Trigger (Automatic Identification Update)
+
+## Goal
+
+After a DNA match is confirmed, the missing person's status should update **automatically in the database**:
+
+```
+dna_matches.match_status = 'Confirmed'   ──(trigger)──>   missing_persons.status = 'Identified'
+```
+
+**Dependency:** this uses `dna_samples` (Issue 1) and `dna_matches` (Issue 4), both finished.
+
+## How it works
+
+| Question | Answer |
+|---|---|
+| **Which missing person?** | The person linked to the **matched (reference) sample**: `dna_samples.person_id` where `sample_id = NEW.matched_sample_id`. Example: John Doe's evidence (sample 1) vs his father's reference (sample 2) is confirmed. Sample 2 belongs to person 1, so **John Doe becomes Identified** |
+| **When does it fire?** | `AFTER UPDATE`: only when the status **changes to** `Confirmed` (`NEW = 'Confirmed' AND OLD <> 'Confirmed'`). `AFTER INSERT`: when a row is inserted already `Confirmed` |
+| **Why two triggers?** | The app always inserts `Pending Review` and then updates to `Confirmed`, which is the UPDATE trigger. The INSERT trigger covers matches inserted directly as `Confirmed` (raw SQL, imports), so the rule holds however the data gets in |
+| **What if the person is already Identified?** | `AND status <> 'Identified'` skips the update, so nothing changes needlessly |
+| **What about Rejected?** | Nothing happens. The `IF` only checks for `Confirmed` |
+| **Backend code needed?** | **None for the rule itself.** The existing `PUT /api/dna-matches/:id/status` runs the UPDATE and MySQL runs the trigger. The backend only reads the result back to show a message |
+
+## Files changed
+
+| File | Type | What changed |
+|---|---|---|
+| `database/sql/trigger.sql` | New | Both triggers + `SHOW TRIGGERS` + 3 tests that restore the data afterwards |
+| `database/schema.sql` | Modified | Creates both triggers on a fresh setup (`DROP TRIGGER IF EXISTS` + `DELIMITER` blocks, same pattern as the existing procedures) |
+| `backend/controllers/dnaMatchController.js` | Modified | `reviewMatch` reads the fresh row after the update and says who was identified |
+| `frontend/src/pages/Laboratory.jsx` | Modified | `MatchDetails` shows a green notice after review ("... has been automatically marked as Identified") |
+
+---
+
+## 5.1 `database/sql/trigger.sql` (new)
+
+| Part | What it does |
+|---|---|
+| `DROP TRIGGER IF EXISTS` ×2 | The file can be re-run without errors |
+| `trg_dna_match_confirmed_update` | **AFTER UPDATE ON dna_matches FOR EACH ROW**. If the status just became `Confirmed`, it sets the matched sample's missing person to `Identified` |
+| `trg_dna_match_confirmed_insert` | **AFTER INSERT ON dna_matches FOR EACH ROW**. Same rule for rows inserted as `Confirmed` |
+| `SHOW TRIGGERS` | Shows that both triggers exist |
+| Test 1 (UPDATE) | Saves the current values in `@old_*` variables, confirms seed match 1, and shows John Doe going from Under Investigation to **Identified** |
+| Test 2 (Rejected) | Inserts a Pending match for Jane, rejects it, and shows her status **doesn't change** |
+| Test 3 (INSERT) | Inserts a match already `Confirmed` against Jane's brother's reference, and Jane becomes **Identified** |
+| Restore | Deletes the test matches and puts back the saved statuses, leaving the seed data unchanged |
+
+```sql
+-- =========================================================
+-- ForenTrace: SQL Trigger — Automatic Identification Update (Member 1 - Issue 5)
+-- File: database/sql/trigger.sql
+--
+-- Kaj: dna_matches.match_status = 'Confirmed' hole
+--      automatic vabe missing_persons.status = 'Identified' hoye jabe.
+--
+-- Kon missing person? → matched_sample_id (reference sample) je missing person er
+--   Example: John Doe er evidence (sample 1) vs John er father er reference (sample 2)
+--            match Confirmed → sample 2 er person_id = 1 → John Doe 'Identified'
+--
+-- Duita trigger:
+--   1. AFTER UPDATE — Admin/Officer review kore 'Pending Review' → 'Confirmed' korle (normal flow)
+--   2. AFTER INSERT — keu shorashori 'Confirmed' status diye match insert korle (raw SQL / import)
+--
+-- Ei file-er shob query age MySQL-e test kora hoyeche. Backend code change lage na —
+-- PUT /api/dna-matches/:id/status 'Confirmed' korlei database nijei trigger chalay.
+-- =========================================================
+
+USE forentrace_db;
+
+-- Age theke thakle drop (file abar run korle error hobe na)
+DROP TRIGGER IF EXISTS trg_dna_match_confirmed_update;
+DROP TRIGGER IF EXISTS trg_dna_match_confirmed_insert;
+
+DELIMITER //
+
+-- 1. AFTER UPDATE trigger: match review kore Confirmed korle
+CREATE TRIGGER trg_dna_match_confirmed_update
+AFTER UPDATE ON dna_matches
+FOR EACH ROW
+BEGIN
+    -- Shudhu tokhon-i jokhon status notun kore 'Confirmed' holo (age Confirmed chilo na)
+    IF NEW.match_status = 'Confirmed' AND OLD.match_status <> 'Confirmed' THEN
+        UPDATE missing_persons
+        SET status = 'Identified'
+        WHERE person_id = (
+            -- Matched (reference) sample er missing person
+            SELECT s.person_id
+            FROM dna_samples s
+            WHERE s.sample_id = NEW.matched_sample_id
+        )
+          AND status <> 'Identified'; -- age theke Identified hole abar update lagbe na
+    END IF;
+END //
+
+-- 2. AFTER INSERT trigger: shorashori 'Confirmed' match insert korle
+CREATE TRIGGER trg_dna_match_confirmed_insert
+AFTER INSERT ON dna_matches
+FOR EACH ROW
+BEGIN
+    IF NEW.match_status = 'Confirmed' THEN
+        UPDATE missing_persons
+        SET status = 'Identified'
+        WHERE person_id = (
+            SELECT s.person_id
+            FROM dna_samples s
+            WHERE s.sample_id = NEW.matched_sample_id
+        )
+          AND status <> 'Identified';
+    END IF;
+END //
+
+DELIMITER ;
+
+
+-- 3. Trigger gulo toiri hoyeche kina dekha
+SHOW TRIGGERS WHERE `Table` = 'dna_matches';
+
+
+-- =========================================================
+-- TEST (seed data use kore — shesh e shob kichu ager obosthay ferot jay)
+-- =========================================================
+
+-- Test 1: AFTER UPDATE — seed match 1 (sample 1 vs sample 2, John Doe) Confirm kora
+-- Ager status mone rakhi jate test er por restore kora jay
+SET @person_id = (SELECT s.person_id FROM dna_matches m JOIN dna_samples s ON s.sample_id = m.matched_sample_id WHERE m.match_id = 1);
+SET @old_person_status = (SELECT status FROM missing_persons WHERE person_id = @person_id);
+SET @old_match_status = (SELECT match_status FROM dna_matches WHERE match_id = 1);
+
+-- Before: John Doe er status
+SELECT person_id, first_name, last_name, status AS status_before
+FROM missing_persons
+WHERE person_id = @person_id;
+
+-- Match Confirm → trigger fire hobe
+UPDATE dna_matches
+SET match_status = 'Confirmed'
+WHERE match_id = 1;
+
+-- After: status 'Identified' hoye jawar kotha
+SELECT person_id, first_name, last_name, status AS status_after_confirm
+FROM missing_persons
+WHERE person_id = @person_id;
+
+
+-- Test 2: 'Rejected' korle trigger kichu kore na
+-- (Jane Smith, person 2 — notun ekta Pending match banie sheta Reject kori)
+SET @old_jane_status = (SELECT status FROM missing_persons WHERE person_id = 2);
+INSERT INTO dna_matches (unknown_sample_id, matched_sample_id, similarity_percentage, confidence_level, match_date, match_status, match_method)
+VALUES (6, 5, 45.45, 'Low', CURDATE(), 'Pending Review', 'Computed');
+SET @reject_match_id = LAST_INSERT_ID();
+
+UPDATE dna_matches SET match_status = 'Rejected' WHERE match_id = @reject_match_id;
+
+SELECT person_id, first_name, status AS status_after_reject -- ager motoi thakbe
+FROM missing_persons
+WHERE person_id = 2;
+
+
+-- Test 3: AFTER INSERT — shorashori 'Confirmed' match insert (sample 6 vs sample 4 → sample 4 = Jane er brother er reference)
+INSERT INTO dna_matches (unknown_sample_id, matched_sample_id, similarity_percentage, confidence_level, match_date, match_status, match_method)
+VALUES (6, 4, 95.00, 'High', CURDATE(), 'Confirmed', 'Manual');
+SET @insert_match_id = LAST_INSERT_ID();
+
+SELECT person_id, first_name, status AS status_after_confirmed_insert -- 'Identified' hobe
+FROM missing_persons
+WHERE person_id = 2;
+
+
+-- Restore: test er shob change ferot (seed data jeno thik thake)
+DELETE FROM dna_matches WHERE match_id IN (@reject_match_id, @insert_match_id);
+UPDATE dna_matches SET match_status = @old_match_status WHERE match_id = 1;
+UPDATE missing_persons SET status = @old_person_status WHERE person_id = @person_id;
+UPDATE missing_persons SET status = @old_jane_status WHERE person_id = 2;
+
+SELECT person_id, first_name, status AS status_restored
+FROM missing_persons
+ORDER BY person_id;
+```
+
+## 5.2 `database/schema.sql` (modified)
+
+```diff
+@@ -250,4 +250,35 @@ CREATE TABLE IF NOT EXISTS dna_matches (
+     CONSTRAINT fk_match_matched_sample
+         FOREIGN KEY (matched_sample_id) REFERENCES dna_samples(sample_id)
+         ON DELETE CASCADE
+-);
+\ No newline at end of file
++);
++
++-- Trigger: DNA match Confirmed hole missing person automatic 'Identified' (Member 1 - Issue 5)
++-- Raw SQL + test query gulo: database/sql/trigger.sql
++DROP TRIGGER IF EXISTS trg_dna_match_confirmed_update;
++DROP TRIGGER IF EXISTS trg_dna_match_confirmed_insert;
++DELIMITER //
++CREATE TRIGGER trg_dna_match_confirmed_update
++AFTER UPDATE ON dna_matches
++FOR EACH ROW
++BEGIN
++    -- Pending Review/Rejected theke notun kore 'Confirmed' holei
++    IF NEW.match_status = 'Confirmed' AND OLD.match_status <> 'Confirmed' THEN
++        UPDATE missing_persons
++        SET status = 'Identified'
++        WHERE person_id = (SELECT s.person_id FROM dna_samples s WHERE s.sample_id = NEW.matched_sample_id)
++          AND status <> 'Identified';
++    END IF;
++END //
++CREATE TRIGGER trg_dna_match_confirmed_insert
++AFTER INSERT ON dna_matches
++FOR EACH ROW
++BEGIN
++    -- Shorashori 'Confirmed' match insert holeo
++    IF NEW.match_status = 'Confirmed' THEN
++        UPDATE missing_persons
++        SET status = 'Identified'
++        WHERE person_id = (SELECT s.person_id FROM dna_samples s WHERE s.sample_id = NEW.matched_sample_id)
++          AND status <> 'Identified';
++    END IF;
++END //
++DELIMITER ;
+\ No newline at end of file
+```
+
+## 5.3 `backend/controllers/dnaMatchController.js` (modified)
+
+`reviewMatch` already re-read the match after updating. Now it also checks `matched_person_status`, which the trigger has just changed, and puts it in the message: *"DNA match confirmed. John Doe is now marked as Identified."*
+
+```diff
+@@ -311,12 +311,20 @@ export async function reviewMatch(req, res) {
+       return res.status(409).json({ success: false, message: 'Only matches pending review can be updated.' })
+     }
+ 
++    // UPDATE er shathe shathe database trigger (trg_dna_match_confirmed_update — Issue 5)
++    // matched sample er missing person ke 'Identified' kore dey — ekhane alada code lage na
+     await dbUpdateMatchStatus(id, matchStatus)
+-    const match = await findMatchById(id)
++    const match = await findMatchById(id) // trigger er por fresh data (matched_person_status)
++
++    // Confirmed hole trigger er result response e janai
++    const identified = matchStatus === 'Confirmed' && match.matched_person_status === 'Identified'
++    const message = identified
++      ? `DNA match confirmed. ${match.matched_person_name} is now marked as Identified.`
++      : `DNA match ${matchStatus.toLowerCase()}.`
+ 
+     return res.status(200).json({
+       success: true,
+-      message: `DNA match ${matchStatus.toLowerCase()}.`,
++      message,
+       match: formatMatch(match),
+     })
+   } catch (error) {
+```
+
+## 5.4 `frontend/src/pages/Laboratory.jsx` (modified)
+
+`MatchDetails` has a new `notice` state. After **Confirm Match**, if the returned `matchedSample.personStatus` is `Identified`, it shows a green alert. The "Compared samples" card also shows the person's new status right away.
+
+```diff
+@@ -720,6 +720,7 @@ export function MatchDetails() {
+   const [loading, setLoading] = useState(true)
+   const [working, setWorking] = useState(false)
+   const [error, setError] = useState('')
++  const [notice, setNotice] = useState('') // review er por success message (trigger result)
+ 
+   useEffect(() => {
+     let mounted = true
+@@ -738,7 +739,13 @@ export function MatchDetails() {
+     try {
+       setWorking(true)
+       setError('')
+-      setMatch(await updateMatchStatus(match.id, matchStatus))
++      setNotice('')
++      const updated = await updateMatchStatus(match.id, matchStatus)
++      setMatch(updated)
++      // Database trigger (Issue 5) matched person ke Identified korle sheta dekhano
++      setNotice(matchStatus === 'Confirmed' && updated.matchedSample.personStatus === 'Identified'
++        ? `Match confirmed. ${updated.matchedSample.personName} has been automatically marked as Identified.`
++        : `Match ${matchStatus.toLowerCase()}.`)
+     } catch (requestError) {
+       setError(errorMessage(requestError, 'Failed to update the match.'))
+     } finally {
+@@ -776,6 +783,7 @@ export function MatchDetails() {
+         </>}
+       />
+       {error && <div className="alert alert-danger" role="alert">{error}</div>}
++      {notice && <div className="alert alert-success" role="status">{notice}</div>}
+       <div className="match-hero card mb-4">
+         <div className="card-body">
+           <div><span className="eyebrow">UNKNOWN SAMPLE</span><h3>#{match.unknownSampleId}</h3><small>{match.unknownSample.provider}</small></div>
+```
+
+---
+
+## Phase 5 testing
+
+**SQL (`trigger.sql` on local MySQL 8.0):**
+
+| Test | Result |
+|---|---|
+| `SHOW TRIGGERS` / `information_schema.TRIGGERS` | Both triggers exist (UPDATE/AFTER, INSERT/AFTER) |
+| Confirm seed match 1 | John Doe: Under Investigation → **Identified** |
+| Reject a new Pending match for Jane | Jane stays **Under Investigation** |
+| Insert a match already `Confirmed` for Jane's reference | Jane → **Identified** |
+| Restore section | John and Jane back to Under Investigation, match 1 back to Pending Review, test matches deleted |
+| Re-run `schema.sql` | Triggers dropped and recreated without errors |
+
+**API end to end (backend on a test port):**
+
+| Step | Result |
+|---|---|
+| Before | `GET /missing-persons/1` → **Under Investigation**. `GET /missing-persons/statistics` → identified = **1** |
+| Officer `PUT /dna-matches/1/status {"matchStatus":"Confirmed"}` | 200 "DNA match confirmed. **John Doe is now marked as Identified.**" |
+| After | `GET /missing-persons/1` → **Identified**. Statistics identified = **2** |
+| `GET /dna-matches/1` / `GET /dna-samples/2` | Confirmed / person status Identified |
+
+The seed data was restored afterwards (match 1 Pending Review, John Doe Under Investigation) and the test users were removed.
+
+**Frontend:** `oxlint` found no issues and `vite build` succeeded. The pages were not clicked through in a browser.
+
+## Notes
+
+- **Demo steps:** log in as Admin or Officer 1 → DNA Matches → **Match #1** → **Confirm Match** → the green notice appears → open John Doe in Missing Persons to see **Identified**.
+- The trigger only changes `missing_persons.status`, as the issue specifies. The case's `case_status` / `identified_date` belong to Member 2's case module and are **not** changed.
+
+---
+
+# SQL File Coverage Update (after Phase 5)
+
+## Why
+
+The task requires that **all** database queries are written and tested as raw SQL in `database/sql/*.sql` **before** they go into the backend models. A review after Phase 5 found that a few statements the backend runs had not been written in the `.sql` files yet:
+
+| Missing from the `.sql` files | Used by |
+|---|---|
+| Sample **search** (LIKE on name / family / lab / type / profile code) | `findAllSamples` (`?search=`) |
+| Sample **filters** `status`, `family_id`, `lab_id`, `case_id` | `findAllSamples` |
+| Lookups: **missing person exists**, **DNA lab exists** | `findPersonForSample`, `findLabForSample` |
+| Match **filters** `status`, `confidence`, `case_id`, `sample_id` | `findAllMatches` |
+| **Delete one match by id** | `deleteMatchById` |
+| Some **columns**: sample query 5 lacked `person_status` / `case_officer_id`, and match query 3 lacked the unknown family/lab columns, `matched_person_status` and the matched lab | `sampleSelect`, `matchSelect` |
+
+This update adds them. **No backend or frontend code changed.** The SQL files now contain every statement the models run.
+
+## How the `.sql` files relate to the backend
+
+1. Each query is written and **run in MySQL first** from `database/sql/*.sql`, using fixed example values (for example `WHERE family_id = 1`) or `@variables`.
+2. The **same SQL** is then placed in the model file (`backend/models/*.js`). The fixed values are replaced with **`?` placeholders**, which `mysql2`'s `pool.execute(sql, params)` fills in from the request. This prevents SQL injection.
+3. The backend does **not** read the `.sql` files at runtime. They are the tested source for the SQL, as the task specifies ("The final backend models should execute these SQL operations using `mysql2`").
+4. `trigger.sql` is different: triggers are **installed in MySQL** (by `schema.sql`) and run automatically. No backend function calls them.
+
+## Files changed
+
+| File | What changed |
+|---|---|
+| `database/sql/dna_samples.sql` | Query 5 now has the same columns as the backend. **New queries 21–24:** search, the 6 filters (22a–f), person lookup, lab lookup |
+| `database/sql/dna_matches.sql` | Query 3 now has the same columns as the backend's `matchSelect`. **New queries 11–12:** the 4 filters (11a–d), delete one match by id |
+
+**Note on query 21 (search):** the first version used `@sample_search` in `LIKE` and failed with `ER_CANT_AGGREGATE_2COLLATIONS`. A MySQL user variable takes the connection's collation (`utf8mb4_unicode_ci`), which clashed with the table's `utf8mb4_0900_ai_ci`. The file now uses literal values (`LIKE '%Rafiqul%'`). The backend's `?` parameters are also bound as literals, which adapt to the column collation, so the backend never had this problem (the Phase 1 search test passed).
+
+## Full mapping: every model query → its `.sql` file query
+
+### `backend/models/dnaSampleModel.js` → `database/sql/dna_samples.sql`
+
+| Model function / SQL piece | `.sql` query |
+|---|---|
+| `sampleSelect` (joined SELECT) | 2 (admin list), **5** (same columns) |
+| `scopeCondition` Officer / Technician | 3 / 4 |
+| `findAllSamples` search | **21** |
+| `findAllSamples` filters status / person / family / lab / case / combined | **22a / 22b / 22c / 22d / 22e / 22f** |
+| `findSampleById` | 5 |
+| `createSample` | 1 |
+| `updateSampleById` | 6 |
+| `deleteSampleById` | 7 |
+| `findPersonForSample` | **23** |
+| `familyMemberBelongsToPerson` | 8a |
+| `findLabForSample` | **24** |
+| `technicianBelongsToLab` | 8b |
+| `officerAssignedToPerson` | 8c |
+| `findFamilyMemberForSample` | 9 |
+| `createFamilySample` (INSERT ... SELECT) | 10 |
+| `findFamilyDnaByPerson` | 11 |
+| `findFamilyDnaSummary` | 12 |
+| `findTechnicianForUser` | 14 |
+| `findLabSampleSummary` | 16 |
+| `updateSampleAnalysis` | 18 |
+
+Queries 13, 17, 19 and 20 are test setup and cleanup. Query 15 (the technician analysis queue) shows the queue in SQL. In the app, the technician's queue is the normal sample list scoped to their lab (queries 4 + 22a).
+
+### `backend/models/dnaMatchModel.js` → `database/sql/dna_matches.sql`
+
+| Model function / SQL piece | `.sql` query |
+|---|---|
+| `matchSelect` (joined SELECT) | **3** (same columns) |
+| `scopeCondition` Officer / Technician | 4 / 5 |
+| `findAllMatches` person filter | 6 |
+| `findAllMatches` filters status / confidence / case / sample | **11a / 11b / 11c / 11d** |
+| `findMatchById` | 3 + `WHERE m.match_id = ?` (9 shows the row) |
+| `compareProfileCodes` (recursive CTE) | 1 (1b checks the spec example) |
+| `findMatchBetween` | 7 |
+| `createMatch` | 2 / 2b |
+| `updateMatchStatus` | 8 |
+| `deleteMatchById` | **12** |
+
+### `database/sql/trigger.sql`
+
+| Trigger | Runs when |
+|---|---|
+| `trg_dna_match_confirmed_update` | `updateMatchStatus` (query 8) sets `Confirmed`, and MySQL runs it automatically |
+| `trg_dna_match_confirmed_insert` | A row is inserted directly as `Confirmed` |
+
+## Code changes
+
+### `database/sql/dna_samples.sql`
+
+```diff
+@@ -133,14 +133,17 @@ ORDER BY s.sample_id DESC;
+ 
+ 
+ -- 5. View single DNA Sample details (upore insert kora sample)
++-- Backend er sampleSelect (dnaSampleModel.js) hubohu ei column gulo ney
+ SELECT
+     s.*,
+     CONCAT(mp.first_name, ' ', mp.last_name) AS person_name,
++    mp.status AS person_status,             -- missing person er current status (Identified kina)
+     CONCAT(fm.first_name, ' ', fm.last_name) AS family_member_name,
+     fm.relationship AS family_relationship,
+     dl.lab_name,
+     CONCAT(lt.first_name, ' ', lt.last_name) AS technician_name,
+-    cf.case_id
++    cf.case_id,
++    cf.officer_id AS case_officer_id        -- case er investigating officer
+ FROM dna_samples s
+ INNER JOIN missing_persons mp ON s.person_id = mp.person_id
+ LEFT JOIN family_members fm ON s.family_id = fm.family_id
+@@ -328,3 +331,98 @@ WHERE sample_id = @analysis_sample_id;
+ -- 20. Test sample delete
+ DELETE FROM dna_samples
+ WHERE sample_id = @analysis_sample_id;
++
++
++-- =========================================================
++-- Backend search, filter & lookup queries (Member 1 - Issue 1)
++-- GET /api/dna-samples?search=&status=&person_id=&family_id=&lab_id=&case_id=
++-- Backend (findAllSamples) shudhu je filter pathano hoy sheta AND diye jog kore —
++-- ekhane proti ta filter alada kore test kora holo.
++-- =========================================================
++
++-- 21. Search: sample id, person name, family member name, lab name, sample type ba profile code diye
++-- Example search text = 'Rafiqul'. Backend e ekhane ? placeholder thake:
++--   sample_id = ? → search text number hole sheta, noile 0 (ekhane 'Rafiqul' number na, tai 0)
++--   LIKE ?        → '%Rafiqul%' (wildcard shoho)
++-- Note: @variable diye LIKE korle collation mismatch hote pare, tai literal value use kora holo
++--       (backend er ? parameter o literal hishebe bind hoy)
++SELECT
++    s.sample_id,
++    CONCAT(mp.first_name, ' ', mp.last_name) AS person_name,
++    CONCAT(fm.first_name, ' ', fm.last_name) AS family_member_name,
++    dl.lab_name,
++    s.sample_type,
++    s.dna_profile_code,
++    s.status
++FROM dna_samples s
++INNER JOIN missing_persons mp ON s.person_id = mp.person_id
++LEFT JOIN family_members fm ON s.family_id = fm.family_id
++LEFT JOIN dna_labs dl ON s.lab_id = dl.lab_id
++LEFT JOIN lab_technicians lt ON s.technician_id = lt.technician_id
++LEFT JOIN case_files cf ON cf.person_id = s.person_id
++WHERE 1 = 1
++  AND (
++    s.sample_id = 0
++    OR CONCAT(mp.first_name, ' ', mp.last_name) LIKE '%Rafiqul%'
++    OR CONCAT(fm.first_name, ' ', fm.last_name) LIKE '%Rafiqul%'
++    OR dl.lab_name LIKE '%Rafiqul%'
++    OR s.sample_type LIKE '%Rafiqul%'
++    OR s.dna_profile_code LIKE '%Rafiqul%'
++  )
++ORDER BY s.sample_id DESC;
++
++
++-- 22a. Filter: status (e.g. shudhu 'Analyzed' sample — New DNA Comparison page eta use kore)
++SELECT s.sample_id, s.status, s.dna_profile_code
++FROM dna_samples s
++WHERE 1 = 1
++  AND s.status = 'Analyzed'
++ORDER BY s.sample_id DESC;
++
++-- 22b. Filter: person_id (Missing Person Details → DNA Samples tab)
++SELECT s.sample_id, s.person_id, s.sample_type
++FROM dna_samples s
++WHERE 1 = 1
++  AND s.person_id = 1
++ORDER BY s.sample_id DESC;
++
++-- 22c. Filter: family_id (ekta family member er reference sample)
++SELECT s.sample_id, s.family_id, s.sample_type
++FROM dna_samples s
++WHERE 1 = 1
++  AND s.family_id = 1
++ORDER BY s.sample_id DESC;
++
++-- 22d. Filter: lab_id (ekta lab er sample)
++SELECT s.sample_id, s.lab_id, s.status
++FROM dna_samples s
++WHERE 1 = 1
++  AND s.lab_id = 2
++ORDER BY s.sample_id DESC;
++
++-- 22e. Filter: case_id (Case Details er DNA Samples — case_files LEFT JOIN diye)
++SELECT s.sample_id, cf.case_id, s.person_id
++FROM dna_samples s
++LEFT JOIN case_files cf ON cf.person_id = s.person_id
++WHERE 1 = 1
++  AND cf.case_id = 1
++ORDER BY s.sample_id DESC;
++
++-- 22f. Combined: backend ekshathe onek filter + role scope AND kore (e.g. Officer 1 er Analyzed sample)
++SELECT s.sample_id, CONCAT(mp.first_name, ' ', mp.last_name) AS person_name, s.status, cf.case_id
++FROM dna_samples s
++INNER JOIN missing_persons mp ON s.person_id = mp.person_id
++LEFT JOIN case_files cf ON cf.person_id = s.person_id
++WHERE 1 = 1
++  AND s.status = 'Analyzed'
++  AND s.person_id = 1
++  AND cf.officer_id = 1           -- Officer scope (query 3 er condition)
++ORDER BY s.sample_id DESC;
++
++
++-- 23. Lookup: missing person ache kina (register/update/family DNA view er age)
++SELECT person_id FROM missing_persons WHERE person_id = 1 LIMIT 1;
++
++
++-- 24. Lookup: DNA lab ache kina (register/update er age)
++SELECT lab_id FROM dna_labs WHERE lab_id = 1 LIMIT 1;
+```
+
+### `database/sql/dna_matches.sql`
+
+```diff
+@@ -127,27 +127,44 @@ SET @manual_match_id = LAST_INSERT_ID();
+ 
+ -- 3. View all DNA matches with both sample details (Admin view)
+ -- dna_samples table ke duibar JOIN (u = unknown, ms = matched) — self-join er moto alias
++-- Backend er matchSelect (dnaMatchModel.js) hubohu ei column gulo ney
+ SELECT
+     m.match_id,
+     m.unknown_sample_id,
++    m.matched_sample_id,
++    m.similarity_percentage,
++    m.confidence_level,
++    m.match_date,
++    m.match_status,
++    m.match_method,
++    -- Unknown (evidence) sample er info
++    u.person_id AS unknown_person_id,
+     CONCAT(up.first_name, ' ', up.last_name) AS unknown_person_name,
++    u.family_id AS unknown_family_id,
++    CONCAT(uf.first_name, ' ', uf.last_name) AS unknown_family_name,
++    uf.relationship AS unknown_family_relationship,
++    u.sample_type AS unknown_sample_type,
+     u.dna_profile_code AS unknown_profile_code,
+-    m.matched_sample_id,
++    ul.lab_name AS unknown_lab_name,
++    -- Matched (reference) sample er info
++    ms.person_id AS matched_person_id,
+     CONCAT(mp.first_name, ' ', mp.last_name) AS matched_person_name,
++    mp.status AS matched_person_status,       -- trigger er por 'Identified' dekhabe (Issue 5)
++    ms.family_id AS matched_family_id,
+     CONCAT(mf.first_name, ' ', mf.last_name) AS matched_family_name,
+     mf.relationship AS matched_family_relationship,
++    ms.sample_type AS matched_sample_type,
+     ms.dna_profile_code AS matched_profile_code,
+-    m.similarity_percentage,
+-    m.confidence_level,
+-    m.match_date,
+-    m.match_status,
+-    m.match_method
++    ml.lab_name AS matched_lab_name
+ FROM dna_matches m
+ INNER JOIN dna_samples u ON u.sample_id = m.unknown_sample_id
+ INNER JOIN missing_persons up ON up.person_id = u.person_id
++LEFT JOIN family_members uf ON uf.family_id = u.family_id
++LEFT JOIN dna_labs ul ON ul.lab_id = u.lab_id
+ INNER JOIN dna_samples ms ON ms.sample_id = m.matched_sample_id
+ INNER JOIN missing_persons mp ON mp.person_id = ms.person_id
+ LEFT JOIN family_members mf ON mf.family_id = ms.family_id
++LEFT JOIN dna_labs ml ON ml.lab_id = ms.lab_id
+ ORDER BY m.match_id DESC;
+ 
+ 
+@@ -209,3 +226,59 @@ WHERE match_id = @new_match_id;
+ -- 10. Delete test matches (seed data jeno thik thake)
+ DELETE FROM dna_matches
+ WHERE match_id IN (@new_match_id, @manual_match_id);
++
++
++-- =========================================================
++-- Backend filter & delete queries (Member 1 - Issue 4)
++-- GET /api/dna-matches?status=&confidence=&person_id=&case_id=&sample_id=
++-- Backend (findAllMatches) shudhu je filter pathano hoy sheta AND diye jog kore —
++-- ekhane proti ta filter alada kore test kora holo.
++-- =========================================================
++
++-- 11a. Filter: match_status (e.g. shudhu 'Pending Review' — review baki ache)
++SELECT m.match_id, m.match_status
++FROM dna_matches m
++WHERE 1 = 1
++  AND m.match_status = 'Pending Review'
++ORDER BY m.match_id DESC;
++
++-- 11b. Filter: confidence_level
++SELECT m.match_id, m.similarity_percentage, m.confidence_level
++FROM dna_matches m
++WHERE 1 = 1
++  AND m.confidence_level = 'High'
++ORDER BY m.match_id DESC;
++
++-- 11c. Filter: case_id (Case Details er DNA Matches — case er missing person er kono sample thakle)
++SELECT m.match_id, m.unknown_sample_id, m.matched_sample_id
++FROM dna_matches m
++INNER JOIN dna_samples u ON u.sample_id = m.unknown_sample_id
++INNER JOIN dna_samples ms ON ms.sample_id = m.matched_sample_id
++WHERE 1 = 1
++  AND EXISTS (
++    SELECT 1
++    FROM case_files cf_filter
++    WHERE cf_filter.case_id = 1
++      AND cf_filter.person_id IN (u.person_id, ms.person_id)
++  )
++ORDER BY m.match_id DESC;
++
++-- 11d. Filter: sample_id (ekta sample je shob match e ache — unknown ba matched hishebe)
++SELECT m.match_id, m.unknown_sample_id, m.matched_sample_id
++FROM dna_matches m
++WHERE 1 = 1
++  AND (m.unknown_sample_id = 2 OR m.matched_sample_id = 2)
++ORDER BY m.match_id DESC;
++
++
++-- 12. Delete single match by id (DELETE /api/dna-matches/:id — shudhu Admin, Confirmed na hole)
++-- Test er jonno ekta temporary match banie sheta delete kora
++INSERT INTO dna_matches (unknown_sample_id, matched_sample_id, similarity_percentage, confidence_level, match_date, match_status, match_method)
++VALUES (6, 1, 27.27, 'Low', CURDATE(), 'Pending Review', 'Computed');
++SET @delete_match_id = LAST_INSERT_ID();
++
++-- Delete er age status check (controller: Confirmed hole 409)
++SELECT match_id, match_status FROM dna_matches WHERE match_id = @delete_match_id;
++
++DELETE FROM dna_matches
++WHERE match_id = @delete_match_id;
+```
+
+## Testing
+
+Both files were run on local MySQL 8.0 with **0 errors**:
+
+| Query | Result |
+|---|---|
+| 21 search `Rafiqul` | Sample 2 (Rafiqul Islam's reference) |
+| 22a `status = 'Analyzed'` | Samples 6, 5, 2, 1 |
+| 22b `person_id = 1` | Samples 3, 2, 1 |
+| 22c `family_id = 1` | Sample 2 |
+| 22d `lab_id = 2` | Samples 5, 4 |
+| 22e `case_id = 1` | Samples 3, 2, 1 |
+| 22f combined (Analyzed + person 1 + Officer 1 scope) | Samples 2, 1 |
+| 23 / 24 lookups | person 1 / lab 1 found |
+| 11a–d match filters | Correct rows |
+| 12 delete one match | Temporary match inserted and deleted |
+
+After both runs the seed data was unchanged: 6 samples, match 1 Pending Review / match 2 Rejected, John and Jane Under Investigation.
+
+---
+
+<!-- Phase 6 onwards will be added below as each phase is completed. -->

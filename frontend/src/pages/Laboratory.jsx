@@ -720,6 +720,7 @@ export function MatchDetails() {
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('') // review er por success message (trigger result)
 
   useEffect(() => {
     let mounted = true
@@ -738,7 +739,13 @@ export function MatchDetails() {
     try {
       setWorking(true)
       setError('')
-      setMatch(await updateMatchStatus(match.id, matchStatus))
+      setNotice('')
+      const updated = await updateMatchStatus(match.id, matchStatus)
+      setMatch(updated)
+      // Database trigger (Issue 5) matched person ke Identified korle sheta dekhano
+      setNotice(matchStatus === 'Confirmed' && updated.matchedSample.personStatus === 'Identified'
+        ? `Match confirmed. ${updated.matchedSample.personName} has been automatically marked as Identified.`
+        : `Match ${matchStatus.toLowerCase()}.`)
     } catch (requestError) {
       setError(errorMessage(requestError, 'Failed to update the match.'))
     } finally {
@@ -776,6 +783,7 @@ export function MatchDetails() {
         </>}
       />
       {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      {notice && <div className="alert alert-success" role="status">{notice}</div>}
       <div className="match-hero card mb-4">
         <div className="card-body">
           <div><span className="eyebrow">UNKNOWN SAMPLE</span><h3>#{match.unknownSampleId}</h3><small>{match.unknownSample.provider}</small></div>

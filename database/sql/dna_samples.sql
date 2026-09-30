@@ -133,14 +133,17 @@ ORDER BY s.sample_id DESC;
 
 
 -- 5. View single DNA Sample details (upore insert kora sample)
+-- Backend er sampleSelect (dnaSampleModel.js) hubohu ei column gulo ney
 SELECT
     s.*,
     CONCAT(mp.first_name, ' ', mp.last_name) AS person_name,
+    mp.status AS person_status,             -- missing person er current status (Identified kina)
     CONCAT(fm.first_name, ' ', fm.last_name) AS family_member_name,
     fm.relationship AS family_relationship,
     dl.lab_name,
     CONCAT(lt.first_name, ' ', lt.last_name) AS technician_name,
-    cf.case_id
+    cf.case_id,
+    cf.officer_id AS case_officer_id        -- case er investigating officer
 FROM dna_samples s
 INNER JOIN missing_persons mp ON s.person_id = mp.person_id
 LEFT JOIN family_members fm ON s.family_id = fm.family_id
@@ -328,3 +331,98 @@ WHERE sample_id = @analysis_sample_id;
 -- 20. Test sample delete
 DELETE FROM dna_samples
 WHERE sample_id = @analysis_sample_id;
+
+
+-- =========================================================
+-- Backend search, filter & lookup queries (Member 1 - Issue 1)
+-- GET /api/dna-samples?search=&status=&person_id=&family_id=&lab_id=&case_id=
+-- Backend (findAllSamples) shudhu je filter pathano hoy sheta AND diye jog kore —
+-- ekhane proti ta filter alada kore test kora holo.
+-- =========================================================
+
+-- 21. Search: sample id, person name, family member name, lab name, sample type ba profile code diye
+-- Example search text = 'Rafiqul'. Backend e ekhane ? placeholder thake:
+--   sample_id = ? → search text number hole sheta, noile 0 (ekhane 'Rafiqul' number na, tai 0)
+--   LIKE ?        → '%Rafiqul%' (wildcard shoho)
+-- Note: @variable diye LIKE korle collation mismatch hote pare, tai literal value use kora holo
+--       (backend er ? parameter o literal hishebe bind hoy)
+SELECT
+    s.sample_id,
+    CONCAT(mp.first_name, ' ', mp.last_name) AS person_name,
+    CONCAT(fm.first_name, ' ', fm.last_name) AS family_member_name,
+    dl.lab_name,
+    s.sample_type,
+    s.dna_profile_code,
+    s.status
+FROM dna_samples s
+INNER JOIN missing_persons mp ON s.person_id = mp.person_id
+LEFT JOIN family_members fm ON s.family_id = fm.family_id
+LEFT JOIN dna_labs dl ON s.lab_id = dl.lab_id
+LEFT JOIN lab_technicians lt ON s.technician_id = lt.technician_id
+LEFT JOIN case_files cf ON cf.person_id = s.person_id
+WHERE 1 = 1
+  AND (
+    s.sample_id = 0
+    OR CONCAT(mp.first_name, ' ', mp.last_name) LIKE '%Rafiqul%'
+    OR CONCAT(fm.first_name, ' ', fm.last_name) LIKE '%Rafiqul%'
+    OR dl.lab_name LIKE '%Rafiqul%'
+    OR s.sample_type LIKE '%Rafiqul%'
+    OR s.dna_profile_code LIKE '%Rafiqul%'
+  )
+ORDER BY s.sample_id DESC;
+
+
+-- 22a. Filter: status (e.g. shudhu 'Analyzed' sample — New DNA Comparison page eta use kore)
+SELECT s.sample_id, s.status, s.dna_profile_code
+FROM dna_samples s
+WHERE 1 = 1
+  AND s.status = 'Analyzed'
+ORDER BY s.sample_id DESC;
+
+-- 22b. Filter: person_id (Missing Person Details → DNA Samples tab)
+SELECT s.sample_id, s.person_id, s.sample_type
+FROM dna_samples s
+WHERE 1 = 1
+  AND s.person_id = 1
+ORDER BY s.sample_id DESC;
+
+-- 22c. Filter: family_id (ekta family member er reference sample)
+SELECT s.sample_id, s.family_id, s.sample_type
+FROM dna_samples s
+WHERE 1 = 1
+  AND s.family_id = 1
+ORDER BY s.sample_id DESC;
+
+-- 22d. Filter: lab_id (ekta lab er sample)
+SELECT s.sample_id, s.lab_id, s.status
+FROM dna_samples s
+WHERE 1 = 1
+  AND s.lab_id = 2
+ORDER BY s.sample_id DESC;
+
+-- 22e. Filter: case_id (Case Details er DNA Samples — case_files LEFT JOIN diye)
+SELECT s.sample_id, cf.case_id, s.person_id
+FROM dna_samples s
+LEFT JOIN case_files cf ON cf.person_id = s.person_id
+WHERE 1 = 1
+  AND cf.case_id = 1
+ORDER BY s.sample_id DESC;
+
+-- 22f. Combined: backend ekshathe onek filter + role scope AND kore (e.g. Officer 1 er Analyzed sample)
+SELECT s.sample_id, CONCAT(mp.first_name, ' ', mp.last_name) AS person_name, s.status, cf.case_id
+FROM dna_samples s
+INNER JOIN missing_persons mp ON s.person_id = mp.person_id
+LEFT JOIN case_files cf ON cf.person_id = s.person_id
+WHERE 1 = 1
+  AND s.status = 'Analyzed'
+  AND s.person_id = 1
+  AND cf.officer_id = 1           -- Officer scope (query 3 er condition)
+ORDER BY s.sample_id DESC;
+
+
+-- 23. Lookup: missing person ache kina (register/update/family DNA view er age)
+SELECT person_id FROM missing_persons WHERE person_id = 1 LIMIT 1;
+
+
+-- 24. Lookup: DNA lab ache kina (register/update er age)
+SELECT lab_id FROM dna_labs WHERE lab_id = 1 LIMIT 1;
