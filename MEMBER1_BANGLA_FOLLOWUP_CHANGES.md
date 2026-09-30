@@ -20,7 +20,7 @@ The earlier CB-1…CB-8 work is in `MEMBER1_CHATBOT_CHANGES.md`.
 | 5 | Step 5 | FAQ checker (roles, exact menu names, vague answers) + wording list | `checkFaq.js`, `data/faq_terms.json` | ✅ Done (5 entries fixed in Phase 5b → checker 0 problems; main 10/10, holdout 85/91, same answer/block decisions) |
 | 6 | Step 6 | Bangla search-side test file | `data/bangla_questions.json` | ✅ Done (after Phase 6b: natural 36/36 right entry and answered, Bangla 48/50; off 13/13 blocked; threshold 0.65 confirmed) |
 | 7 | Step 7 | Follow-up search-side test (copy of Member 2's rule) | `followupTest.js`, `data/followup_questions.json` | ✅ Done (Phase 7b: proposed rule → follow-ups 19/19, change_faq 6/6, stress 388/438 vs 351 for the plan rule; 4 ⚠ saved for step 10) |
-| 8 | Step 8 | Draft FAQ entries for the new features (not added yet) | `data/new_feature_faq_drafts.txt` | ⏳ Next |
+| 8 | Step 8 | Draft FAQ entries for the new features (not added yet) | `data/new_feature_faq_drafts.txt` | ✅ Done (3 drafts checked offline: 16/16 with all added, no losses, all off-topic blocked; 6 test questions waiting) |
 | — | Steps 9–13 | End-to-end Bangla / follow-up tests, run-all, team message | — | ⏸ Waiting for Members 2 and 3 |
 
 **Rules followed in every phase**
@@ -3000,3 +3000,138 @@ The real rule is in **Member 2's** code, so the fix only takes effect when Membe
 - The proposed rule is **only in the test copy** until Member 2 adopts it. When their code is merged, compare it with `RULES` in `followupTest.js`.
 - Even the proposed rule still pulls 24 of 438 stress pairs away. A rule that only looks at word count, pronouns and cue words can't tell "What is ForenTrace?" (topic change) from "Which role?" (follow-up) every time. Gemini sees the previous question and the chunks, so it can still answer correctly.
 - The 0.77 cutoff depends on this FAQ's wording. Re-run `followupTest.js --stress` after big FAQ changes.
+
+---
+
+## Phase 8 — Step 8: Draft FAQ entries for the new features
+
+### Goal
+Write the FAQ entries for the three new chatbot features **now**, in the same style as the FAQ, but **don't add them yet**. They go in only after Member 2 and Member 3 merge the features (step 11). Their test questions are added to the main question file, marked `"status": "wait"`, so step 11 only has to switch them on.
+
+### Files changed
+
+| File | Type | Purpose |
+| --- | --- | --- |
+| `backend/chatbot/data/new_feature_faq_drafts.txt` | **New** | The 3 drafts + when/how to add them |
+| `backend/chatbot/data/eval_questions.json` | Modified | 6 test questions (2 per draft) with `"status": "wait"` (skipped by `evaluate.js` until step 11) |
+| `backend/chatbot/data/faq_terms.json` | Modified | `ignore` list + language and browser names, so the FAQ checker doesn't take "in Bangla" / "in Google Chrome" for menu names |
+
+The FAQ, the PDF and Atlas were **not** changed.
+
+### The drafts — `backend/chatbot/data/new_feature_faq_drafts.txt` (full new file)
+
+```text
+DRAFT FAQ ENTRIES FOR THE NEW CHATBOT FEATURES (step 8) — NOT IN THE FAQ YET
+==========================================================================
+
+When to add them (step 11):
+- Draft 1 (Bangla)     → only after Member 2's Bangla feature is merged and working.
+- Draft 2 (follow-up)  → only after Member 2's follow-up feature is merged and working.
+- Draft 3 (voice)      → only if Member 3 ships the microphone button. Check the exact button and
+                         switch names in the merged widget first and change the text to match.
+
+How to add: paste the Q/A lines (without the "Draft" headings) at the END of forentrace_faq.docx and
+forentrace_faq_source.txt, export the PDF, run node chatbot/ingest.js, then switch on their test
+questions in data/eval_questions.json (remove "status": "wait") and re-run steps 1, 2, 3 and 5.
+
+Style used (same as the FAQ): Q line with synonyms in brackets, 2–3 short sentences, names the
+roles, exact menu names, no off-topic words (they would pull unrelated questions above the threshold).
+The wording below was checked offline against every test file before saving (see Phase 8 in
+MEMBER1_BANGLA_FOLLOWUP_CHANGES.md): the Bangla entry names ForenTrace topics on purpose, and the
+follow-up entry avoids the word "assistant", so neither one pulls other questions away.
+
+
+Draft 1 — Bangla
+----------------
+Q: Can I ask ForenTrace questions in Bangla (Bengali)?
+A: Yes. Any user (Admin, Officer or Lab Technician) can ask about missing persons, cases, DNA samples and DNA matches in Bangla, and the reply comes in Bangla. Menu and button names such as DNA Samples or Register DNA Sample stay exactly as they appear on the screen.
+
+
+Draft 2 — Follow-up questions
+-----------------------------
+Q: Can I ask a follow-up question (a short next question about the same topic)?
+A: Yes. Any user (Admin, Officer or Lab Technician) can ask a short follow-up such as "Who can do that?" or "Where do I find it?" right after an answer, and the previous question is used to understand it. For a new topic, type a full question, for example "How do I register a DNA sample?".
+
+
+Draft 3 — Voice (ONLY if Member 3 ships the microphone button)
+---------------------------------------------------------------
+Q: Can I ask a question by voice (speak, microphone)?
+A: Yes, in Google Chrome or Microsoft Edge. Any user (Admin, Officer or Lab Technician) can click the microphone button in the assistant, set the EN / বাং switch, and speak the question. Other browsers do not support voice input, so type the question there.
+```
+
+| Draft | Plan asked for | Where it is in the draft |
+| --- | --- | --- |
+| 1 Bangla | Yes; the reply comes in the same language; menu names stay in English | "the reply comes in Bangla" + "Menu and button names such as DNA Samples or Register DNA Sample stay exactly as they appear on the screen" |
+| 2 Follow-up | Yes, e.g. "Who can do that?" | Two examples + "For a new topic, type a full question" (supports the follow-up rule: full questions are treated as new) |
+| 3 Voice | Only if Member 3 ships the mic: Chrome/Edge, the mic button, the EN / বাং switch | All three, plus what to do in other browsers. Marked **only if Member 3 ships it**; check the exact button/switch names in the merged widget first. |
+
+### Code — test questions added to `eval_questions.json` (diff)
+```diff
+     { "q": "What does the Identified status mean?", "type": "on", "expect": "What does the Identified status mean" },
++
++    { "q": "Can I ask questions in Bangla?", "type": "on", "expect": "Can I ask ForenTrace questions in Bangla (Bengali)", "status": "wait", "note": "step 8 draft 1 — switch on in step 11 after the Bangla Q&A is added" },
++    { "q": "Does the chatbot understand Bengali?", "type": "on", "expect": "Can I ask ForenTrace questions in Bangla (Bengali)", "status": "wait", "note": "step 8 draft 1" },
++    { "q": "Can I ask a follow-up question?", "type": "on", "expect": "Can I ask a follow-up question", "status": "wait", "note": "step 8 draft 2 — switch on in step 11 after the follow-up Q&A is added" },
++    { "q": "Does the assistant remember my last question?", "type": "on", "expect": "Can I ask a follow-up question", "status": "wait", "note": "step 8 draft 2" },
++    { "q": "Can I ask a question by voice?", "type": "on", "expect": "Can I ask a question by voice", "status": "wait", "note": "step 8 draft 3 — only if Member 3 ships the microphone" },
++    { "q": "Can I use the microphone to ask?", "type": "on", "expect": "Can I ask a question by voice", "status": "wait", "note": "step 8 draft 3" },
+```
+`evaluate.js` already skips `"status": "wait"` (built in Phase 2): `Question file: … (22 questions, 6 waiting)`. In step 11, delete `"status": "wait"` from the drafts that were added.
+
+### Code — `faq_terms.json` (diff)
+```diff
+-  "ignore": ["ForenTrace", "DNA", "Q", "A"]
++  "ignore": ["ForenTrace", "DNA", "Q", "A", "Bangla", "Bengali", "English", "Google Chrome", "Microsoft Edge", "Chrome", "Edge"]
+```
+**Why:** the checker reads a capitalized word after "in" as a menu name ("in DNA Matches"). "in Bangla" and "in Google Chrome" are a language and a browser, not menus.
+
+### How the wording was chosen (checked offline before saving)
+Each draft was added as an extra chunk **in memory** (Atlas and the FAQ untouched), and every question file was re-run against it. The first wording had two problems:
+
+| Problem with the first wording | Cause | Fix |
+| --- | --- | --- |
+| The Bangla entry pulled off-topic questions up: "Where is the capital of Bangladesh?" 0.6413, "What is an easy way to learn English?" 0.6193, "Translate hello into French" 0.6184 (threshold 0.65) | The words Bangla / English / language, and nothing else | Name **ForenTrace topics** in the entry ("ask about missing persons, cases, DNA samples and DNA matches in Bangla") and drop "English" |
+| The follow-up entry took over "What questions can the assistant answer?" (holdout and Bangla files) | The word "assistant" + "question" in both entries | Leave out "assistant": "the previous question is used to understand it" |
+| With the voice entry added, "Does the chatbot understand Bengali?" went to voice | "choose EN for English or বাং for Bangla" | "set the EN / বাং switch" |
+
+Bangla wordings compared (score of each question against the Bangla entry alone):
+
+| Wording | "Does the chatbot understand Bengali?" (on) | "Can I ask questions in Bangla?" (on) | "Where is the capital of Bangladesh?" (off) | "Translate hello into French" (off) |
+| --- | --- | --- | --- | --- |
+| A: "Can I type my question in Bangla (Bengali) instead of English?" | 0.762 | 0.829 | **0.646** | 0.617 |
+| C: "Can I ask ForenTrace questions in Bangla?" + topics | **0.639 (blocked)** | 0.834 | 0.585 | 0.500 |
+| **C2: C + "(Bengali)" (chosen)** | **0.710** | **0.845** | **0.637** | **0.526** |
+
+C2 was chosen because translators often turn বাংলা into "Bengali", so that question must pass. The capital-of-Bangladesh question stays blocked (0.637), and Gemini is the second layer.
+
+### Testing results (offline, with the final drafts)
+
+| Drafts added | Main (incl. the draft questions) | Holdout | Bangla | Highest off-topic score |
+| --- | --- | --- | --- | --- |
+| none (today) | 10/10 | 85/91 | 48/50 | 0.5971 |
+| 1 + 2 (Bangla, follow-up) | **14/14** | 85/91 | 48/50 | 0.6370 (all 40 off-topic blocked) |
+| 1 + 2 + 3 (+ voice) | **16/16** | 85/91 | 48/50 | 0.6370 (all 40 off-topic blocked) |
+
+| Draft test question | Score | Top entry |
+| --- | --- | --- |
+| Can I ask questions in Bangla? | 0.8448 | Bangla ✓ |
+| Does the chatbot understand Bengali? | 0.7095 | Bangla ✓ |
+| Can I ask a follow-up question? | 0.8739 | follow-up ✓ |
+| Does the assistant remember my last question? | 0.6919 | follow-up ✓ |
+| Can I ask a question by voice? | 0.9006 | voice ✓ |
+| Can I use the microphone to ask? | 0.8387 | voice ✓ |
+
+Also checked:
+- `checkFaq.js` rules on the FAQ **with all 3 drafts appended**: **0 problems**, 39 Q&A chunks, the longest 79 words.
+- Chunker: each draft becomes one chunk (57, 71 and 55 words).
+- Real Atlas `checkFaq.js` (current FAQ): 0 problems.
+- `evaluate.js` main file: 10/10, 6 waiting, exit code 0.
+
+### What you (Member 1) do for this step
+Read the drafts in `new_feature_faq_drafts.txt`. **Don't add them yet.** In step 11, the agent says which ones to add (voice only if the mic exists) and re-runs everything.
+
+### Known gaps / notes (for steps 9 and 11)
+- **Any** Bangla FAQ entry lets questions **about the Bangla language itself** through: "Teach me Bangla grammar" scores 0.72 against the Bangla draft. After draft 1 is added, Gemini must refuse these. Added to the step 9 end-to-end checks, together with "Where is the capital of Bangladesh?" (0.637, blocked but close).
+- The voice draft uses **বাং** (Bangla script). In step 11, check that `pdf-parse` reads it back correctly from the exported PDF, and that Word's PDF export keeps it. If not, write "the EN / Bangla switch" instead.
+- Draft 3's button and switch names are from the plan. Match them to Member 3's merged widget before adding.
+- These drafts were checked against **today's** FAQ. If the FAQ changes before step 11, re-run the offline check (or simply add, re-ingest and re-run steps 1, 2, 3 and 5).

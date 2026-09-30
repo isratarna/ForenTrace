@@ -70,5 +70,5 @@
     "Analyzed",
     "Rejected"
   ],
-  "ignore": ["ForenTrace", "DNA", "Q", "A"]
+  "ignore": ["ForenTrace", "DNA", "Q", "A", "Bangla", "Bengali", "English", "Google Chrome", "Microsoft Edge", "Chrome", "Edge"]
 }
