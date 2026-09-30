@@ -2,21 +2,17 @@ import { createContext, useContext, useMemo, useState } from 'react'
 import * as seed from './mockData'
 
 const DATA_KEY = 'forentrace-records-v2'
-const collections = ['missingPeople', 'cases', 'familyMembers', 'samples', 'matches', 'stations', 'officers', 'labs', 'technicians']
+// DNA samples ar matches ekhon real backend (/api/dna-samples, /api/dna-matches) theke ashe —
+// tai mock 'samples' ar 'matches' collection ekhan theke baad deya hoyeche (Member 1 - Issue 7)
+const collections = ['missingPeople', 'cases', 'familyMembers', 'stations', 'officers', 'labs', 'technicians']
 const clone = value => JSON.parse(JSON.stringify(value))
 const initialData = () => Object.fromEntries(collections.map(key => [key, clone(seed[key])]))
 const hasCollections = value => collections.every(key => Array.isArray(value?.[key]))
 
 function normalizeRecords(records) {
-  const familyMembers = records.familyMembers.map(member => ({ ...member, sample: member.sample || '—' }))
-  const samples = records.samples.map(sample => {
-    const familyMember = familyMembers.find(member => member.id === sample.familyMemberId || member.name === sample.person)
-    const relatedCase = records.cases.find(item => item.id === sample.caseId) || records.cases.find(item => item.personId === sample.personId)
-    return { ...sample, familyMemberId: sample.familyMemberId || familyMember?.id || '', caseId: sample.caseId || relatedCase?.id || '', analysis: sample.analysis || '—', profile: sample.profile || '—', remarks: sample.remarks || '' }
-  })
-  const sampleIds = new Set(samples.map(sample => sample.id))
-  const matches = records.matches.filter(match => sampleIds.has(match.unknown) && sampleIds.has(match.matched))
-  return { ...records, familyMembers: familyMembers.map(member => ({ ...member, sample: samples.find(sample => sample.familyMemberId === member.id)?.id || member.sample })), samples, matches }
+  // Purono localStorage e thaka mock samples/matches bad dei (kono page ar egulo use kore na)
+  const { samples: _samples, matches: _matches, ...rest } = records
+  return rest
 }
 
 function readData() {
@@ -50,7 +46,7 @@ export function DataProvider({ children }) {
       return record
     },
     addFamilyMember(values) {
-      const record = { ...values, id: nextId('FM', data.familyMembers), sample: '—' }
+      const record = { ...values, id: nextId('FM', data.familyMembers) }
       commit({ ...data, familyMembers: [...data.familyMembers, record] })
       return record
     },
@@ -63,18 +59,7 @@ export function DataProvider({ children }) {
     updateCase(id, values) {
       commit({ ...data, cases: data.cases.map(item => item.id === id ? { ...item, ...values, identifiedDate: values.identifiedDate || '—' } : item) })
     },
-    addSample(values) {
-      const owner = values.familyMemberId ? data.familyMembers.find(item => item.id === values.familyMemberId) : data.missingPeople.find(item => item.id === values.personId)
-      const record = { ...values, id: nextId('SMP', data.samples), person: owner?.name || (owner ? `${owner.firstName} ${owner.lastName}` : 'Unassigned'), status: 'Awaiting Analysis', analysis: '—', profile: '—' }
-      commit({ ...data, samples: [...data.samples, record], familyMembers: values.familyMemberId ? data.familyMembers.map(member => member.id === values.familyMemberId ? { ...member, sample: record.id } : member) : data.familyMembers })
-      return record
-    },
-    updateSample(id, values) {
-      commit({ ...data, samples: data.samples.map(item => item.id === id ? { ...item, ...values } : item) })
-    },
-    updateMatch(id, values) {
-      commit({ ...data, matches: data.matches.map(item => item.id === id ? { ...item, ...values } : item) })
-    },
+    // addSample / updateSample / updateMatch (mock) remove kora hoyeche — DNA er shob kaj ekhon dnaService diye real API te
     addAdminRecord(kind, values) {
       const prefix = { stations: 'PS', officers: 'OFF', labs: 'LAB', technicians: 'TECH' }[kind]
       const record = { ...values, id: nextId(prefix, data[kind]), status: values.status || 'Active' }
@@ -87,7 +72,8 @@ export function DataProvider({ children }) {
     removeAdminRecord(kind, id) {
       const record = data[kind].find(item => item.id === id)
       if (!record) return { ok: false, message: 'Record not found.' }
-      const used = (kind === 'stations' && (data.officers.some(item => item.station === record.name) || data.cases.some(item => item.station === record.name))) || (kind === 'labs' && (data.technicians.some(item => item.lab === record.name) || data.samples.some(item => item.lab === record.name))) || (kind === 'officers' && data.cases.some(item => item.officer === record.name)) || (kind === 'technicians' && data.samples.some(item => item.technician === record.name))
+      // Mock samples na thakay lab/technician er "sample e use hocche" check ekhan theke baad (real check backend er FK RESTRICT kore)
+      const used = (kind === 'stations' && (data.officers.some(item => item.station === record.name) || data.cases.some(item => item.station === record.name))) || (kind === 'labs' && data.technicians.some(item => item.lab === record.name)) || (kind === 'officers' && data.cases.some(item => item.officer === record.name))
       if (used) return { ok: false, message: 'This record is linked to an operational record and cannot be deleted.' }
       commit({ ...data, [kind]: data[kind].filter(item => item.id !== id) })
       return { ok: true }

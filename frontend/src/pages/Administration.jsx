@@ -7,6 +7,7 @@ import { getUsers, updateUser, updateUserStatus, deleteUser } from '../services/
 import { getOfficers, createOfficer, updateOfficer, deleteOfficer } from '../services/officerService'
 import { getStations, createStation, updateStation, deleteStation } from '../services/policeStationService'
 import caseService from '../services/caseService'
+import { getMatches, getSamples } from '../services/dnaService' // report export er DNA metric real API theke (Member 1 - Issue 7)
 
 const recordConfig = {
   stations: { title: 'Police Stations', subtitle: 'Manage police station records.', button: 'Add Station', fields: [['name', 'Station name'], ['district', 'District'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email', 'email']] },
@@ -246,10 +247,16 @@ export function Reports() {
   const avgResolution = caseStats?.summary?.averageResolutionDays ?? null
   const stationStats = caseStats?.stationStatistics ?? []
 
-  const exportReport = () => {
-    const top = [...(data.matches || [])].sort((first, second) => parseFloat(second.similarity || 0) - parseFloat(first.similarity || 0))[0]
-    const analyzed = (data.samples || []).filter(sample => sample.status === 'Analyzed').length
-    const reportCards = [['Highest DNA similarity match', top?.id || '—', top ? `${top.similarity} similarity` : 'No matches'], ['Solved investigations', String(solved), 'Current records'], ['Pending investigations', String(pending), 'Across all police stations'], ['Samples analyzed', String(analyzed), `of ${data.samples.length} collected samples`], ['Total missing-person reports', String(data.missingPeople.length), 'Current registry']]
+  const exportReport = async () => {
+    // DNA sample/match ekhon real API theke (age mock data.samples/data.matches chilo) — Member 1 Issue 7
+    // API fail korle faka list diye export hobe, jate CSV export atke na jay
+    const [dnaSamples, dnaMatches] = await Promise.all([
+      getSamples().catch(() => []),
+      getMatches().catch(() => []),
+    ])
+    const top = [...dnaMatches].sort((first, second) => second.similarityPercentage - first.similarityPercentage)[0] // shob theke beshi similarity
+    const analyzed = dnaSamples.filter(sample => sample.status === 'Analyzed').length
+    const reportCards = [['Highest DNA similarity match', top ? `#${top.id}` : '—', top ? `${top.similarityPercentage}% similarity (${top.matchStatus})` : 'No matches'], ['Solved investigations', String(solved), 'Current records'], ['Pending investigations', String(pending), 'Across all police stations'], ['Samples analyzed', String(analyzed), `of ${dnaSamples.length} collected samples`], ['Total missing-person reports', String(data.missingPeople.length), 'Current registry']]
     const rows = [['ForenTrace Report', new Date().toLocaleDateString()], [], ['Metric', 'Value', 'Detail'], ...reportCards.map(card => [card[0], card[1], card[2]]), [], ['Cases'], ['Case ID', 'Missing Person', 'Status', 'Priority'], ...(data.cases || []).map(caseItem => [caseItem.id, caseItem.person, caseItem.status, caseItem.priority])]
     const csv = rows.map(row => row.map(cell => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))

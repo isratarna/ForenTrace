@@ -19,7 +19,7 @@ This file records every change made for Member 1, phase by phase. Each phase mat
 | 4 | Issue 4: DNA Matching Workflow | ✅ Done |
 | 5 | Issue 5: SQL Trigger (automatic identification update) | ✅ Done |
 | 6 | Issue 6: SQL UNION Report | ✅ Done |
-| 7 | Issue 7: Connect the lab frontend to the real backend | ⏳ Pending |
+| 7 | Issue 7: Connect the lab frontend to the real backend | ✅ Done |
 
 ---
 
@@ -6152,4 +6152,414 @@ export default function DnaSampleReport() {
 
 ---
 
-<!-- Phase 7 onwards will be added below as each phase is completed. -->
+# Phase 7 — Issue 7: Connect Laboratory Frontend With Real Backend
+
+## Goal
+
+Replace the mock/`DataContext` data in the laboratory frontend with real API services.
+
+## Status of the pages listed in the issue
+
+Most of this issue was done as each feature was built. Every page was moved to the real API in the same phase that built its backend:
+
+| Page / file (listed in Issue 7) | Now uses | Connected in |
+|---|---|---|
+| `Laboratory.jsx` (whole file) | `dnaService` only. **No `useData` / `DataContext` import left** | Phases 1–4 |
+| `Samples` | `GET /api/dna-samples` (+ `/lab/summary` for technicians) | Phase 1 (+3) |
+| `SampleForm` | `POST` / `PUT /api/dna-samples`, labs/technicians/persons/family lookups | Phase 1 (+2) |
+| `SampleDetails` | `GET` / `DELETE /api/dna-samples/:id` | Phase 1 |
+| `DNAAnalysis` | `PUT /api/dna-samples/:id/analysis` | Phase 3 |
+| `Matches` | `GET /api/dna-matches` | Phase 4 |
+| `MatchDetails` | `GET /api/dna-matches/:id`, `PUT /:id/status`, `DELETE /:id` | Phase 4 (+5) |
+| (new) `MatchForm` | `POST /api/dna-matches/compare`, `POST /api/dna-matches` | Phase 4 |
+| `SamplesTable` / `MatchesList` (Missing Person Details tabs) | `getSamplesByPerson` / `getMatchesByPerson` (real) | Phases 1 / 4 |
+
+## What was still mock before Phase 7
+
+A search for `data.samples`, `data.matches`, `addSample`, `updateMatch` and `useData` found three remaining places where lab/DNA data came from mock `DataContext`:
+
+| File | Mock DNA usage | Fixed in Phase 7 |
+|---|---|---|
+| `pages/Dashboards.jsx` | **Officer** and **Lab Technician** dashboards computed all cards and tables from `data.samples`, `data.matches`, `data.cases` and `data.technicians` | ✅ Now loads everything from the API |
+| `pages/Administration.jsx` → `Reports` | The CSV export's "Highest DNA similarity match" and "Samples analyzed" came from `data.matches` / `data.samples` | ✅ Now fetched from the API when exporting |
+| `data/DataContext.jsx` + `data/mockData.js` | Mock `samples` / `matches` collections and `addSample` / `updateSample` / `updateMatch` | ✅ Removed (nothing uses them any more) |
+
+## Files changed
+
+| File | What changed |
+|---|---|
+| `frontend/src/pages/Dashboards.jsx` | Officer and Lab Technician dashboards use `getSamples`, `getMatches`, `getLabSummary` and `caseService.getCases`. The `useData` import was removed. The **Admin dashboard is unchanged** (Member 2's Issue 4) |
+| `frontend/src/pages/Administration.jsx` | `Reports.exportReport` is now `async` and fetches DNA samples/matches from the API for its two DNA metrics |
+| `frontend/src/data/DataContext.jsx` | Removed the `samples` / `matches` collections, the sample/match linking in `normalizeRecords`, `addSample` / `updateSample` / `updateMatch`, and the checks that looked at samples |
+| `frontend/src/data/mockData.js` | Removed the `samples` and `matches` arrays |
+
+No backend changes. The dashboards reuse endpoints built in Phases 1–4.
+
+## Design decisions
+
+- **The officer case filter is in the frontend.** The Officer dashboard shows the officer's own cases. `GET /api/cases` on `main` currently returns **all** cases to officers (in the test, the officer received 2 cases, including another officer's). So the dashboard keeps only rows where `caseItem.officerId === user.officerId`. The DNA data (samples/matches) is already officer-scoped by the backend (Phases 1 and 4). The backend fix for case scoping is Member 2's Issue 5. Once it lands, the frontend filter is harmless and can stay.
+- **Dashboard cards and what they count:**
+
+| Dashboard | Card | Source |
+|---|---|---|
+| Lab Technician | Awaiting Analysis / Analyzed Samples | `GET /dna-samples/lab/summary` (Phase 3) |
+| Lab Technician | DNA Matches / High-confidence Matches | `GET /dna-matches` (lab-scoped) |
+| Lab Technician | "Samples requiring attention" table | `GET /dna-samples` filtered to Awaiting / In Analysis (the "Priority" column is now "Sample Type") |
+| Lab Technician | "DNA result summary" | Reviewed = Confirmed + Rejected matches, plus the high-confidence count |
+| Officer | My Active / Pending Cases | `GET /cases` filtered by `officerId` |
+| Officer | Samples Awaiting Results | `GET /dna-samples` (officer-scoped) with status Awaiting / In Analysis |
+| Officer | New DNA Matches | `GET /dna-matches` (officer-scoped) with `Pending Review` |
+| Officer | "Recent investigation activity" | The officer's first 6 cases, linking to `/cases/:id` |
+
+- **Loading and error states:** the cards show `…` while loading, and an alert appears if an API call fails.
+- **The CSV export won't break:** if a DNA API call fails, `exportReport` uses an empty list for that metric instead of failing the whole export.
+- **Old browser data:** `normalizeRecords` removes `samples` / `matches` from `localStorage` records saved by the old mock version, so stale mock DNA data can't come back.
+- **Other members' mock data is untouched:** the stations, officers, labs and technicians mock data in `DataContext` / `Administration.jsx` / `Auth.jsx` is part of Member 3's Issue 7 (removing duplicate/mock admin pages). The missing-person and case mock data used by `Reports` belongs to Member 2's areas. Only the DNA/lab mock data was removed here.
+
+---
+
+## 7.1 `frontend/src/pages/Dashboards.jsx` (modified)
+
+```diff
+@@ -1,13 +1,15 @@
+ import { Link } from 'react-router-dom'
+ import { MetricCard, PageHeader, StatusBadge } from '../components/Ui'
+-import { useData } from '../data/DataContext'
+ import { useAuth } from '../context/AuthContext'
+ import { useState, useEffect } from 'react'
+ import caseService from '../services/caseService'
+ import adminStatsService from '../services/adminStatsService'
++import { getLabSummary, getMatches, getSamples } from '../services/dnaService' // real DNA data (Member 1 - Issue 7)
++
++// Ei status e thakle sample er analysis ekhono baki
++const isPendingAnalysis = sample => sample.status === 'Awaiting Analysis' || sample.status === 'In Analysis'
+ 
+ export function Dashboard({ type }) {
+-  const { data } = useData()
+   const { user } = useAuth()
+   // Admin: fetch aggregated counts and case summary
+   const [adminLoading, setAdminLoading] = useState(false)
+@@ -15,6 +17,11 @@ export function Dashboard({ type }) {
+   const [adminCounts, setAdminCounts] = useState(null)
+   const [caseSummary, setCaseSummary] = useState(null)
+ 
++  // Officer / Lab Technician: real API data (age mock DataContext theke ashto — Member 1 Issue 7)
++  const [roleData, setRoleData] = useState({ cases: [], samples: [], matches: [], labSummary: null })
++  const [roleLoading, setRoleLoading] = useState(false)
++  const [roleError, setRoleError] = useState(null)
++
+   const fetchAdminData = async () => {
+     setAdminLoading(true)
+     setAdminError(null)
+@@ -23,7 +30,7 @@ export function Dashboard({ type }) {
+         caseService.getCaseStatistics(),
+         adminStatsService.getAdminCounts(),
+       ])
+-      
++
+       setCaseSummary(caseStats.summary || null)
+       setAdminCounts(counts || null)
+     } catch (err) {
+@@ -41,15 +48,55 @@ export function Dashboard({ type }) {
+     fetchAdminData()
+     return () => { mounted = false }
+   }, [type])
+-  const assignedLab = user?.lab || data.technicians.find(technician => technician.email === user?.email || technician.name === user?.name)?.lab || ''
+-  const scopedCases = type === 'Officer' ? data.cases.filter(caseItem => caseItem.officer === user?.name) : data.cases
+-  const scopedSamples = type === 'Lab Technician' ? data.samples.filter(sample => sample.lab === assignedLab) : type === 'Officer' ? data.samples.filter(sample => scopedCases.some(caseItem => caseItem.id === sample.caseId)) : data.samples
+-  const scopedMatches = type === 'Lab Technician' ? data.matches.filter(match => match.lab === assignedLab) : type === 'Officer' ? data.matches.filter(match => scopedSamples.some(sample => sample.id === match.unknown || sample.id === match.matched)) : data.matches
+-  const activeCases = scopedCases.filter(caseItem => caseItem.status === 'Active')
+-  const awaiting = scopedSamples.filter(sample => sample.status === 'Awaiting Analysis')
+-  const reviewed = scopedMatches.filter(match => match.status === 'Reviewed')
+-  const high = scopedMatches.filter(match => match.confidence === 'High')
+-    const cards = type === 'Lab Technician' ? [['Awaiting Analysis', awaiting.length, 'Samples queued for laboratory work'], ['Analyzed Samples', scopedSamples.filter(sample => sample.status === 'Analyzed').length, 'Profiles recorded'], ['DNA Matches', scopedMatches.length, 'Comparison records'], ['High-confidence Matches', high.length, 'Investigation review required']] : type === 'Officer' ? [['My Active Cases', activeCases.length, 'Currently active investigations'], ['Pending Cases', scopedCases.filter(caseItem => caseItem.status === 'Pending').length, 'Awaiting evidence or action'], ['Samples Awaiting Results', awaiting.length, 'Assigned to laboratory'], ['New DNA Matches', scopedMatches.filter(match => match.status === 'Pending Review').length, 'Awaiting review']] : [['Missing Persons', data.missingPeople.length, 'Current registry'], ['Active Cases', activeCases.length, 'Open investigations'], ['DNA Samples', data.samples.length, 'Collection records'], ['High-confidence Matches', high.length, 'DNA comparison results']]
++
++  // Officer / Lab Technician dashboard er data load
++  // DNA sample/match API backend e-i role onujayi scoped (officer = nijer case, technician = nijer lab)
++  useEffect(() => {
++    if (type !== 'Officer' && type !== 'Lab Technician') return
++    let mounted = true
++    setRoleLoading(true)
++    setRoleError(null)
++    Promise.all([
++      getSamples(),
++      getMatches(),
++      type === 'Officer' ? caseService.getCases() : Promise.resolve([]),
++      type === 'Lab Technician' ? getLabSummary() : Promise.resolve(null),
++    ])
++      .then(([samples, matches, cases, labSummary]) => {
++        if (!mounted) return
++        // Case API ekhono officer-scoped na, tai ekhane nijer officerId diye filter
++        const myCases = cases.filter(caseItem => String(caseItem.officerId) === String(user?.officerId))
++        setRoleData({ samples, matches, cases: myCases, labSummary })
++      })
++      .catch(err => {
++        console.error('Failed to load dashboard data', err)
++        if (mounted) setRoleError(err.response?.data?.message || 'Failed to load dashboard data')
++      })
++      .finally(() => { if (mounted) setRoleLoading(false) })
++    return () => { mounted = false }
++  }, [type, user?.officerId])
++
++  const { cases, samples, matches, labSummary } = roleData
++  const activeCases = cases.filter(caseItem => caseItem.status === 'Active')
++  const pendingSamples = samples.filter(isPendingAnalysis) // Awaiting + In Analysis
++  const reviewed = matches.filter(match => match.matchStatus === 'Confirmed' || match.matchStatus === 'Rejected')
++  const high = matches.filter(match => match.confidenceLevel === 'High')
++  const loadingValue = value => (roleLoading ? '…' : value)
++
++  // Role onujayi card: [label, value, hint]
++  const cards = type === 'Lab Technician'
++    ? [
++      ['Awaiting Analysis', loadingValue(labSummary?.awaitingAnalysis ?? 0), 'Samples queued for laboratory work'],
++      ['Analyzed Samples', loadingValue(labSummary?.analyzed ?? 0), 'Profiles recorded'],
++      ['DNA Matches', loadingValue(matches.length), 'Comparison records'],
++      ['High-confidence Matches', loadingValue(high.length), 'Investigation review required'],
++    ]
++    : [
++      ['My Active Cases', loadingValue(activeCases.length), 'Currently active investigations'],
++      ['Pending Cases', loadingValue(cases.filter(caseItem => caseItem.status === 'Pending').length), 'Awaiting evidence or action'],
++      ['Samples Awaiting Results', loadingValue(pendingSamples.length), 'Assigned to laboratory'],
++      ['New DNA Matches', loadingValue(matches.filter(match => match.matchStatus === 'Pending Review').length), 'Awaiting review'],
++    ]
+ 
+     const adminCards = [
+       ['Solved Cases', caseSummary ? caseSummary.solvedCases : (adminLoading ? 'Loading...' : '—'), 'Investigations marked solved'],
+@@ -58,7 +105,12 @@ export function Dashboard({ type }) {
+       ['Police Stations', adminCounts ? adminCounts.policeStationCount : (adminLoading ? 'Loading...' : '—'), 'Registered stations'],
+       ['DNA Labs', adminCounts ? adminCounts.dnaLabCount : (adminLoading ? 'Loading...' : '—'), 'Registered DNA laboratories'],
+     ]
+-  const activity = type === 'Lab Technician' ? awaiting.map(sample => [sample.id, sample.person, '—', sample.status, `/dna-samples/${sample.id}`]) : scopedCases.slice(0, 6).map(caseItem => [caseItem.id, caseItem.person, caseItem.priority, caseItem.status, `/cases/${caseItem.id}`])
++
++  // Table row: [record, subject, third column, status, link]
++  // Technician: analysis baki sample (third = sample type), Officer: nijer recent case (third = priority)
++  const activity = type === 'Lab Technician'
++    ? pendingSamples.map(sample => [`#${sample.id}`, sample.familyMemberName ? `${sample.familyMemberName} (${sample.familyRelationship})` : sample.personName, sample.sampleType, sample.status, `/dna-samples/${sample.id}`])
++    : cases.slice(0, 6).map(caseItem => [`#${caseItem.id}`, caseItem.missingPersonName || `Person #${caseItem.personId}`, caseItem.priority, caseItem.status, `/cases/${caseItem.id}`])
+ 
+   // Render Admin dashboard with API-driven cards
+   if (type === 'Admin') {
+@@ -70,21 +122,27 @@ export function Dashboard({ type }) {
+     </>
+   }
+ 
+-  // Non-admin (Officer / Lab Technician) — keep existing mock-driven UI
++  // Non-admin (Officer / Lab Technician) — real API data diye (Member 1 - Issue 7)
++  const isTechnician = type === 'Lab Technician'
+   return <>
+-    <PageHeader title={`${type === 'Lab Technician' ? 'Laboratory' : type} Dashboard`} subtitle={type === 'Officer' ? 'Your investigation workload and linked DNA identification updates.' : type === 'Lab Technician' ? `Laboratory work assigned to ${assignedLab || 'your lab'}.` : 'Forensic investigation overview.'} action={type === 'Officer' ? <Link to="/missing-persons/new" className="btn btn-primary">Register Missing Person</Link> : null}/>
++    <PageHeader title={`${isTechnician ? 'Laboratory' : type} Dashboard`} subtitle={type === 'Officer' ? 'Your investigation workload and linked DNA identification updates.' : `Laboratory work assigned to ${labSummary?.labName || 'your lab'}.`} action={type === 'Officer' ? <Link to="/missing-persons/new" className="btn btn-primary">Register Missing Person</Link> : null}/>
++    {roleError && <div className="mb-3 alert alert-danger">{roleError}</div>}
+     <div className="row g-3 mb-4">{cards.map((card, index) => <div className="col-sm-6 col-xl-3" key={card[0]}><MetricCard label={card[0]} value={card[1]} hint={card[2]} tone={index === 3 ? 'success' : index === 1 ? 'warning' : 'primary'}/></div>)}</div>
+     <div className="row g-4">
+       <div className="col-lg-7">
+         <div className="card h-100">
+-          <div className="card-header bg-white d-flex justify-content-between"><strong>{type === 'Lab Technician' ? 'Samples requiring attention' : 'Recent investigation activity'}</strong><Link to={type === 'Lab Technician' ? '/dna-samples' : '/cases'}>View all</Link></div>
+-          <div className="table-responsive"><table className="table table-hover mb-0"><thead><tr><th>Record</th><th>Subject</th><th>Priority</th><th>Status</th></tr></thead><tbody>{activity.map(row => <tr key={row[0]}><td className="fw-semibold"><Link to={row[4]}>{row[0]}</Link></td><td>{row[1]}</td><td>{row[2] !== '—' && <StatusBadge value={row[2]}/>}</td><td><StatusBadge value={row[3]}/></td></tr>)}{!activity.length && <tr><td colSpan="4" className="text-center text-secondary py-4">No records need attention.</td></tr>}</tbody></table></div>
++          <div className="card-header bg-white d-flex justify-content-between"><strong>{isTechnician ? 'Samples requiring attention' : 'Recent investigation activity'}</strong><Link to={isTechnician ? '/dna-samples' : '/cases'}>View all</Link></div>
++          <div className="table-responsive"><table className="table table-hover mb-0"><thead><tr><th>Record</th><th>Subject</th><th>{isTechnician ? 'Sample Type' : 'Priority'}</th><th>Status</th></tr></thead><tbody>
++            {roleLoading && <tr><td colSpan="4" className="text-center text-secondary py-4">Loading...</td></tr>}
++            {!roleLoading && activity.map(row => <tr key={row[0]}><td className="fw-semibold"><Link to={row[4]}>{row[0]}</Link></td><td>{row[1]}</td><td>{isTechnician ? row[2] : row[2] && <StatusBadge value={row[2]}/>}</td><td><StatusBadge value={row[3]}/></td></tr>)}
++            {!roleLoading && !activity.length && <tr><td colSpan="4" className="text-center text-secondary py-4">No records need attention.</td></tr>}
++          </tbody></table></div>
+         </div>
+       </div>
+       <div className="col-lg-5">
+         <div className="card h-100">
+           <div className="card-header bg-white"><strong>{type === 'Officer' ? 'Investigation summary' : 'DNA result summary'}</strong></div>
+-          <div className="card-body">{type === 'Officer' ? <><p className="mb-2"><b>{high.length}</b> high-confidence DNA matches are available across your linked investigations.</p><p className="mb-0 text-secondary small">{awaiting.length} evidence and reference samples are still awaiting analysis.</p></> : <><p className="mb-2"><b>{reviewed.length}</b> DNA comparisons have been reviewed.</p><p className="mb-0 text-secondary small">{high.length} comparison results are marked high confidence.</p></>}</div>
++          <div className="card-body">{type === 'Officer' ? <><p className="mb-2"><b>{high.length}</b> high-confidence DNA matches are available across your linked investigations.</p><p className="mb-0 text-secondary small">{pendingSamples.length} evidence and reference samples are still awaiting analysis.</p></> : <><p className="mb-2"><b>{reviewed.length}</b> DNA comparisons have been reviewed.</p><p className="mb-0 text-secondary small">{high.length} comparison results are marked high confidence.</p></>}</div>
+         </div>
+       </div>
+     </div>
+```
+
+## 7.2 `frontend/src/pages/Administration.jsx` (modified: `Reports` export only)
+
+```diff
+@@ -7,6 +7,7 @@ import { getUsers, updateUser, updateUserStatus, deleteUser } from '../services/
+ import { getOfficers, createOfficer, updateOfficer, deleteOfficer } from '../services/officerService'
+ import { getStations, createStation, updateStation, deleteStation } from '../services/policeStationService'
+ import caseService from '../services/caseService'
++import { getMatches, getSamples } from '../services/dnaService' // report export er DNA metric real API theke (Member 1 - Issue 7)
+ 
+ const recordConfig = {
+   stations: { title: 'Police Stations', subtitle: 'Manage police station records.', button: 'Add Station', fields: [['name', 'Station name'], ['district', 'District'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email', 'email']] },
+@@ -246,10 +247,16 @@ export function Reports() {
+   const avgResolution = caseStats?.summary?.averageResolutionDays ?? null
+   const stationStats = caseStats?.stationStatistics ?? []
+ 
+-  const exportReport = () => {
+-    const top = [...(data.matches || [])].sort((first, second) => parseFloat(second.similarity || 0) - parseFloat(first.similarity || 0))[0]
+-    const analyzed = (data.samples || []).filter(sample => sample.status === 'Analyzed').length
+-    const reportCards = [['Highest DNA similarity match', top?.id || '—', top ? `${top.similarity} similarity` : 'No matches'], ['Solved investigations', String(solved), 'Current records'], ['Pending investigations', String(pending), 'Across all police stations'], ['Samples analyzed', String(analyzed), `of ${data.samples.length} collected samples`], ['Total missing-person reports', String(data.missingPeople.length), 'Current registry']]
++  const exportReport = async () => {
++    // DNA sample/match ekhon real API theke (age mock data.samples/data.matches chilo) — Member 1 Issue 7
++    // API fail korle faka list diye export hobe, jate CSV export atke na jay
++    const [dnaSamples, dnaMatches] = await Promise.all([
++      getSamples().catch(() => []),
++      getMatches().catch(() => []),
++    ])
++    const top = [...dnaMatches].sort((first, second) => second.similarityPercentage - first.similarityPercentage)[0] // shob theke beshi similarity
++    const analyzed = dnaSamples.filter(sample => sample.status === 'Analyzed').length
++    const reportCards = [['Highest DNA similarity match', top ? `#${top.id}` : '—', top ? `${top.similarityPercentage}% similarity (${top.matchStatus})` : 'No matches'], ['Solved investigations', String(solved), 'Current records'], ['Pending investigations', String(pending), 'Across all police stations'], ['Samples analyzed', String(analyzed), `of ${dnaSamples.length} collected samples`], ['Total missing-person reports', String(data.missingPeople.length), 'Current registry']]
+     const rows = [['ForenTrace Report', new Date().toLocaleDateString()], [], ['Metric', 'Value', 'Detail'], ...reportCards.map(card => [card[0], card[1], card[2]]), [], ['Cases'], ['Case ID', 'Missing Person', 'Status', 'Priority'], ...(data.cases || []).map(caseItem => [caseItem.id, caseItem.person, caseItem.status, caseItem.priority])]
+     const csv = rows.map(row => row.map(cell => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n')
+     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+```
+
+## 7.3 `frontend/src/data/DataContext.jsx` (modified)
+
+```diff
+@@ -2,21 +2,17 @@ import { createContext, useContext, useMemo, useState } from 'react'
+ import * as seed from './mockData'
+ 
+ const DATA_KEY = 'forentrace-records-v2'
+-const collections = ['missingPeople', 'cases', 'familyMembers', 'samples', 'matches', 'stations', 'officers', 'labs', 'technicians']
++// DNA samples ar matches ekhon real backend (/api/dna-samples, /api/dna-matches) theke ashe —
++// tai mock 'samples' ar 'matches' collection ekhan theke baad deya hoyeche (Member 1 - Issue 7)
++const collections = ['missingPeople', 'cases', 'familyMembers', 'stations', 'officers', 'labs', 'technicians']
+ const clone = value => JSON.parse(JSON.stringify(value))
+ const initialData = () => Object.fromEntries(collections.map(key => [key, clone(seed[key])]))
+ const hasCollections = value => collections.every(key => Array.isArray(value?.[key]))
+ 
+ function normalizeRecords(records) {
+-  const familyMembers = records.familyMembers.map(member => ({ ...member, sample: member.sample || '—' }))
+-  const samples = records.samples.map(sample => {
+-    const familyMember = familyMembers.find(member => member.id === sample.familyMemberId || member.name === sample.person)
+-    const relatedCase = records.cases.find(item => item.id === sample.caseId) || records.cases.find(item => item.personId === sample.personId)
+-    return { ...sample, familyMemberId: sample.familyMemberId || familyMember?.id || '', caseId: sample.caseId || relatedCase?.id || '', analysis: sample.analysis || '—', profile: sample.profile || '—', remarks: sample.remarks || '' }
+-  })
+-  const sampleIds = new Set(samples.map(sample => sample.id))
+-  const matches = records.matches.filter(match => sampleIds.has(match.unknown) && sampleIds.has(match.matched))
+-  return { ...records, familyMembers: familyMembers.map(member => ({ ...member, sample: samples.find(sample => sample.familyMemberId === member.id)?.id || member.sample })), samples, matches }
++  // Purono localStorage e thaka mock samples/matches bad dei (kono page ar egulo use kore na)
++  const { samples: _samples, matches: _matches, ...rest } = records
++  return rest
+ }
+ 
+ function readData() {
+@@ -50,7 +46,7 @@ export function DataProvider({ children }) {
+       return record
+     },
+     addFamilyMember(values) {
+-      const record = { ...values, id: nextId('FM', data.familyMembers), sample: '—' }
++      const record = { ...values, id: nextId('FM', data.familyMembers) }
+       commit({ ...data, familyMembers: [...data.familyMembers, record] })
+       return record
+     },
+@@ -63,18 +59,7 @@ export function DataProvider({ children }) {
+     updateCase(id, values) {
+       commit({ ...data, cases: data.cases.map(item => item.id === id ? { ...item, ...values, identifiedDate: values.identifiedDate || '—' } : item) })
+     },
+-    addSample(values) {
+-      const owner = values.familyMemberId ? data.familyMembers.find(item => item.id === values.familyMemberId) : data.missingPeople.find(item => item.id === values.personId)
+-      const record = { ...values, id: nextId('SMP', data.samples), person: owner?.name || (owner ? `${owner.firstName} ${owner.lastName}` : 'Unassigned'), status: 'Awaiting Analysis', analysis: '—', profile: '—' }
+-      commit({ ...data, samples: [...data.samples, record], familyMembers: values.familyMemberId ? data.familyMembers.map(member => member.id === values.familyMemberId ? { ...member, sample: record.id } : member) : data.familyMembers })
+-      return record
+-    },
+-    updateSample(id, values) {
+-      commit({ ...data, samples: data.samples.map(item => item.id === id ? { ...item, ...values } : item) })
+-    },
+-    updateMatch(id, values) {
+-      commit({ ...data, matches: data.matches.map(item => item.id === id ? { ...item, ...values } : item) })
+-    },
++    // addSample / updateSample / updateMatch (mock) remove kora hoyeche — DNA er shob kaj ekhon dnaService diye real API te
+     addAdminRecord(kind, values) {
+       const prefix = { stations: 'PS', officers: 'OFF', labs: 'LAB', technicians: 'TECH' }[kind]
+       const record = { ...values, id: nextId(prefix, data[kind]), status: values.status || 'Active' }
+@@ -87,7 +72,8 @@ export function DataProvider({ children }) {
+     removeAdminRecord(kind, id) {
+       const record = data[kind].find(item => item.id === id)
+       if (!record) return { ok: false, message: 'Record not found.' }
+-      const used = (kind === 'stations' && (data.officers.some(item => item.station === record.name) || data.cases.some(item => item.station === record.name))) || (kind === 'labs' && (data.technicians.some(item => item.lab === record.name) || data.samples.some(item => item.lab === record.name))) || (kind === 'officers' && data.cases.some(item => item.officer === record.name)) || (kind === 'technicians' && data.samples.some(item => item.technician === record.name))
++      // Mock samples na thakay lab/technician er "sample e use hocche" check ekhan theke baad (real check backend er FK RESTRICT kore)
++      const used = (kind === 'stations' && (data.officers.some(item => item.station === record.name) || data.cases.some(item => item.station === record.name))) || (kind === 'labs' && data.technicians.some(item => item.lab === record.name)) || (kind === 'officers' && data.cases.some(item => item.officer === record.name))
+       if (used) return { ok: false, message: 'This record is linked to an operational record and cannot be deleted.' }
+       commit({ ...data, [kind]: data[kind].filter(item => item.id !== id) })
+       return { ok: true }
+```
+
+## 7.4 `frontend/src/data/mockData.js` (modified)
+
+```diff
+@@ -15,17 +15,7 @@ export const familyMembers = [
+   { id: 'FM-3002', personId: 'MP-1042', name: 'Kamal Rahman', relation: 'Father', phone: '+880 1814 401 119', email: 'kamal.rahman@example.com', address: 'Dhanmondi, Dhaka', sample: 'SMP-9022' },
+ ]
+ 
+-export const samples = [
+-  { id: 'SMP-9021', source: 'Family Member', type: 'Buccal swab', person: 'Sadia Rahman', personId: 'MP-1042', familyMemberId: 'FM-3001', caseId: 'CASE-2026-087', lab: 'Dhaka Forensic DNA Lab', collected: '2026-07-25', storage: 'Cold Storage A-12', analysis: '2026-07-29', profile: 'DNA-7F2A-91C4', remarks: 'Reference sample verified.', status: 'Analyzed' },
+-  { id: 'SMP-9022', source: 'Family Member', type: 'Blood sample', person: 'Kamal Rahman', personId: 'MP-1042', familyMemberId: 'FM-3002', caseId: 'CASE-2026-087', lab: 'Dhaka Forensic DNA Lab', collected: '2026-07-25', storage: 'Cold Storage A-13', analysis: '—', profile: '—', remarks: 'Awaiting extraction.', status: 'Awaiting Analysis' },
+-  { id: 'SMP-9012', source: 'Unidentified Remains', type: 'Bone sample', person: 'Amina Rahman', personId: 'MP-1042', caseId: 'CASE-2026-087', lab: 'Dhaka Forensic DNA Lab', collected: '2026-07-24', storage: 'Evidence Room A-03', analysis: '2026-07-28', profile: 'DNA-7F2A-91C9', remarks: 'Suitable comparison profile obtained.', status: 'Analyzed' },
+-  { id: 'SMP-9018', source: 'Personal Belonging', type: 'Hair strand', person: 'Tanvir Ahmed', personId: 'MP-1041', caseId: 'CASE-2026-086', lab: 'National Forensic Lab', collected: '2026-07-20', storage: 'Evidence Room B-04', analysis: '2026-07-26', profile: 'DNA-8C11-4A90', remarks: 'Suitable profile obtained.', status: 'Analyzed' },
+-]
+-
+-export const matches = [
+-  { id: 'MAT-501', unknown: 'SMP-9018', matched: 'SMP-9021', similarity: '96.7%', confidence: 'High', date: '2026-07-30', status: 'Reviewed', lab: 'National Forensic Lab' },
+-  { id: 'MAT-500', unknown: 'SMP-9012', matched: 'SMP-9022', similarity: '88.4%', confidence: 'Medium', date: '2026-07-29', status: 'Pending Review', lab: 'Dhaka Forensic DNA Lab' },
+-]
++// Mock DNA samples ar matches remove kora hoyeche — ekhon real API (/api/dna-samples, /api/dna-matches) — Member 1 Issue 7
+ 
+ export const stations = [
+   { id: 'PS-01', name: 'Dhanmondi Police Station', district: 'Dhaka', city: 'Dhaka', address: 'Road 27, Dhanmondi', contact: '+880 2 913 1941', email: 'dhanmondi@police.gov.bd' },
+```
+
+---
+
+## Phase 7 testing
+
+**Search for remaining mock DNA usage:** after the change, a search for `.samples`, `.matches`, `addSample` and `updateMatch` across `frontend/src` only finds the real API data in `FamilyDnaPanel` (the family `samples` array from the backend) and comments. `Laboratory.jsx` and `Dashboards.jsx` don't import `useData`.
+
+**Dashboard data (backend on a test port, logged in as Officer 1 and Technician 1). The same calculations as `Dashboards.jsx` were run on the real API responses:**
+
+| Dashboard | Result |
+|---|---|
+| Officer 1 | `GET /cases` returned **2** cases (not scoped). After the `officerId` filter: **#1 John Doe (Active / High)**. Cards: Active 1 · Pending 0 · Samples awaiting 1 · New DNA matches 1. Summary: 1 high-confidence match |
+| Technician 1 | Lab **Central Forensic DNA Laboratory**. Cards: Awaiting 1 · Analyzed 2 · DNA matches 2 · High-confidence 1. Attention table: **#3 Salma Begum (Mother), Blood Sample, Awaiting Analysis**. Reviewed 1 |
+
+The test users were removed afterwards.
+
+**Frontend:** `oxlint` found no warnings in the changed code. It reported 2 existing warnings in lines I didn't write: the Admin effect's unused `mounted`, and `DataContext` exporting `useData`. `vite build` succeeded. The dashboards were not clicked through in a browser.
+
+---
+
+# Member 1 — Final Summary
+
+## All 7 issues
+
+| Issue | Delivered |
+|---|---|
+| 1. DNA Sample Management | `dna_samples` table + model/controller/routes + register/view/update/delete pages with role scope (Admin all / Officer own cases / Technician own lab) |
+| 2. Family DNA Reference Integration | Family → sample → missing person link (`INSERT ... SELECT`), secured family registration, `FamilyDnaPanel` in Missing Person Details |
+| 3. Laboratory DNA Analysis Workflow | Technician-only analysis endpoint (profile code / date / remarks / status only), analysis page, lab queue cards |
+| 4. DNA Matching Workflow | `dna_matches` table, SQL string-similarity comparison (recursive CTE) + manual option, compare/create/review/delete, match pages |
+| 5. SQL Trigger | `AFTER UPDATE` + `AFTER INSERT` triggers: a Confirmed match → the missing person becomes `Identified` |
+| 6. SQL UNION Report | "Matched" UNION "Awaiting Match" sample overview report + page |
+| 7. Real backend for the lab frontend | All lab pages and the Officer/Technician dashboards use the API. Mock DNA data removed |
+
+## Raw SQL files (required deliverable)
+
+| File | Contents |
+|---|---|
+| `database/sql/dna_samples.sql` | Table, CRUD, role-scoped views, validation lookups, family DNA (Issue 2), lab analysis (Issue 3), search/filters |
+| `database/sql/dna_matches.sql` | Table, recursive-CTE comparison, computed/manual insert, scoped views, filters, review, delete |
+| `database/sql/trigger.sql` | Both identification triggers + self-restoring tests |
+| `database/sql/union_report.sql` | UNION report, officer/technician versions, GROUP BY summary, demo |
+
+## Advanced SQL (Member 1)
+
+| Feature | File | Where it runs |
+|---|---|---|
+| **Trigger** | `trigger.sql` | Installed by `schema.sql`. Fires when `PUT /api/dna-matches/:id/status` sets Confirmed |
+| **UNION** | `union_report.sql` | `GET /api/dna-samples/report/overview` → DNA Sample Report page |
+
+## Things to tell teammates
+
+- **Member 2:**
+  - `GET /api/cases` is still not officer-scoped on `main` (Issue 5). The Officer dashboard filters cases in the frontend for now.
+  - Phase 2 changed `familyMemberRoutes.js` / `familyMemberController.js` / `familyMemberModel.js` / `FamilyMembersManager.jsx` / `MissingPersons.jsx` (family DNA registration moved to the DNA module).
+  - Phase 7 changed the `Reports` export's DNA metrics.
+  - `getSamplesByCase` / `getMatchesByCase` in `dnaService` are ready for the Case Details page.
+- **Member 3:**
+  - All DNA routes already use `requireAuth` + `requireRole`.
+  - The DNA/lab mock data is gone from `DataContext`. The stations/officers/labs/technicians mock data is left for your cleanup (Issue 7).

@@ -15,17 +15,7 @@ export const familyMembers = [
   { id: 'FM-3002', personId: 'MP-1042', name: 'Kamal Rahman', relation: 'Father', phone: '+880 1814 401 119', email: 'kamal.rahman@example.com', address: 'Dhanmondi, Dhaka', sample: 'SMP-9022' },
 ]
 
-export const samples = [
-  { id: 'SMP-9021', source: 'Family Member', type: 'Buccal swab', person: 'Sadia Rahman', personId: 'MP-1042', familyMemberId: 'FM-3001', caseId: 'CASE-2026-087', lab: 'Dhaka Forensic DNA Lab', collected: '2026-07-25', storage: 'Cold Storage A-12', analysis: '2026-07-29', profile: 'DNA-7F2A-91C4', remarks: 'Reference sample verified.', status: 'Analyzed' },
-  { id: 'SMP-9022', source: 'Family Member', type: 'Blood sample', person: 'Kamal Rahman', personId: 'MP-1042', familyMemberId: 'FM-3002', caseId: 'CASE-2026-087', lab: 'Dhaka Forensic DNA Lab', collected: '2026-07-25', storage: 'Cold Storage A-13', analysis: '—', profile: '—', remarks: 'Awaiting extraction.', status: 'Awaiting Analysis' },
-  { id: 'SMP-9012', source: 'Unidentified Remains', type: 'Bone sample', person: 'Amina Rahman', personId: 'MP-1042', caseId: 'CASE-2026-087', lab: 'Dhaka Forensic DNA Lab', collected: '2026-07-24', storage: 'Evidence Room A-03', analysis: '2026-07-28', profile: 'DNA-7F2A-91C9', remarks: 'Suitable comparison profile obtained.', status: 'Analyzed' },
-  { id: 'SMP-9018', source: 'Personal Belonging', type: 'Hair strand', person: 'Tanvir Ahmed', personId: 'MP-1041', caseId: 'CASE-2026-086', lab: 'National Forensic Lab', collected: '2026-07-20', storage: 'Evidence Room B-04', analysis: '2026-07-26', profile: 'DNA-8C11-4A90', remarks: 'Suitable profile obtained.', status: 'Analyzed' },
-]
-
-export const matches = [
-  { id: 'MAT-501', unknown: 'SMP-9018', matched: 'SMP-9021', similarity: '96.7%', confidence: 'High', date: '2026-07-30', status: 'Reviewed', lab: 'National Forensic Lab' },
-  { id: 'MAT-500', unknown: 'SMP-9012', matched: 'SMP-9022', similarity: '88.4%', confidence: 'Medium', date: '2026-07-29', status: 'Pending Review', lab: 'Dhaka Forensic DNA Lab' },
-]
+// Mock DNA samples ar matches remove kora hoyeche — ekhon real API (/api/dna-samples, /api/dna-matches) — Member 1 Issue 7
 
 export const stations = [
   { id: 'PS-01', name: 'Dhanmondi Police Station', district: 'Dhaka', city: 'Dhaka', address: 'Road 27, Dhanmondi', contact: '+880 2 913 1941', email: 'dhanmondi@police.gov.bd' },
