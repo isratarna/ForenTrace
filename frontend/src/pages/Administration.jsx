@@ -3,11 +3,11 @@ import { PageHeader, SearchFilters, StatusBadge } from '../components/Ui'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../data/DataContext'
 import { changePassword } from '../services/mockAuth'
-import { getUsers, updateUser, updateUserStatus, deleteUser } from '../services/userService'
+import { createManagedUser, getUsers, updateUser, updateUserStatus, deleteUser } from '../services/userService'
 import { getOfficers, createOfficer, updateOfficer, deleteOfficer } from '../services/officerService'
 import { getStations, createStation, updateStation, deleteStation } from '../services/policeStationService'
 import caseService from '../services/caseService'
-import { getMatches, getSamples } from '../services/dnaService' // report export er DNA metric real API theke (Member 1 - Issue 7)
+import { getLabs, getMatches, getSamples } from '../services/dnaService' // report export er DNA metric real API theke (Member 1 - Issue 7)
 
 const recordConfig = {
   stations: { title: 'Police Stations', subtitle: 'Manage police station records.', button: 'Add Station', fields: [['name', 'Station name'], ['district', 'District'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email', 'email']] },
@@ -31,7 +31,133 @@ const backendKinds = ['users', 'officers', 'stations']
 function RecordForm({ title, fields, value, onCancel, onSave }) {
   const [form, setForm] = useState(value)
   useEffect(() => setForm(value), [value])
-  return <form className="card mb-4" onSubmit={event => { event.preventDefault(); onSave(form) }}><div className="card-header bg-white"><strong>{title}</strong></div><div className="card-body"><div className="row g-3">{fields.map(([key, label, type = 'text', options = []]) => <div className="col-md-6" key={key}><label className="form-label">{label}</label>{type === 'select' ? <select className="form-select" value={form[key] || ''} onChange={event => setForm({ ...form, [key]: event.target.value })} required><option value="">Select {label}</option>{options.map(option => <option key={option}>{option}</option>)}</select> : <input className="form-control" type={type} value={form[key] || ''} onChange={event => setForm({ ...form, [key]: event.target.value })} required={key === 'name' || key === 'email'}/>}</div>)}</div></div><div className="card-footer bg-white text-end"><button type="button" onClick={onCancel} className="btn btn-light me-2">Cancel</button><button className="btn btn-primary">Save Changes</button></div></form>
+  return <form className="card mb-4" onSubmit={event => { event.preventDefault(); onSave(form) }}><div className="card-header bg-white"><strong>{title}</strong></div><div className="card-body"><div className="row g-3">{fields.map(([key, label, type = 'text', options = []]) => <div className="col-md-6" key={key}><label className="form-label">{label}</label>{type === 'select' ? <select className="form-select" value={form[key] || ''} onChange={event => setForm({ ...form, [key]: event.target.value })} required><option value="">Select {label}</option>{options.map(option => <option key={option}>{option}</option>)}</select> : <input className="form-control" type={type} value={form[key] || ''} onChange={event => setForm({ ...form, [key]: event.target.value })} required={key === 'name' || key === 'email'} />}</div>)}</div></div><div className="card-footer bg-white text-end"><button type="button" onClick={onCancel} className="btn btn-light me-2">Cancel</button><button className="btn btn-primary">Save Changes</button></div></form>
+}
+
+function ManagedUserForm({ stations, labs, onCreated }) {
+  const emptyForm = {
+    role: 'Officer',
+    firstName: '',
+    lastName: '',
+    email: '',
+    username: '',
+    password: '',
+    phone: '',
+    rank: '',
+    badgeNumber: '',
+    stationId: '',
+    designation: '',
+    labId: '',
+  }
+  const [form, setForm] = useState(emptyForm)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const update = event => {
+    setForm(current => ({ ...current, [event.target.name]: event.target.value }))
+    setError('')
+    setSuccess('')
+  }
+
+  const submit = async event => {
+    event.preventDefault()
+    setError('')
+    setSuccess('')
+    setSaving(true)
+
+    const payload = {
+      role: form.role,
+      firstName: form.firstName,
+      lastName: form.lastName,
+      email: form.email,
+      username: form.username || undefined,
+      password: form.password,
+      phone: form.phone,
+      ...(form.role === 'Officer'
+        ? { rank: form.rank, badgeNumber: form.badgeNumber, stationId: form.stationId }
+        : { designation: form.designation, labId: form.labId }),
+    }
+
+    try {
+      const result = await createManagedUser(payload)
+      setForm(emptyForm)
+      setSuccess(`${result.message} Username: ${result.user.username}.`)
+      await onCreated()
+    } catch (submissionError) {
+      setError(submissionError.response?.data?.message || 'Failed to create account.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const field = (name, label, type = 'text', attributes = {}) => (
+    <div className="col-md-6" key={name}>
+      <label className="form-label" htmlFor={`create-user-${name}`}>{label}</label>
+      <input
+        {...attributes}
+        id={`create-user-${name}`}
+        className="form-control"
+        name={name}
+        type={type}
+        value={form[name]}
+        onChange={update}
+        required={attributes.required !== false}
+      />
+    </div>
+  )
+
+  return <form className="card mb-4" onSubmit={submit}>
+    <div className="card-header bg-white"><strong>Create operational account</strong></div>
+    <div className="card-body">
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
+      {success && <div className="alert alert-success" role="status">{success}</div>}
+      <div className="row g-3">
+        <div className="col-md-6">
+          <label className="form-label" htmlFor="create-user-role">Role</label>
+          <select id="create-user-role" className="form-select" name="role" value={form.role} onChange={update}>
+            <option value="Officer">Officer</option>
+            <option value="Lab Technician">Lab Technician</option>
+          </select>
+        </div>
+        {field('firstName', 'First name')}
+        {field('lastName', 'Last name')}
+        {field('email', 'Email', 'email')}
+        {field('username', 'Username (optional)', 'text', { required: false })}
+        {field('password', 'Password (minimum 6 characters)', 'password', { minLength: 6, autoComplete: 'new-password' })}
+        {field('phone', 'Phone')}
+        {form.role === 'Officer' ? <>
+          {field('rank', 'Rank')}
+          {field('badgeNumber', 'Badge number')}
+          <div className="col-md-6">
+            <label className="form-label" htmlFor="create-user-stationId">Police station</label>
+            <select id="create-user-stationId" className="form-select" name="stationId" value={form.stationId} onChange={update} required>
+              <option value="">Select police station</option>
+              {stations.map(station => {
+                const id = station.stationId ?? station.station_id ?? station.id
+                return <option key={id} value={id}>{station.name ?? station.stationName ?? station.station_name}</option>
+              })}
+            </select>
+          </div>
+        </> : <>
+          {field('designation', 'Designation')}
+          <div className="col-md-6">
+            <label className="form-label" htmlFor="create-user-labId">Laboratory</label>
+            <select id="create-user-labId" className="form-select" name="labId" value={form.labId} onChange={update} required>
+              <option value="">Select laboratory</option>
+              {labs.map(lab => {
+                const id = lab.lab_id ?? lab.labId ?? lab.id
+                return <option key={id} value={id}>{lab.lab_name ?? lab.name}</option>
+              })}
+            </select>
+          </div>
+        </>}
+      </div>
+    </div>
+    <div className="card-footer bg-white text-end">
+      <button className="btn btn-primary" disabled={saving}>{saving ? 'Creating...' : 'Create account'}</button>
+    </div>
+  </form>
 }
 
 export function AdminList({ kind }) {
@@ -42,6 +168,8 @@ export function AdminList({ kind }) {
   const [viewing, setViewing] = useState(null)
   const [accountRows, setAccountRows] = useState([])
   const [stationRows, setStationRows] = useState(data.stations)
+  const [labRows, setLabRows] = useState([])
+  const [creatingUser, setCreatingUser] = useState(false)
   const [usersLoading, setUsersLoading] = useState(false)
   const [usersError, setUsersError] = useState('')
   const config = recordConfig[kind]
@@ -51,8 +179,10 @@ export function AdminList({ kind }) {
       setUsersLoading(true)
       setUsersError('')
       if (kind === 'users') {
-        const users = await getUsers()
+        const [users, stations, labs] = await Promise.all([getUsers(), getStations(), getLabs()])
         setAccountRows(users)
+        setStationRows(stations)
+        setLabRows(labs)
       } else if (kind === 'officers') {
         const [officers, stations] = await Promise.all([getOfficers(), getStations()])
         setAccountRows(officers)
@@ -220,9 +350,21 @@ export function AdminList({ kind }) {
   </>
 
   const title = kind === 'users' ? 'Users & Accounts' : config.title
-  const subtitle = kind === 'users' ? 'Manage registered officer and laboratory accounts. New accounts are created through registration.' : config.subtitle
+  const subtitle = kind === 'users' ? 'Create and manage officer and laboratory accounts.' : config.subtitle
 
-  return <><PageHeader title={title} subtitle={subtitle} action={kind === 'users' ? null : <button onClick={() => { setViewing(null); setEditing(emptyRecord(fields)) }} className="btn btn-primary">{config.button}</button>}/>{backendKinds.includes(kind) && usersError && <div className="alert alert-danger">{usersError}</div>}{editing && <RecordForm title={editing.id ? `Edit ${editing.name || editing.id}` : config.button} fields={fields} value={editing} onCancel={() => setEditing(null)} onSave={save}/>}<SearchFilters onSearchChange={setQuery} onClear={() => setActiveOnly(false)}><div className="col-md-3"><label className="form-label">Filter</label><select value={activeOnly ? 'active' : ''} onChange={event => setActiveOnly(event.target.value === 'active')} className="form-select"><option value="">All records</option><option value="active">Active only</option></select></div></SearchFilters>{viewing && <div className="alert alert-info d-flex justify-content-between align-items-center"><span><b>{viewing.name}</b> · ID {viewing.id}</span><button onClick={() => setViewing(null)} className="btn btn-sm btn-outline-secondary">Close</button></div>}<div className="card"><div className="table-responsive"><table className="table table-hover align-middle mb-0"><thead><tr>{columns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead><tbody>{backendKinds.includes(kind) && usersLoading ? <tr><td colSpan={columns.length + 1} className="text-center text-secondary py-4">Loading {kind}...</td></tr> : filtered.map(row => <tr key={row.id}>{columns.map(([key]) => <td key={key}>{isStatus(key) ? <StatusBadge value={row[key]}/> : row[key] || '—'}</td>)}<td className="text-nowrap">{kind === 'users' ? userActions(row) : <><button onClick={() => setViewing(row)} className="btn btn-sm btn-outline-primary me-1">View</button><button onClick={() => { setViewing(null); setEditing(row) }} className="btn btn-sm btn-outline-secondary me-1">Edit</button><button onClick={() => remove(row)} className="btn btn-sm btn-outline-danger">Delete</button></>}</td></tr>)}{(!backendKinds.includes(kind) || !usersLoading) ? !filtered.length && <tr><td colSpan={columns.length + 1} className="text-center text-secondary py-4">No matching records found.</td></tr> : null}</tbody></table></div></div></>
+  return <>
+    <PageHeader title={title} subtitle={subtitle} action={kind === 'users'
+      ? <button onClick={() => { setCreatingUser(value => !value); setEditing(null) }} className="btn btn-primary">{creatingUser ? 'Close form' : 'Create account'}</button>
+      : <button onClick={() => { setViewing(null); setEditing(emptyRecord(fields)) }} className="btn btn-primary">{config.button}</button>} />
+    {backendKinds.includes(kind) && usersError && <div className="alert alert-danger">{usersError}</div>}
+    {kind === 'users' && creatingUser && <ManagedUserForm stations={stationRows} labs={labRows} onCreated={refreshRecords} />}
+    {editing && <RecordForm title={editing.id ? `Edit ${editing.name || editing.id}` : config.button} fields={fields} value={editing} onCancel={() => setEditing(null)} onSave={save} />}
+    <SearchFilters onSearchChange={setQuery} onClear={() => setActiveOnly(false)}>
+      <div className="col-md-3"><label className="form-label">Filter</label><select value={activeOnly ? 'active' : ''} onChange={event => setActiveOnly(event.target.value === 'active')} className="form-select"><option value="">All records</option><option value="active">Active only</option></select></div>
+    </SearchFilters>
+    {viewing && <div className="alert alert-info d-flex justify-content-between align-items-center"><span><b>{viewing.name}</b> · ID {viewing.id}</span><button onClick={() => setViewing(null)} className="btn btn-sm btn-outline-secondary">Close</button></div>}
+    <div className="card"><div className="table-responsive"><table className="table table-hover align-middle mb-0"><thead><tr>{columns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead><tbody>{backendKinds.includes(kind) && usersLoading ? <tr><td colSpan={columns.length + 1} className="text-center text-secondary py-4">Loading {kind}...</td></tr> : filtered.map(row => <tr key={row.id}>{columns.map(([key]) => <td key={key}>{isStatus(key) ? <StatusBadge value={row[key]} /> : row[key] || '—'}</td>)}<td className="text-nowrap">{kind === 'users' ? userActions(row) : <><button onClick={() => setViewing(row)} className="btn btn-sm btn-outline-primary me-1">View</button><button onClick={() => { setViewing(null); setEditing(row) }} className="btn btn-sm btn-outline-secondary me-1">Edit</button><button onClick={() => remove(row)} className="btn btn-sm btn-outline-danger">Delete</button></>}</td></tr>)}{(!backendKinds.includes(kind) || !usersLoading) ? !filtered.length && <tr><td colSpan={columns.length + 1} className="text-center text-secondary py-4">No matching records found.</td></tr> : null}</tbody></table></div></div>
+  </>
 }
 
 export function Reports() {
@@ -267,10 +409,10 @@ export function Reports() {
     URL.revokeObjectURL(url)
   }
 
-  return <><PageHeader title="Reports" subtitle="System statistics and reporting summaries." action={<button onClick={exportReport} className="btn btn-outline-primary">Export Report (CSV)</button>}/>{loading && <div className="mb-3 text-secondary">Loading statistics...</div>}{error && <div className="mb-3 alert alert-danger">{error}</div>}<div className="row g-3 mb-4">{(stationStats.length ? stationStats.map(st => <div key={st.stationId ?? st.station_id ?? st.stationName} className="col-md-6 col-xl"><div className="card report-card h-100"><div className="card-body"><p className="small text-secondary">{st.stationName ?? st.station_name ?? 'Station'}</p><h3>{(st.solvedCases ?? st.solved_cases ?? 0)}/{(st.totalCases ?? st.total_cases ?? 0)}</h3><small className="text-secondary">Solved / Total</small></div></div></div>) : <div className="col-12"><div className="alert alert-secondary">No station statistics available.</div></div>)}</div><div className="card"><div className="card-header bg-white"><strong>Average identification time (days)</strong></div><div className="card-body"><h3>{avgResolution === null ? '—' : String(avgResolution)}</h3><small className="text-secondary">Average days between report and identification for solved cases</small></div></div></>
+  return <><PageHeader title="Reports" subtitle="System statistics and reporting summaries." action={<button onClick={exportReport} className="btn btn-outline-primary">Export Report (CSV)</button>} />{loading && <div className="mb-3 text-secondary">Loading statistics...</div>}{error && <div className="mb-3 alert alert-danger">{error}</div>}<div className="row g-3 mb-4">{(stationStats.length ? stationStats.map(st => <div key={st.stationId ?? st.station_id ?? st.stationName} className="col-md-6 col-xl"><div className="card report-card h-100"><div className="card-body"><p className="small text-secondary">{st.stationName ?? st.station_name ?? 'Station'}</p><h3>{(st.solvedCases ?? st.solved_cases ?? 0)}/{(st.totalCases ?? st.total_cases ?? 0)}</h3><small className="text-secondary">Solved / Total</small></div></div></div>) : <div className="col-12"><div className="alert alert-secondary">No station statistics available.</div></div>)}</div><div className="card"><div className="card-header bg-white"><strong>Average identification time (days)</strong></div><div className="card-body"><h3>{avgResolution === null ? '—' : String(avgResolution)}</h3><small className="text-secondary">Average days between report and identification for solved cases</small></div></div></>
 }
 
 export function Profile() {
   const { user } = useAuth(); const roleName = user.role === 'Officer' ? 'Police Officer' : user.role; const [editingPassword, setEditingPassword] = useState(false); const [form, setForm] = useState({ current: '', next: '' }); const [message, setMessage] = useState(''); const submitPassword = event => { event.preventDefault(); try { changePassword(user.id, form.current, form.next); setMessage('Password updated.'); setForm({ current: '', next: '' }); setEditingPassword(false) } catch (error) { setMessage(error.message) } }
-  return <><PageHeader title="My Profile" subtitle="Your authorized system account details."/><div className="row g-4"><div className="col-lg-4"><div className="card"><div className="card-body text-center py-5"><div className="profile-avatar">{user.initials}</div><h4 className="mt-3 mb-1">{user.name}</h4><p className="text-secondary mb-2">{roleName}</p><StatusBadge value={user.status || 'Active'}/></div></div></div><div className="col-lg-8"><div className="card"><div className="card-header bg-white"><strong>Account information</strong></div><div className="card-body"><div className="detail-grid"><span>Name<b>{user.name}</b></span><span>Email<b>{user.email}</b></span><span>Role<b>{roleName}</b></span><span>Account type<b>{user.role === 'Admin' ? 'Predefined administrator account' : 'Registered user account'}</b></span></div>{message && <div className={`alert ${message === 'Password updated.' ? 'alert-success' : 'alert-danger'} mt-3 mb-0`}>{message}</div>}</div><div className="card-footer bg-white">{editingPassword ? <form className="row g-2" onSubmit={submitPassword}><div className="col-md-5"><input className="form-control" type="password" placeholder="Current password" value={form.current} onChange={event => setForm({ ...form, current: event.target.value })} required/></div><div className="col-md-5"><input className="form-control" type="password" placeholder="New password" value={form.next} onChange={event => setForm({ ...form, next: event.target.value })} required/></div><div className="col-md-2 d-flex gap-2"><button className="btn btn-primary">Save</button><button type="button" onClick={() => setEditingPassword(false)} className="btn btn-light">Cancel</button></div></form> : <button onClick={() => { setMessage(''); setEditingPassword(true) }} className="btn btn-outline-primary">Change Password</button>}</div></div></div></div></>
+  return <><PageHeader title="My Profile" subtitle="Your authorized system account details." /><div className="row g-4"><div className="col-lg-4"><div className="card"><div className="card-body text-center py-5"><div className="profile-avatar">{user.initials}</div><h4 className="mt-3 mb-1">{user.name}</h4><p className="text-secondary mb-2">{roleName}</p><StatusBadge value={user.status || 'Active'} /></div></div></div><div className="col-lg-8"><div className="card"><div className="card-header bg-white"><strong>Account information</strong></div><div className="card-body"><div className="detail-grid"><span>Name<b>{user.name}</b></span><span>Email<b>{user.email}</b></span><span>Role<b>{roleName}</b></span><span>Account type<b>{user.role === 'Admin' ? 'Predefined administrator account' : 'Registered user account'}</b></span></div>{message && <div className={`alert ${message === 'Password updated.' ? 'alert-success' : 'alert-danger'} mt-3 mb-0`}>{message}</div>}</div><div className="card-footer bg-white">{editingPassword ? <form className="row g-2" onSubmit={submitPassword}><div className="col-md-5"><input className="form-control" type="password" placeholder="Current password" value={form.current} onChange={event => setForm({ ...form, current: event.target.value })} required /></div><div className="col-md-5"><input className="form-control" type="password" placeholder="New password" value={form.next} onChange={event => setForm({ ...form, next: event.target.value })} required /></div><div className="col-md-2 d-flex gap-2"><button className="btn btn-primary">Save</button><button type="button" onClick={() => setEditingPassword(false)} className="btn btn-light">Cancel</button></div></form> : <button onClick={() => { setMessage(''); setEditingPassword(true) }} className="btn btn-outline-primary">Change Password</button>}</div></div></div></div></>
 }

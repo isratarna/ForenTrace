@@ -166,7 +166,7 @@ export async function updateLastLogin(userId) {
     [userId]
   )
 }
-export async function generateUniqueUsername(firstName, lastName) {
+export async function generateUniqueUsername(firstName, lastName, executor = pool) {
 
   const baseUsername =
     `${firstName.trim().toLowerCase()}.${lastName.trim().toLowerCase()}`
@@ -174,7 +174,12 @@ export async function generateUniqueUsername(firstName, lastName) {
   let username = baseUsername
   let counter = 1
 
-  while (await usernameExists(username)) {
+  while (true) {
+    const [rows] = await executor.execute(
+      'SELECT user_id FROM users WHERE username = ? LIMIT 1',
+      [username]
+    )
+    if (rows.length === 0) break
     username = `${baseUsername}${counter}`
     counter++
   }

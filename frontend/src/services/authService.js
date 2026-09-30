@@ -18,19 +18,3 @@ export async function logoutUser() {
   const response = await api.post('/auth/logout')
   return response.data
 }
-
-export async function registerUser({ name, email, password, role }) {
-  const response = await api.post('/auth/register', {
-    name,
-    email,
-    password,
-    role,
-  })
-
-  return response.data
-}
-
-export async function registerOfficer(data) {
-  const response = await api.post('/auth/register/officer', data)
-  return response.data
-}

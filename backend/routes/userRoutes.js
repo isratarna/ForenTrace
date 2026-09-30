@@ -1,6 +1,7 @@
 import express from 'express'
 
 import {
+  createManagedUser,
   listUsers,
   getUser,
   updateUser,
@@ -15,6 +16,7 @@ const router = express.Router()
 router.use(requireAuth, requireRole('Admin'))
 
 router.get('/', listUsers)
+router.post('/create', createManagedUser)
 router.get('/:id', getUser)
 router.put('/:id/status', setUserStatus)
 router.put('/:id', updateUser)
