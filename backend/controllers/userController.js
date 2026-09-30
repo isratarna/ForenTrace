@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt'
 import pool from '../config/db.js'
+import { createTechnicianAccountInTransaction } from '../models/labTechnicianModel.js'
 import {
   findAllUsers,
   findUserById,
@@ -303,6 +304,7 @@ export async function createManagedUser(req, res) {
 
     let officerId = null
     let technicianId = null
+    let userId
 
     if (role === 'Officer') {
       const [officerResult] = await conn.execute(
@@ -312,29 +314,28 @@ export async function createManagedUser(req, res) {
         [profileId, firstName.trim(), lastName.trim(), rank.trim(), badgeNumber.trim(), phone.trim(), emailAddress]
       )
       officerId = officerResult.insertId
+
+      const [userResult] = await conn.execute(
+        `INSERT INTO users
+          (role_id, officer_id, technician_id, username, password_hash, email, account_status)
+         VALUES (?, ?, NULL, ?, ?, ?, 'pending_approval')`,
+        [roleRows[0].role_id, officerId, username, passwordHash, emailAddress]
+      )
+      userId = userResult.insertId
     } else {
-      const [technicianResult] = await conn.execute(
-        `INSERT INTO lab_technicians
-          (lab_id, user_id, first_name, last_name, designation, phone, email)
-         VALUES (?, NULL, ?, ?, ?, ?, ?)`,
-        [profileId, firstName.trim(), lastName.trim(), designation.trim(), phone.trim(), emailAddress]
-      )
-      technicianId = technicianResult.insertId
-    }
-
-    const [userResult] = await conn.execute(
-      `INSERT INTO users
-        (role_id, officer_id, technician_id, username, password_hash, email, account_status)
-       VALUES (?, ?, NULL, ?, ?, ?, 'pending_approval')`,
-      [roleRows[0].role_id, officerId, username, passwordHash, emailAddress]
-    )
-    const userId = userResult.insertId
-
-    if (technicianId) {
-      await conn.execute(
-        'UPDATE lab_technicians SET user_id = ? WHERE technician_id = ?',
-        [userId, technicianId]
-      )
+      const technicianAccount = await createTechnicianAccountInTransaction(conn, {
+        roleId: roleRows[0].role_id,
+        labId: profileId,
+        username,
+        passwordHash,
+        email: emailAddress,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        designation: designation.trim(),
+        phone: phone.trim(),
+      })
+      userId = technicianAccount.userId
+      technicianId = technicianAccount.technicianId
     }
 
     await conn.commit()
