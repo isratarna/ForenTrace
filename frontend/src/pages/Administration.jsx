@@ -6,7 +6,7 @@ import { changeOwnPassword, createManagedUser, getUsers, resetUserPassword, upda
 import { getOfficers, createOfficer, updateOfficer, deleteOfficer } from '../services/officerService'
 import { getStations, createStation, updateStation, deleteStation } from '../services/policeStationService'
 import caseService from '../services/caseService'
-import { getLabs, getMatches, getSamples } from '../services/dnaService' // report export er DNA metric real API theke (Member 1 - Issue 7)
+import { getLabs, getLabsWithoutTechnicians, getMatches, getSamples } from '../services/dnaService' // report export er DNA metric real API theke (Member 1 - Issue 7)
 
 const recordConfig = {
   stations: { title: 'Police Stations', subtitle: 'Manage police station records.', button: 'Add Station', fields: [['name', 'Station name'], ['district', 'District'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email', 'email']] },
@@ -424,6 +424,9 @@ export function Reports() {
   const [caseStats, setCaseStats] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [labsWithoutTechnicians, setLabsWithoutTechnicians] = useState([])
+  const [labsWithoutTechniciansLoading, setLabsWithoutTechniciansLoading] = useState(true)
+  const [labsWithoutTechniciansError, setLabsWithoutTechniciansError] = useState('')
 
   useEffect(() => {
     let mounted = true
@@ -434,6 +437,15 @@ export function Reports() {
       .catch(err => { console.error('Failed to load case statistics', err); if (!mounted) return; setError('Failed to load statistics') })
       .finally(() => { if (mounted) setLoading(false) })
     return () => { mounted = false }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    getLabsWithoutTechnicians()
+      .then(labs => { if (active) setLabsWithoutTechnicians(labs) })
+      .catch(requestError => { if (active) setLabsWithoutTechniciansError(requestError.response?.data?.message || 'Failed to load labs without technicians.') })
+      .finally(() => { if (active) setLabsWithoutTechniciansLoading(false) })
+    return () => { active = false }
   }, [])
 
   const solved = caseStats?.summary?.solvedCases ?? data.cases.filter(caseItem => caseItem.status === 'Solved').length
@@ -461,7 +473,37 @@ export function Reports() {
     URL.revokeObjectURL(url)
   }
 
-  return <><PageHeader title="Reports" subtitle="System statistics and reporting summaries." action={<button onClick={exportReport} className="btn btn-outline-primary">Export Report (CSV)</button>} />{loading && <div className="mb-3 text-secondary">Loading statistics...</div>}{error && <div className="mb-3 alert alert-danger">{error}</div>}<div className="row g-3 mb-4">{(stationStats.length ? stationStats.map(st => <div key={st.stationId ?? st.station_id ?? st.stationName} className="col-md-6 col-xl"><div className="card report-card h-100"><div className="card-body"><p className="small text-secondary">{st.stationName ?? st.station_name ?? 'Station'}</p><h3>{(st.solvedCases ?? st.solved_cases ?? 0)}/{(st.totalCases ?? st.total_cases ?? 0)}</h3><small className="text-secondary">Solved / Total</small></div></div></div>) : <div className="col-12"><div className="alert alert-secondary">No station statistics available.</div></div>)}</div><div className="card"><div className="card-header bg-white"><strong>Average identification time (days)</strong></div><div className="card-body"><h3>{avgResolution === null ? '—' : String(avgResolution)}</h3><small className="text-secondary">Average days between report and identification for solved cases</small></div></div></>
+  return <>
+    <PageHeader title="Reports" subtitle="System statistics and reporting summaries." action={<button onClick={exportReport} className="btn btn-outline-primary">Export Report (CSV)</button>} />
+    {loading && <div className="mb-3 text-secondary">Loading statistics...</div>}
+    {error && <div className="mb-3 alert alert-danger">{error}</div>}
+    <div className="row g-3 mb-4">
+      {stationStats.length
+        ? stationStats.map(st => <div key={st.stationId ?? st.station_id ?? st.stationName} className="col-md-6 col-xl"><div className="card report-card h-100"><div className="card-body"><p className="small text-secondary">{st.stationName ?? st.station_name ?? 'Station'}</p><h3>{(st.solvedCases ?? st.solved_cases ?? 0)}/{(st.totalCases ?? st.total_cases ?? 0)}</h3><small className="text-secondary">Solved / Total</small></div></div></div>)
+        : <div className="col-12"><div className="alert alert-secondary">No station statistics available.</div></div>}
+    </div>
+    <div className="card mb-4">
+      <div className="card-header bg-white"><strong>Average identification time (days)</strong></div>
+      <div className="card-body"><h3>{avgResolution === null ? '—' : String(avgResolution)}</h3><small className="text-secondary">Average days between report and identification for solved cases</small></div>
+    </div>
+    <div className="card">
+      <div className="card-header bg-white"><strong>Labs Without Technicians</strong></div>
+      <div className="table-responsive">
+        <table className="table table-hover align-middle mb-0">
+          <thead><tr><th>Lab ID</th><th>Lab Name</th><th>City</th></tr></thead>
+          <tbody>
+            {labsWithoutTechniciansLoading
+              ? <tr><td colSpan="3" className="text-center text-secondary py-4">Loading report...</td></tr>
+              : labsWithoutTechniciansError
+                ? <tr><td colSpan="3" className="text-danger py-4">{labsWithoutTechniciansError}</td></tr>
+                : labsWithoutTechnicians.length
+                  ? labsWithoutTechnicians.map(lab => <tr key={lab.lab_id}><td>{lab.lab_id}</td><td>{lab.lab_name}</td><td>{lab.city}</td></tr>)
+                  : <tr><td colSpan="3" className="text-center text-secondary py-4">Every DNA lab has at least one technician.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </>
 }
 
 export function Profile() {
