@@ -2,6 +2,17 @@
 
 import db from '../config/db.js';
 
+export const getLabsWithoutTechnicians = async () => {
+    const [rows] = await db.execute(`
+        SELECT dl.lab_id, dl.lab_name, dl.city
+        FROM dna_labs dl
+        LEFT JOIN lab_technicians lt ON lt.lab_id = dl.lab_id
+        WHERE lt.technician_id IS NULL
+        ORDER BY dl.lab_id ASC
+    `);
+    return rows;
+};
+
 // 1. Shob lab fetch kora
 export const getAllLabs = async () => {
     const [rows] = await db.query('SELECT * FROM dna_labs ORDER BY lab_id ASC'); //aggregate func 

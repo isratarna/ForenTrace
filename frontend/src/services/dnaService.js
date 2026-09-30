@@ -76,6 +76,11 @@ export async function getFamilyDnaByPerson(personId) {
   }
 }
 
+export async function getLabsWithoutTechnicians() {
+  const response = await api.get('/reports/labs-without-technicians')
+  return response.data.labs ?? []
+}
+
 // ---------- Lab lookups (sample form er dropdown er jonno) ----------
 
 // Shob DNA lab (GET /api/labs → { success, data })
@@ -147,6 +152,7 @@ export default {
   getSamplesByPerson,
   getSamplesByCase,
   getFamilyDnaByPerson,
+  getLabsWithoutTechnicians,
   updateSampleAnalysis,
   getLabSummary,
   getSampleOverviewReport,
