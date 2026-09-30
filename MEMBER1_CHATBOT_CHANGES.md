@@ -19,7 +19,7 @@ This file records every change made in each phase: what was added, the full code
 | 3 | CB-3 | PDF → chunks → 384-number embeddings → MongoDB (`faq_chunks`), no duplicates | `backend/chatbot/ingest.js` | ✅ Done (37 chunks live in Atlas) |
 | 4 | CB-4 | Create `vector_index` by script (replaces Member 2's temporary one), check READY | `backend/chatbot/createIndex.js` | ✅ Done (`vector_index` READY; re-test with Member 2's `testSearch.js` when it lands) |
 | 5 | CB-8 | Tune `CHATBOT_SCORE_THRESHOLD` with the 20-question score table | `.env` (not committed) + score table in this file | ✅ Done (threshold **0.65**; re-test through the API when Member 2's route lands) |
-| 6 | Wrap-up | Final checklist, commit own files by name, push, open PR, hand-off message | — | ⏳ Next |
+| 6 | Wrap-up | Final checklist, commit own files by name, push, open PR, hand-off message | — | ✅ Done (open PR + send messages; teammate review pending) |
 
 Rules followed in every phase: ES modules only (`import`/`export`, `.js` on local imports), `process.env` is read inside functions, `embedder.js` and `mongoClient.js` are not modified, the chatbot never reads MySQL, `.env` is never committed, and files are added to git by name (never `git add .`).
 
@@ -677,3 +677,135 @@ Real FAQ is live ✅  (37 chunks in faq_chunks, vector_index created by script a
 - **Not yet tested end to end:** once Member 2's API is merged, ask the 20 questions through `/api/chatbot/ask` (with the backend restarted so it reads `0.65`) and check that #17 and #18 are refused by Gemini.
 - **Possible FAQ improvements (optional):** "what is a buccal swab used for" (0.668) and "can an officer delete a case" get only related chunks, because the FAQ doesn't explain sample types in detail or say who can delete a case (only Officers can delete cases on `main`). If Member 3's testing shows weak answers, add those Q&As, re-export the PDF and re-run `ingest.js`. **Don't lower the threshold for this.**
 - If the FAQ changes a lot, re-run this score table. Scores depend on the FAQ wording.
+
+---
+
+## Phase 6 — Wrap-up: final checklist, hand-off, Pull Request
+
+### Goal
+Check every "Phase 2 (Member 1) is complete when" item from the task guide, make sure only Member 1's own files are on the branch, and prepare the hand-off message and the PR `chatbot/m1-ingestion → feature/chatbot`.
+
+### Files changed
+
+| File | Type | Change |
+| --- | --- | --- |
+| `MEMBER1_CHATBOT_CHANGES.md` | Modified | This section and the status table. No code changed in this phase. |
+
+### Final verification (read-only checks, run at the end)
+
+| Check | Result |
+| --- | --- |
+| `node chatbot/testSetup.js` | `Embedding length: 384` · `MongoDB connected. Documents in faq_chunks: 37` ✅ |
+| Documents in `faq_chunks` | 37, 37 distinct texts (no duplicates) ✅ |
+| `source` values / `sample-seed` left | only `forentrace_faq.pdf` / **0** ✅ |
+| Every `embedding` | array of exactly 384 numbers, normalized (length 1.0000) ✅ |
+| Search indexes | 1: `vector_index`, type `vectorSearch`, **READY**, `{"path":"embedding","numDimensions":384,"similarity":"cosine"}` ✅ |
+| Local vs remote branch | both at `73d460e` (everything pushed) ✅ |
+| New commits on `feature/chatbot` since branching | none (no merge needed) ✅ |
+| `.env` tracked by git | no ✅ |
+
+Files on `chatbot/m1-ingestion` compared to `feature/chatbot`. Only Member 1's own files; `embedder.js`, `mongoClient.js` and `testSetup.js` are untouched:
+
+| File | Issue |
+| --- | --- |
+| `backend/chatbot/data/forentrace_faq.pdf` | CB-1 |
+| `backend/chatbot/data/forentrace_faq_source.txt` | CB-1 |
+| `backend/chatbot/chunker.js` | CB-2 |
+| `backend/chatbot/ingest.js` | CB-3 |
+| `backend/chatbot/createIndex.js` | CB-4 |
+| `MEMBER1_CHATBOT_CHANGES.md` | all phases (change log) |
+
+Commits (all from the user's own GitHub account, all-lowercase messages):
+```text
+73d460e chatbot: cb-8 tune similarity threshold to 0.65 with 20-question score table
+1d1fdcd chatbot: cb-4 add vector index script (vector_index, 384 dims, cosine) - index ready
+b196e5e chatbot: cb-3 add ingest script (pdf to chunks to 384-dim embeddings to mongodb, no duplicates)
+42ce9c5 chatbot: add member 1 chatbot change log
+eb30846 chatbot: cb-2 add faq chunker (split at q:, 150-word windows with 30 overlap)
+5c27719 chatbot: cb-1 add forentrace faq knowledge base pdf and source text
+```
+
+### Task-guide checklist ("Phase 2 (Member 1) is complete when")
+
+| Item | Status |
+| --- | --- |
+| Real FAQ chunks are in `faq_chunks`, no `sample-seed` source left | ✅ 37 chunks, 0 `sample-seed` |
+| Every chunk has a 384-number `embedding` | ✅ |
+| `vector_index` was created by `createIndex.js` and is READY | ✅ (there was no temporary index to delete) |
+| Threshold chosen using the score table, saved in `.env`, shared with the team | ✅ chosen (0.65) and saved · ⏳ **send the hand-off message** (below) |
+| FAQ reviewed and confirmed by Member 2 and Member 3 | ⏳ **ask them** (see "Review request" below) |
+| Files committed from own account, PR `chatbot/m1-ingestion → feature/chatbot` opened | ✅ committed and pushed · ⏳ **open the PR** (text below) |
+
+### Still waiting on teammates (not blockers for opening the PR)
+1. **FAQ review** by Member 2 and Member 3, especially Q&As 6–8 (registration and approval must match Member 3's final registration decision).
+2. **Member 2's `testSearch.js` and `/api/chatbot/ask`:** once merged, run `node chatbot/testSearch.js "How do I register a DNA sample?"` (expect chunk #21 on top) and let Member 3 run the 20-question sheet through the API with `CHATBOT_SCORE_THRESHOLD=0.65`. Check that privacy questions #17 and #18 are refused by Gemini (layer 2).
+3. If the review changes the FAQ: edit `forentrace_faq_source.txt` → re-export `forentrace_faq.pdf` → `node chatbot/ingest.js` → re-check the score table (Phase 5). The index doesn't need to change.
+
+### How to open the PR (on GitHub, from your own account)
+Open: `https://github.com/isratarna/ForenTrace/compare/feature/chatbot...chatbot/m1-ingestion?expand=1`
+Check that **base = `feature/chatbot`** and **compare = `chatbot/m1-ingestion`**, paste the title and description below, and create the PR. Member 2 reviews and merges it.
+
+**PR title:**
+```text
+chatbot: member 1 - faq knowledge base, chunker, ingest, vector index, threshold (cb-1, cb-2, cb-3, cb-4, cb-8)
+```
+
+**PR description:**
+```markdown
+## What this PR adds (Member 1 — left side of the RAG diagram)
+FAQ PDF → chunking → embedding → MongoDB vector DB, plus the tuned on-topic threshold.
+
+| Issue | File | Result |
+| --- | --- | --- |
+| CB-1 | `backend/chatbot/data/forentrace_faq.pdf` (+ `forentrace_faq_source.txt`) | 36 Q&A pairs, checked against the real system on `main` |
+| CB-2 | `backend/chatbot/chunker.js` | One chunk per Q&A (split at `Q:`), 150-word safety windows with 30-word overlap |
+| CB-3 | `backend/chatbot/ingest.js` | PDF → 37 chunks → 384-number embeddings → `faq_chunks`; re-runs replace data (no duplicates) |
+| CB-4 | `backend/chatbot/createIndex.js` | `vector_index` (vectorSearch, `embedding`, 384 dims, cosine) created by script — **READY** |
+| CB-8 | `.env` only (not committed) | `CHATBOT_SCORE_THRESHOLD=0.65` from the 20-question score table |
+
+## Current Atlas state
+- `forentrace_chatbot.faq_chunks`: 37 documents, source `forentrace_faq.pdf`, no `sample-seed`
+- `vector_index`: READY
+
+## Threshold
+Lowest on-topic 0.8088, highest off-topic 0.5497 → **0.65**. Privacy questions (#17 0.69, #18 0.81) can't be separated by score, so the prompt rule (layer 2) must refuse them.
+Note: Atlas cosine score = (1 + cosine) / 2, so unrelated questions still score ~0.5.
+
+## Team contract (unchanged)
+DB `forentrace_chatbot` · collection `faq_chunks` · index `vector_index` · field `embedding` · 384 dims.
+`embedder.js`, `mongoClient.js`, `testSetup.js` are not modified. No `.env` committed.
+
+## How to test
+From `backend/`: `node chatbot/ingest.js` → `node chatbot/createIndex.js` (prints READY) → `node chatbot/testSearch.js "How do I register a DNA sample?"`
+
+Full per-phase details, code explanations and score tables: `MEMBER1_CHATBOT_CHANGES.md`.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+```
+
+### Messages to send to the team (private chat, never include `.env` values other than the threshold)
+
+**Hand-off:**
+```text
+Real FAQ is live ✅  (37 chunks in faq_chunks, vector_index created by script and READY)
+
+- Threshold after tuning: CHATBOT_SCORE_THRESHOLD=0.65  → everyone update your .env
+  (lowest on-topic 0.81, highest off-topic 0.55; privacy questions score 0.69–0.81 so layer 2 / prompt must refuse them)
+- Note: Atlas cosine score = (1 + cosine) / 2, so unrelated questions still score ~0.5
+- Member 3: please re-run the 20-question test sheet with the real data through /api/chatbot/ask.
+- PR opened: chatbot/m1-ingestion → feature/chatbot (Member 2 please review)
+```
+
+**Review request:**
+```text
+Member 2, Member 3: please read the FAQ (backend/chatbot/data/forentrace_faq.pdf on chatbot/m1-ingestion)
+and confirm the answers match the real system — especially account registration/approval (Q&As 6–8).
+If anything is wrong, tell me the Q&A and I'll fix + re-ingest.
+```
+
+### Demo prep (Member 1, ~45 s, speaks 2nd)
+1. Show `forentrace_faq.pdf`: 36 Q&As, one topic each, synonyms in brackets.
+2. Atlas → **Browse Collections → forentrace_chatbot → faq_chunks**: open one document and show `text`, `source`, `chunkIndex` and the `embedding` array of **384 numbers**.
+3. Explain the **embedding** (meaning as numbers), the **vector index** (`vector_index`, 384 dims, cosine) and the **threshold 0.65** (layer 1), using the Phase 5 score table: on-topic ≥ 0.81, off-topic ≤ 0.55.
+
+Viva numbers to remember: **36** Q&As → **37** chunks · **384** dimensions · threshold **0.65** · lowest on-topic **0.8088** · highest off-topic **0.5497** · Atlas score = (1 + cosine) / 2.
