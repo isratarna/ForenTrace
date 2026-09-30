@@ -315,7 +315,11 @@ export function MissingPersonDetails() {
     setCaseError(null)
     caseService.getCaseById(person.caseId)
       .then(c => { if (!mounted) return; setCaseData(c) })
-      .catch(err => { if (!mounted) return; setCaseError('Failed to load case') })
+      .catch(requestError => {
+        if (!mounted) return
+        const status = requestError.response?.status
+        setCaseError(status === 403 || status === 404 ? 'You do not have access to this case' : 'Failed to load case')
+      })
       .finally(() => { if (mounted) setCaseLoading(false) })
     return () => { mounted = false }
   }, [activeTab, person?.caseId])

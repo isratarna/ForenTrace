@@ -1,6 +1,7 @@
 import {
   findAllCases,
   findCaseById,
+  findCaseByIdForOfficer,
   findCaseStatisticsSummary,
   findStationCaseStatistics,
   findOfficerCaseStatistics,
@@ -176,7 +177,12 @@ async function validateReferences(personId, stationId, officerId, checkPerson = 
 export async function listCases(req, res) {
   try {
     const search = req.query.search?.trim() || req.query.q?.trim() || ''
-    const cases = await findAllCases({ search: search || undefined })
+    const user = req.session.user
+    const cases = user.role === 'Admin'
+      ? await findAllCases({ search: search || undefined })
+      : user.role === 'Officer' && user.officerId
+        ? await findAllCases({ search: search || undefined, officerId: user.officerId })
+        : []
 
     return res.status(200).json({
       success: true,
@@ -249,7 +255,10 @@ export async function getCase(req, res) {
       })
     }
 
-    const caseFile = await findCaseById(id)
+    const user = req.session.user
+    const caseFile = user.role === 'Admin'
+      ? await findCaseById(id)
+      : await findCaseByIdForOfficer(id, user.officerId)
     if (!caseFile) {
       return res.status(404).json({
         success: false,

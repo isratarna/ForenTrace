@@ -38,7 +38,7 @@ const joinedCaseSelect = `
   INNER JOIN officers o ON cf.officer_id = o.officer_id
 `
 //async is used because finding all cases from database takes time...returns a promise obj- future result
-export async function findAllCases({ search } = {}) { //means like it can be called with search parameter also with no parameter when i want to see all cases
+export async function findAllCases({ search, officerId } = {}) { //means like it can be called with search parameter also with no parameter when i want to see all cases
   let sql = `${joinedCaseSelect} WHERE 1 = 1` //where 1=1 used here so that when i append later with and , it will have a where condition, (using and without where is not allowed?)
   const params = [] // stores all  search or filter values
 
@@ -58,6 +58,11 @@ export async function findAllCases({ search } = {}) { //means like it can be cal
     params.push(searchId, term, term, term, term)
   }
 
+  if (officerId !== undefined && officerId !== null) {
+    sql += ' AND cf.officer_id = ?'
+    params.push(officerId)
+  }
+
   sql += ' ORDER BY cf.case_id ASC'
 
   const [rows] = await pool.execute(sql, params) // pool.execute executes the query in mysql abd returns rows
@@ -69,6 +74,15 @@ export async function findCaseById(id) {
   const [rows] = await pool.execute(
     `${caseSelect} WHERE case_id = ? LIMIT 1`,
     [id] //in this string ? will be replaced with [id] value to prevent sql injection
+  )
+
+  return rows[0] || null
+}
+
+export async function findCaseByIdForOfficer(id, officerId) {
+  const [rows] = await pool.execute(
+    `${caseSelect} WHERE case_id = ? AND officer_id = ? LIMIT 1`,
+    [id, officerId]
   )
 
   return rows[0] || null

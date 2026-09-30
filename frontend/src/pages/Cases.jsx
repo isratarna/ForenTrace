@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { MetricCard, PageHeader, SearchFilters, StatusBadge } from '../components/Ui'
+import FamilyMembersManager from '../components/FamilyMembersManager'
+import MatchesList from '../components/MatchesList'
+import SamplesTable from '../components/SamplesTable'
 import { useAuth } from '../context/AuthContext'
 import {
   createCase,
@@ -15,6 +18,7 @@ import {
 import { getMissingPersons } from '../services/missingPersonService'
 import { getOfficers } from '../services/officerService'
 import { getStations } from '../services/policeStationService'
+import dnaService from '../services/dnaService'
 
 const CASE_STATUSES = ['Active', 'Pending', 'Solved']
 const PRIORITIES = ['High', 'Medium', 'Low']
@@ -385,6 +389,15 @@ export function CaseDetails() {
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
   const [warning, setWarning] = useState('')
+  const [samples, setSamples] = useState([])
+  const [samplesLoading, setSamplesLoading] = useState(false)
+  const [samplesError, setSamplesError] = useState('')
+  const [dnaResults, setDnaResults] = useState([])
+  const [resultsLoading, setResultsLoading] = useState(false)
+  const [resultsError, setResultsError] = useState('')
+  const [matches, setMatches] = useState([])
+  const [matchesLoading, setMatchesLoading] = useState(false)
+  const [matchesError, setMatchesError] = useState('')
   const navigate = useNavigate()
   const editing = role === 'Officer' && params.get('edit') === 'true'
 
@@ -401,13 +414,52 @@ export function CaseDetails() {
       setWarning(related.warning)
       setDraft({ stationId: asId(record.stationId), officerId: asId(record.officerId), status: record.status, priority: record.priority, identifiedDate: record.identifiedDate || '', notes: record.notes || '' })
     } catch (requestError) {
-      setError(errorMessage(requestError, 'Failed to load the case.'))
+      const status = requestError.response?.status
+      setError(status === 403 || status === 404
+        ? 'You do not have access to this case or it does not exist'
+        : errorMessage(requestError, 'Failed to load the case.'))
     } finally {
       setLoading(false)
     }
   }, [id])
 
   useEffect(() => { loadCase() }, [loadCase])
+
+  useEffect(() => {
+    if (loading || !caseFile?.id) return
+    let active = true
+    setSamplesLoading(true)
+    setSamplesError('')
+    dnaService.getSamplesByCase(caseFile.id)
+      .then(rows => { if (active) setSamples(rows) })
+      .catch(requestError => { if (active) setSamplesError(errorMessage(requestError, 'Failed to load DNA samples.')) })
+      .finally(() => { if (active) setSamplesLoading(false) })
+    return () => { active = false }
+  }, [caseFile?.id, loading])
+
+  useEffect(() => {
+    if (loading || !caseFile?.id) return
+    let active = true
+    setResultsLoading(true)
+    setResultsError('')
+    dnaService.getSamplesByCase(caseFile.id)
+      .then(rows => { if (active) setDnaResults(rows) })
+      .catch(requestError => { if (active) setResultsError(errorMessage(requestError, 'Failed to load DNA results.')) })
+      .finally(() => { if (active) setResultsLoading(false) })
+    return () => { active = false }
+  }, [caseFile?.id, loading])
+
+  useEffect(() => {
+    if (loading || !caseFile?.id) return
+    let active = true
+    setMatchesLoading(true)
+    setMatchesError('')
+    dnaService.getMatchesByCase(caseFile.id)
+      .then(rows => { if (active) setMatches(rows) })
+      .catch(requestError => { if (active) setMatchesError(errorMessage(requestError, 'Failed to load potential matches.')) })
+      .finally(() => { if (active) setMatchesLoading(false) })
+    return () => { active = false }
+  }, [caseFile?.id, loading])
 
   const change = event => {
     const { name, value } = event.target
@@ -451,9 +503,12 @@ export function CaseDetails() {
   }
 
   if (loading) return <div className="card"><div className="card-body text-center text-secondary py-4">Loading case...</div></div>
-  if (!caseFile) return <div className="alert alert-danger" role="alert">{error || 'This case could not be found.'}</div>
+  if (!caseFile) return <div className="alert alert-danger" role="alert">{error || 'This case could not be found.'}<div className="mt-2"><Link to="/cases" className="alert-link">Back to cases</Link></div></div>
 
   const labels = caseLabel(caseFile, lookups)
+  const analyzedSamples = Array.isArray(dnaResults)
+    ? dnaResults.filter(sample => sample.dna_profile_code && sample.status === 'Analyzed')
+    : []
   return (
     <>
       <PageHeader title={`Case ${caseFile.id}`} subtitle={`Investigation for ${labels.person}`}>
@@ -472,6 +527,41 @@ export function CaseDetails() {
           ) : (
             <><div className="detail-grid"><span>Case ID<b>{caseFile.id}</b></span><span>Missing Person<b>{labels.person}</b></span><span>Police Station<b>{labels.station}</b></span><span>Investigating Officer<b>{labels.officer}</b></span><span>Report Date<b>{caseFile.reportDate}</b></span><span>Priority<b><StatusBadge value={caseFile.priority} /></b></span><span>Case Status<b><StatusBadge value={caseFile.status} /></b></span><span>Identified Date<b>{caseFile.identifiedDate || '—'}</b></span></div><hr /><b>Case Notes</b><p className="mb-0 mt-1">{caseFile.notes || '—'}</p></>
           )}
+        </div>
+      </div>
+      <div className="card mt-4">
+        <div className="card-header bg-white"><strong>Family Members</strong></div>
+        <div className="card-body"><FamilyMembersManager personId={caseFile.personId} allowDnaRegistration={false} /></div>
+      </div>
+      <div className="card mt-4">
+        <div className="card-header bg-white"><strong>DNA Samples</strong></div>
+        <div className="card-body">
+          {samplesLoading && <div className="text-secondary">Loading DNA samples...</div>}
+          {samplesError && <div className="alert alert-danger" role="alert">{samplesError}</div>}
+          {!samplesLoading && !samplesError && <SamplesTable samples={samples} />}
+        </div>
+      </div>
+      <div className="card mt-4">
+        <div className="card-header bg-white"><strong>DNA Results</strong></div>
+        <div className="card-body">
+          {resultsLoading && <div className="text-secondary">Loading DNA results...</div>}
+          {resultsError && <div className="alert alert-danger" role="alert">{resultsError}</div>}
+          {!resultsLoading && !resultsError && (analyzedSamples.length ? (
+            <div className="table-responsive">
+              <table className="table table-hover align-middle mb-0">
+                <thead><tr><th>Sample ID</th><th>DNA Profile Code</th><th>Status</th><th>Collection Date</th></tr></thead>
+                <tbody>{analyzedSamples.map(sample => <tr key={sample.sample_id}><td>{sample.sample_id}</td><td>{sample.dna_profile_code}</td><td>{sample.status}</td><td>{sample.collection_date}</td></tr>)}</tbody>
+              </table>
+            </div>
+          ) : <div className="alert alert-secondary mb-0">No analyzed DNA results are available for this case.</div>)}
+        </div>
+      </div>
+      <div className="card mt-4">
+        <div className="card-header bg-white"><strong>Potential Matches</strong></div>
+        <div className="card-body">
+          {matchesLoading && <div className="text-secondary">Loading potential matches...</div>}
+          {matchesError && <div className="alert alert-danger" role="alert">{matchesError}</div>}
+          {!matchesLoading && !matchesError && <MatchesList matches={matches} />}
         </div>
       </div>
     </>
