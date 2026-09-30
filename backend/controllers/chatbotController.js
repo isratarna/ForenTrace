@@ -3,10 +3,12 @@
 import { searchChunks } from '../chatbot/retriever.js';
 import { callGemini } from '../chatbot/gemini.js';
 import { SYSTEM_INSTRUCTION, OUT_OF_CONTEXT_TOKEN, buildPrompt } from '../chatbot/prompt.js';
+import { getSmallTalkReply } from '../chatbot/smallTalk.js';
 
 const OUT_OF_CONTEXT_REPLY =
   'Sorry, I can only answer questions about the ForenTrace system ' +
-  '(cases, DNA samples, matching, labs and accounts).';
+  '(cases, DNA samples, matching, labs and accounts). ' +
+  'Try asking something like "How do I register a DNA sample?"';
 
 /**
  * Sanitizes input string to prevent HTML/script injection and strip harmful control characters
@@ -52,6 +54,12 @@ export async function askChatbot(req, res) {
   const question = sanitizeQuestion(trimmed);
   if (!question) {
     return res.status(400).json({ message: 'Please type a question.' });
+  }
+
+  // LAYER 0 – small talk (hi, thanks, bye...): friendly reply, no AI call
+  const smallTalk = getSmallTalkReply(question);
+  if (smallTalk) {
+    return res.json({ answer: smallTalk, inContext: true, sources: [] });
   }
 
   // read here (not at file top) so the value from .env is always loaded
