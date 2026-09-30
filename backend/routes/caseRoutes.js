@@ -20,8 +20,8 @@ router.get('/statistics', requireAuth, requireRole('Admin', 'Officer'), getCaseS
 router.get('/statistics/above-average-officers', requireAuth, requireRole('Admin', 'Officer'), getAboveAverageOfficers)
 router.get('/:id', requireAuth, requireRole('Admin', 'Officer'), getCase)
 
-// Only officers can create, update, or delete case files.
-router.post('/', requireAuth, requireRole('Officer'), createCase)
+// Admins and officers can create cases; only officers update or delete them.
+router.post('/', requireAuth, requireRole('Admin', 'Officer'), createCase)
 router.put('/:id', requireAuth, requireRole('Officer'), updateCase)
 router.delete('/:id', requireAuth, requireRole('Officer'), deleteCase)
 

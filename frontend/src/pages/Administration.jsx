@@ -2,25 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PageHeader, SearchFilters, StatusBadge } from '../components/Ui'
 import { useAuth } from '../context/AuthContext'
 import { useData } from '../data/DataContext'
-import { changePassword } from '../services/mockAuth'
-import { createManagedUser, getUsers, updateUser, updateUserStatus, deleteUser } from '../services/userService'
+import { changeOwnPassword, createManagedUser, getUsers, resetUserPassword, updateUser, updateUserStatus, deleteUser } from '../services/userService'
 import { getOfficers, createOfficer, updateOfficer, deleteOfficer } from '../services/officerService'
 import { getStations, createStation, updateStation, deleteStation } from '../services/policeStationService'
 import caseService from '../services/caseService'
-import { getLabs, getMatches, getSamples } from '../services/dnaService' // report export er DNA metric real API theke (Member 1 - Issue 7)
+import { getLabs, getLabsWithoutTechnicians, getMatches, getSamples } from '../services/dnaService' // report export er DNA metric real API theke (Member 1 - Issue 7)
 
 const recordConfig = {
   stations: { title: 'Police Stations', subtitle: 'Manage police station records.', button: 'Add Station', fields: [['name', 'Station name'], ['district', 'District'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email', 'email']] },
   officers: { title: 'Police Officers', subtitle: 'Manage officer records and station assignments.', button: 'Add Officer', fields: [['name', 'Full name'], ['rank', 'Rank'], ['badge', 'Badge number'], ['station', 'Police station'], ['phone', 'Phone'], ['email', 'Email', 'email'], ['status', 'Status', 'select', ['Active', 'Inactive']]] },
-  labs: { title: 'DNA Labs', subtitle: 'Manage forensic DNA laboratory records.', button: 'Add DNA Lab', fields: [['name', 'Lab name'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email', 'email']] },
-  technicians: { title: 'Lab Technicians', subtitle: 'Manage technician records and laboratory assignments.', button: 'Add Technician', fields: [['name', 'Full name'], ['designation', 'Designation'], ['lab', 'DNA laboratory'], ['phone', 'Phone'], ['email', 'Email', 'email'], ['status', 'Status', 'select', ['Active', 'Inactive']]] },
 }
 
 const displayColumns = {
   stations: [['name', 'Station'], ['district', 'District'], ['city', 'City'], ['contact', 'Contact'], ['email', 'Email']],
   officers: [['name', 'Officer'], ['rank', 'Rank'], ['badge', 'Badge Number'], ['station', 'Police Station'], ['phone', 'Phone'], ['email', 'Email'], ['status', 'Status']],
-  labs: [['name', 'Lab'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email']],
-  technicians: [['name', 'Technician'], ['designation', 'Designation'], ['lab', 'DNA Lab'], ['phone', 'Phone'], ['email', 'Email'], ['status', 'Status']],
   users: [['name', 'Name'], ['email', 'Email'], ['role', 'Role'], ['linked', 'Linked Person'], ['status', 'Status'], ['lastLogin', 'Last Login']],
 }
 
@@ -160,16 +155,60 @@ function ManagedUserForm({ stations, labs, onCreated }) {
   </form>
 }
 
+function AdminPasswordResetForm({ account, onCancel, onSave }) {
+  const [newPassword, setNewPassword] = useState('')
+  const [feedback, setFeedback] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  const submit = async event => {
+    event.preventDefault()
+    setSaving(true)
+    setFeedback(null)
+    try {
+      const result = await onSave(account.id, newPassword)
+      setNewPassword('')
+      setFeedback({ success: true, message: result.message || 'Password reset successfully.' })
+    } catch (error) {
+      setFeedback({ success: false, message: error.response?.data?.message || 'Failed to reset password.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <form className="card mb-4" onSubmit={submit}>
+    <div className="card-header bg-white"><strong>Reset password for {account.name}</strong></div>
+    <div className="card-body">
+      {feedback && <div className={`alert ${feedback.success ? 'alert-success' : 'alert-danger'}`} role={feedback.success ? 'status' : 'alert'}>{feedback.message}</div>}
+      <label className="form-label" htmlFor="admin-reset-password">New password</label>
+      <input
+        id="admin-reset-password"
+        className="form-control"
+        type="password"
+        value={newPassword}
+        onChange={event => setNewPassword(event.target.value)}
+        minLength={6}
+        autoComplete="new-password"
+        required
+      />
+    </div>
+    <div className="card-footer bg-white text-end">
+      <button type="button" onClick={onCancel} className="btn btn-light me-2">Close</button>
+      <button className="btn btn-primary" disabled={saving}>{saving ? 'Resetting...' : 'Reset password'}</button>
+    </div>
+  </form>
+}
+
 export function AdminList({ kind }) {
-  const { data, addAdminRecord, updateAdminRecord, removeAdminRecord } = useData()
+  const { user: currentUser } = useAuth()
   const [query, setQuery] = useState('')
   const [activeOnly, setActiveOnly] = useState(false)
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [accountRows, setAccountRows] = useState([])
-  const [stationRows, setStationRows] = useState(data.stations)
+  const [stationRows, setStationRows] = useState([])
   const [labRows, setLabRows] = useState([])
   const [creatingUser, setCreatingUser] = useState(false)
+  const [resettingUser, setResettingUser] = useState(null)
   const [usersLoading, setUsersLoading] = useState(false)
   const [usersError, setUsersError] = useState('')
   const config = recordConfig[kind]
@@ -204,7 +243,7 @@ export function AdminList({ kind }) {
     refreshRecords()
   }, [kind, refreshRecords])
 
-  const rows = backendKinds.includes(kind) ? accountRows : data[kind]
+  const rows = accountRows
   const columns = displayColumns[kind]
   const filtered = useMemo(() => rows.filter(row => (!activeOnly || row.status === 'Active') && (!query || Object.values(row).some(value => String(value ?? '').toLowerCase().includes(query.toLowerCase())))), [rows, activeOnly, query])
 
@@ -290,10 +329,6 @@ export function AdminList({ kind }) {
       }
       return
     }
-
-    if (editing?.id) updateAdminRecord(kind, editing.id, values)
-    else addAdminRecord(kind, values)
-    setEditing(null)
   }
 
   const remove = async record => {
@@ -317,8 +352,6 @@ export function AdminList({ kind }) {
       }
       return
     }
-    const result = removeAdminRecord(kind, record.id)
-    if (!result.ok) window.alert(result.message)
   }
 
   const activateUser = async record => {
@@ -329,6 +362,12 @@ export function AdminList({ kind }) {
     } catch (error) {
       window.alert(error.response?.data?.message || 'Failed to activate user.')
     }
+  }
+
+  const saveUserPassword = async (userId, newPassword) => {
+    const result = await resetUserPassword(userId, newPassword)
+    await refreshRecords()
+    return result
   }
 
   const deactivateUser = async record => {
@@ -343,9 +382,10 @@ export function AdminList({ kind }) {
 
   const userActions = row => <>
     <button onClick={() => setViewing(row)} className="btn btn-sm btn-outline-primary me-1">View</button>
-    <button onClick={() => { setViewing(null); setEditing(row) }} className="btn btn-sm btn-outline-secondary me-1">Edit</button>
+    <button onClick={() => { setViewing(null); setResettingUser(null); setEditing(row) }} className="btn btn-sm btn-outline-secondary me-1">Edit</button>
+    <button onClick={() => { setEditing(null); setResettingUser(row) }} className="btn btn-sm btn-outline-secondary me-1">Reset Password</button>
     {row.status === 'Active'
-      ? <button onClick={() => deactivateUser(row)} className="btn btn-sm btn-outline-danger">Deactivate</button>
+      ? <button onClick={() => deactivateUser(row)} className="btn btn-sm btn-outline-danger" disabled={row.role === 'Admin' && Number(row.id) === Number(currentUser?.id)} title={row.role === 'Admin' && Number(row.id) === Number(currentUser?.id) ? 'You cannot deactivate your own account.' : undefined}>Deactivate</button>
       : <button onClick={() => activateUser(row)} className="btn btn-sm btn-outline-success">Activate</button>}
   </>
 
@@ -354,10 +394,11 @@ export function AdminList({ kind }) {
 
   return <>
     <PageHeader title={title} subtitle={subtitle} action={kind === 'users'
-      ? <button onClick={() => { setCreatingUser(value => !value); setEditing(null) }} className="btn btn-primary">{creatingUser ? 'Close form' : 'Create account'}</button>
+      ? <button onClick={() => { setCreatingUser(value => !value); setEditing(null); setResettingUser(null) }} className="btn btn-primary">{creatingUser ? 'Close form' : 'Create account'}</button>
       : <button onClick={() => { setViewing(null); setEditing(emptyRecord(fields)) }} className="btn btn-primary">{config.button}</button>} />
     {backendKinds.includes(kind) && usersError && <div className="alert alert-danger">{usersError}</div>}
     {kind === 'users' && creatingUser && <ManagedUserForm stations={stationRows} labs={labRows} onCreated={refreshRecords} />}
+    {resettingUser && <AdminPasswordResetForm account={resettingUser} onCancel={() => setResettingUser(null)} onSave={saveUserPassword} />}
     {editing && <RecordForm title={editing.id ? `Edit ${editing.name || editing.id}` : config.button} fields={fields} value={editing} onCancel={() => setEditing(null)} onSave={save} />}
     <SearchFilters onSearchChange={setQuery} onClear={() => setActiveOnly(false)}>
       <div className="col-md-3"><label className="form-label">Filter</label><select value={activeOnly ? 'active' : ''} onChange={event => setActiveOnly(event.target.value === 'active')} className="form-select"><option value="">All records</option><option value="active">Active only</option></select></div>
@@ -372,6 +413,9 @@ export function Reports() {
   const [caseStats, setCaseStats] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [labsWithoutTechnicians, setLabsWithoutTechnicians] = useState([])
+  const [labsWithoutTechniciansLoading, setLabsWithoutTechniciansLoading] = useState(true)
+  const [labsWithoutTechniciansError, setLabsWithoutTechniciansError] = useState('')
 
   useEffect(() => {
     let mounted = true
@@ -382,6 +426,15 @@ export function Reports() {
       .catch(err => { console.error('Failed to load case statistics', err); if (!mounted) return; setError('Failed to load statistics') })
       .finally(() => { if (mounted) setLoading(false) })
     return () => { mounted = false }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    getLabsWithoutTechnicians()
+      .then(labs => { if (active) setLabsWithoutTechnicians(labs) })
+      .catch(requestError => { if (active) setLabsWithoutTechniciansError(requestError.response?.data?.message || 'Failed to load labs without technicians.') })
+      .finally(() => { if (active) setLabsWithoutTechniciansLoading(false) })
+    return () => { active = false }
   }, [])
 
   const solved = caseStats?.summary?.solvedCases ?? data.cases.filter(caseItem => caseItem.status === 'Solved').length
@@ -409,10 +462,114 @@ export function Reports() {
     URL.revokeObjectURL(url)
   }
 
-  return <><PageHeader title="Reports" subtitle="System statistics and reporting summaries." action={<button onClick={exportReport} className="btn btn-outline-primary">Export Report (CSV)</button>} />{loading && <div className="mb-3 text-secondary">Loading statistics...</div>}{error && <div className="mb-3 alert alert-danger">{error}</div>}<div className="row g-3 mb-4">{(stationStats.length ? stationStats.map(st => <div key={st.stationId ?? st.station_id ?? st.stationName} className="col-md-6 col-xl"><div className="card report-card h-100"><div className="card-body"><p className="small text-secondary">{st.stationName ?? st.station_name ?? 'Station'}</p><h3>{(st.solvedCases ?? st.solved_cases ?? 0)}/{(st.totalCases ?? st.total_cases ?? 0)}</h3><small className="text-secondary">Solved / Total</small></div></div></div>) : <div className="col-12"><div className="alert alert-secondary">No station statistics available.</div></div>)}</div><div className="card"><div className="card-header bg-white"><strong>Average identification time (days)</strong></div><div className="card-body"><h3>{avgResolution === null ? '—' : String(avgResolution)}</h3><small className="text-secondary">Average days between report and identification for solved cases</small></div></div></>
+  return <>
+    <PageHeader title="Reports" subtitle="System statistics and reporting summaries." action={<button onClick={exportReport} className="btn btn-outline-primary">Export Report (CSV)</button>} />
+    {loading && <div className="mb-3 text-secondary">Loading statistics...</div>}
+    {error && <div className="mb-3 alert alert-danger">{error}</div>}
+    <div className="row g-3 mb-4">
+      {stationStats.length
+        ? stationStats.map(st => <div key={st.stationId ?? st.station_id ?? st.stationName} className="col-md-6 col-xl"><div className="card report-card h-100"><div className="card-body"><p className="small text-secondary">{st.stationName ?? st.station_name ?? 'Station'}</p><h3>{(st.solvedCases ?? st.solved_cases ?? 0)}/{(st.totalCases ?? st.total_cases ?? 0)}</h3><small className="text-secondary">Solved / Total</small></div></div></div>)
+        : <div className="col-12"><div className="alert alert-secondary">No station statistics available.</div></div>}
+    </div>
+    <div className="card mb-4">
+      <div className="card-header bg-white"><strong>Average identification time (days)</strong></div>
+      <div className="card-body"><h3>{avgResolution === null ? '—' : String(avgResolution)}</h3><small className="text-secondary">Average days between report and identification for solved cases</small></div>
+    </div>
+    <div className="card">
+      <div className="card-header bg-white"><strong>Labs Without Technicians</strong></div>
+      <div className="table-responsive">
+        <table className="table table-hover align-middle mb-0">
+          <thead><tr><th>Lab ID</th><th>Lab Name</th><th>City</th></tr></thead>
+          <tbody>
+            {labsWithoutTechniciansLoading
+              ? <tr><td colSpan="3" className="text-center text-secondary py-4">Loading report...</td></tr>
+              : labsWithoutTechniciansError
+                ? <tr><td colSpan="3" className="text-danger py-4">{labsWithoutTechniciansError}</td></tr>
+                : labsWithoutTechnicians.length
+                  ? labsWithoutTechnicians.map(lab => <tr key={lab.lab_id}><td>{lab.lab_id}</td><td>{lab.lab_name}</td><td>{lab.city}</td></tr>)
+                  : <tr><td colSpan="3" className="text-center text-secondary py-4">Every DNA lab has at least one technician.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </>
 }
 
 export function Profile() {
-  const { user } = useAuth(); const roleName = user.role === 'Officer' ? 'Police Officer' : user.role; const [editingPassword, setEditingPassword] = useState(false); const [form, setForm] = useState({ current: '', next: '' }); const [message, setMessage] = useState(''); const submitPassword = event => { event.preventDefault(); try { changePassword(user.id, form.current, form.next); setMessage('Password updated.'); setForm({ current: '', next: '' }); setEditingPassword(false) } catch (error) { setMessage(error.message) } }
-  return <><PageHeader title="My Profile" subtitle="Your authorized system account details." /><div className="row g-4"><div className="col-lg-4"><div className="card"><div className="card-body text-center py-5"><div className="profile-avatar">{user.initials}</div><h4 className="mt-3 mb-1">{user.name}</h4><p className="text-secondary mb-2">{roleName}</p><StatusBadge value={user.status || 'Active'} /></div></div></div><div className="col-lg-8"><div className="card"><div className="card-header bg-white"><strong>Account information</strong></div><div className="card-body"><div className="detail-grid"><span>Name<b>{user.name}</b></span><span>Email<b>{user.email}</b></span><span>Role<b>{roleName}</b></span><span>Account type<b>{user.role === 'Admin' ? 'Predefined administrator account' : 'Registered user account'}</b></span></div>{message && <div className={`alert ${message === 'Password updated.' ? 'alert-success' : 'alert-danger'} mt-3 mb-0`}>{message}</div>}</div><div className="card-footer bg-white">{editingPassword ? <form className="row g-2" onSubmit={submitPassword}><div className="col-md-5"><input className="form-control" type="password" placeholder="Current password" value={form.current} onChange={event => setForm({ ...form, current: event.target.value })} required /></div><div className="col-md-5"><input className="form-control" type="password" placeholder="New password" value={form.next} onChange={event => setForm({ ...form, next: event.target.value })} required /></div><div className="col-md-2 d-flex gap-2"><button className="btn btn-primary">Save</button><button type="button" onClick={() => setEditingPassword(false)} className="btn btn-light">Cancel</button></div></form> : <button onClick={() => { setMessage(''); setEditingPassword(true) }} className="btn btn-outline-primary">Change Password</button>}</div></div></div></div></>
+  const { user } = useAuth()
+  const roleName = user.role === 'Officer' ? 'Police Officer' : user.role
+  const [editingPassword, setEditingPassword] = useState(false)
+  const [form, setForm] = useState({ current: '', next: '' })
+  const [message, setMessage] = useState(null)
+  const [savingPassword, setSavingPassword] = useState(false)
+
+  const submitPassword = async event => {
+    event.preventDefault()
+    setSavingPassword(true)
+    setMessage(null)
+
+    try {
+      const result = await changeOwnPassword(form.current, form.next)
+      setMessage({ success: true, text: result.message || 'Password updated successfully.' })
+      setForm({ current: '', next: '' })
+      setEditingPassword(false)
+    } catch (error) {
+      setMessage({
+        success: false,
+        text: error.response?.data?.message || 'Password change failed.',
+      })
+    } finally {
+      setSavingPassword(false)
+    }
+  }
+
+  return <>
+    <PageHeader title="My Profile" subtitle="Your authorized system account details." />
+    <div className="row g-4">
+      <div className="col-lg-4">
+        <div className="card">
+          <div className="card-body text-center py-5">
+            <div className="profile-avatar">{user.initials}</div>
+            <h4 className="mt-3 mb-1">{user.name}</h4>
+            <p className="text-secondary mb-2">{roleName}</p>
+            <StatusBadge value={user.status || 'Active'} />
+          </div>
+        </div>
+      </div>
+      <div className="col-lg-8">
+        <div className="card">
+          <div className="card-header bg-white"><strong>Account information</strong></div>
+          <div className="card-body">
+            <div className="detail-grid">
+              <span>Name<b>{user.name}</b></span>
+              <span>Email<b>{user.email}</b></span>
+              <span>Role<b>{roleName}</b></span>
+              <span>Account type<b>{user.role === 'Admin' ? 'Predefined administrator account' : 'Registered user account'}</b></span>
+            </div>
+            {message && <div className={`alert ${message.success ? 'alert-success' : 'alert-danger'} mt-3 mb-0`} role={message.success ? 'status' : 'alert'}>{message.text}</div>}
+          </div>
+          <div className="card-footer bg-white">
+            {editingPassword ? (
+              <form className="row g-2" onSubmit={submitPassword}>
+                <div className="col-md-5">
+                  <label className="form-label" htmlFor="profile-current-password">Current password</label>
+                  <input id="profile-current-password" className="form-control" type="password" autoComplete="current-password" value={form.current} onChange={event => setForm({ ...form, current: event.target.value })} required />
+                </div>
+                <div className="col-md-5">
+                  <label className="form-label" htmlFor="profile-new-password">New password</label>
+                  <input id="profile-new-password" className="form-control" type="password" autoComplete="new-password" minLength={6} value={form.next} onChange={event => setForm({ ...form, next: event.target.value })} required />
+                </div>
+                <div className="col-md-2 d-flex align-items-end gap-2">
+                  <button className="btn btn-primary" disabled={savingPassword}>{savingPassword ? 'Saving...' : 'Save'}</button>
+                  <button type="button" onClick={() => { setEditingPassword(false); setForm({ current: '', next: '' }) }} className="btn btn-light">Cancel</button>
+                </div>
+              </form>
+            ) : (
+              <button onClick={() => { setMessage(null); setEditingPassword(true) }} className="btn btn-outline-primary">Change Password</button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  </>
 }

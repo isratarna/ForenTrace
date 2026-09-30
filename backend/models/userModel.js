@@ -11,9 +11,19 @@ const userSelect = `
     u.role_id,
     u.officer_id,
     u.technician_id,
-    r.role_name
+    r.role_name,
+    o.first_name AS officer_first_name,
+    o.last_name AS officer_last_name,
+    o.badge_number,
+    COALESCE(lt_by_user.technician_id, lt_by_id.technician_id) AS linked_technician_id,
+    COALESCE(lt_by_user.first_name, lt_by_id.first_name) AS technician_first_name,
+    COALESCE(lt_by_user.last_name, lt_by_id.last_name) AS technician_last_name,
+    COALESCE(lt_by_user.designation, lt_by_id.designation) AS technician_designation
   FROM users u
   JOIN roles r ON u.role_id = r.role_id
+  LEFT JOIN officers o ON o.officer_id = u.officer_id
+  LEFT JOIN lab_technicians lt_by_id ON lt_by_id.technician_id = u.technician_id
+  LEFT JOIN lab_technicians lt_by_user ON lt_by_user.user_id = u.user_id
 `
 
 export async function findUserByEmail(email) {
@@ -45,6 +55,15 @@ export async function findUserByEmail(email) {
 export async function findUserById(userId) {
   const [rows] = await pool.execute(
     `${userSelect} WHERE u.user_id = ? LIMIT 1`,
+    [userId]
+  )
+
+  return rows[0] || null
+}
+
+export async function findPasswordHashByUserId(userId) {
+  const [rows] = await pool.execute(
+    'SELECT user_id, password_hash FROM users WHERE user_id = ? LIMIT 1',
     [userId]
   )
 
@@ -154,6 +173,25 @@ export async function updateUserStatus(userId, accountStatus) {
   )
 
   return findUserById(userId)
+}
+
+export async function updateUserPassword(userId, passwordHash) {
+  await pool.execute(
+    'UPDATE users SET password_hash = ? WHERE user_id = ?',
+    [passwordHash, userId]
+  )
+}
+
+export async function countActiveAdmins() {
+  const [rows] = await pool.execute(
+    `SELECT COUNT(*) AS active_admin_count
+     FROM users u
+     JOIN roles r ON r.role_id = u.role_id
+     WHERE r.role_name = ? AND u.account_status = ?`,
+    ['Admin', 'active']
+  )
+
+  return Number(rows[0]?.active_admin_count || 0)
 }
 
 export async function updateLastLogin(userId) {

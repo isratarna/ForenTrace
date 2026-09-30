@@ -1,4 +1,15 @@
 import pool from '../config/db.js'
+import { getLabsWithoutTechnicians as fetchLabsWithoutTechnicians } from '../models/dnaLabModel.js'
+
+export async function labsWithoutTechnicians(req, res) {
+  try {
+    const labs = await fetchLabsWithoutTechnicians()
+    return res.status(200).json({ success: true, labs })
+  } catch (error) {
+    console.error('Labs without technicians report error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
 
 export async function intersectionLabs(req, res) {
   try {
