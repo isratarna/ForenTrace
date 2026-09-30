@@ -8,9 +8,51 @@ const OUT_OF_CONTEXT_REPLY =
   'Sorry, I can only answer questions about the ForenTrace system ' +
   '(cases, DNA samples, matching, labs and accounts).';
 
+/**
+ * Sanitizes input string to prevent HTML/script injection and strip harmful control characters
+ * while preserving natural language, standard punctuation, and forensic terminology (e.g. STR, DNA, CODIS).
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function sanitizeQuestion(text) {
+  if (typeof text !== 'string') return '';
+
+  return text
+    // Remove script tags and their inner content safely (linear non-backtracking scan)
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    // Remove any remaining HTML tags
+    .replace(/<[^>]+>/g, '')
+    // Strip non-printable / control characters (keep standard printable text and spaces)
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\u200B-\u200D\uFEFF]/g, '')
+    // Normalize excessive whitespace to single space
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export async function askChatbot(req, res) {
-  const question = String(req.body?.question || '').trim();
-  if (!question) return res.status(400).json({ message: 'Please type a question.' });
+  const rawQuestion = req.body?.question;
+
+  // CB-10: Input validation - question must exist and must be a string
+  if (typeof rawQuestion !== 'string') {
+    return res.status(400).json({ message: 'Please type a question.' });
+  }
+
+  const trimmed = rawQuestion.trim();
+  if (!trimmed) {
+    return res.status(400).json({ message: 'Please type a question.' });
+  }
+
+  // CB-10: Maximum length limit of 500 characters
+  if (trimmed.length > 500) {
+    return res.status(400).json({ message: 'Question must be 500 characters or fewer.' });
+  }
+
+  // CB-10: Sanitization - strip HTML/script markup and control characters
+  const question = sanitizeQuestion(trimmed);
+  if (!question) {
+    return res.status(400).json({ message: 'Please type a question.' });
+  }
 
   // read here (not at file top) so the value from .env is always loaded
   const threshold = Number(process.env.CHATBOT_SCORE_THRESHOLD || 0.65);
