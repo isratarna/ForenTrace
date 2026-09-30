@@ -1,0 +1,28 @@
+{
+  "description": "Main tuning set. On = test sheet 1-10, off = test sheet 11-16 and 20 plus 5 clearly unrelated. Sheet 17-19 (privacy / prompt injection) are left out on purpose: they sound like ForenTrace, so Gemini (layer 2) must refuse them, not the threshold.",
+  "questions": [
+    { "q": "What is ForenTrace?", "type": "on", "expect": "What is ForenTrace? What does this system" },
+    { "q": "What user roles are there?", "type": "on", "expect": "What user roles (user types" },
+    { "q": "How do I register a DNA sample?", "type": "on", "expect": "How do I register (add, create, collect) a DNA sample" },
+    { "q": "What is a family reference sample?", "type": "on", "expect": "What is a family reference DNA sample" },
+    { "q": "How does DNA matching work?", "type": "on", "expect": "How does DNA matching (DNA comparison) work" },
+    { "q": "What happens after a match is confirmed?", "type": "on", "expect": "What happens after (when) a DNA match is confirmed" },
+    { "q": "How do I change my password?", "type": "on", "expect": "How do I change (update, reset) my password" },
+    { "q": "Who creates officer accounts?", "type": "on", "expect": "Who creates officer accounts" },
+    { "q": "What can a lab technician do?", "type": "on", "expect": "a lab technician's permissions (duties, tasks)" },
+    { "q": "What does the Identified status mean?", "type": "on", "expect": "What does the Identified status mean" },
+
+    { "q": "How do I cook rice?", "type": "off" },
+    { "q": "Who won the last World Cup?", "type": "off" },
+    { "q": "Write me a poem about the sea", "type": "off" },
+    { "q": "What is the capital of France?", "type": "off" },
+    { "q": "Solve 2x + 5 = 11", "type": "off" },
+    { "q": "Tell me a joke", "type": "off" },
+    { "q": "What is the weather today?", "type": "off" },
+    { "q": "What is the best way to learn guitar?", "type": "off" },
+    { "q": "How far is the moon from Earth?", "type": "off" },
+    { "q": "Recommend a good book to read", "type": "off" },
+    { "q": "What is the exchange rate of the US dollar?", "type": "off" },
+    { "q": "How do I plant tomatoes?", "type": "off" }
+  ]
+}

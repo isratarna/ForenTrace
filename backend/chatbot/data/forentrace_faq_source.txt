@@ -7,11 +7,11 @@ Q: What user roles (user types, account types) are there in ForenTrace? Who uses
 A: There are three roles: Admin, Officer (Police Officer) and Lab Technician. The Admin manages users, police stations, officers, DNA labs and technicians and can see all data. Officers manage missing persons, investigation cases and DNA samples for their assigned cases. Lab Technicians analyse the DNA samples of their own laboratory.
 Q: What can an Admin (administrator) do?
 A: The Admin can see all records and manages Police Stations, Police Officers, DNA Labs, Lab Technicians and Users & Accounts. The Admin approves, activates or deactivates user accounts and can confirm or reject DNA matches. The Admin account is predefined and cannot be registered.
-Q: What can a police officer do? What are an officer's permissions?
+Q: What can a police officer do? What are a police officer's permissions (duties, tasks)?
 A: An Officer registers missing persons, creates investigation cases, adds family members and registers DNA samples. Officers can only manage DNA samples and family DNA for their own assigned cases. Officers can also run DNA comparisons and confirm or reject DNA matches.
-Q: What can a lab technician do? What are a lab technician's permissions (duties, tasks)?
+Q: What does a lab technician (lab tech) do in ForenTrace? What are a lab technician's permissions (duties, tasks)?
 A: A Lab Technician sees the DNA samples assigned to their own laboratory. They open a sample, click Analyze, and record the analysis status, DNA profile code and laboratory remarks. They can also run DNA comparisons, but they cannot register samples or confirm matches.
-Q: How do I get an account? Can I register (sign up, create an account) myself?
+Q: How do I sign up for ForenTrace? How do I get (create, register) an account myself?
 A: Yes. Police Officers and Lab Technicians register on the login page using "Register as an officer or lab technician" or "Register as Police Officer (Detailed)". A new account stays Pending Approval until the Admin activates it. Admin accounts cannot be registered.
 Q: Who creates officer accounts? Who creates (approves) lab technician accounts?
 A: Officers and Lab Technicians create their own accounts through registration on the login page. The Admin then finds the account in Users & Accounts and clicks Activate to approve it. The user can sign in only after this approval. For a Lab Technician, the Admin must also link the account to a technician record in Lab Technicians.
@@ -23,7 +23,7 @@ Q: Why can't I log in? My login failed or my account is not active (pending).
 A: "Invalid email or password" means the email or password is wrong. "Account is not active" means the Admin has not approved your registration yet, or your account was deactivated. Contact the Admin to activate your account.
 Q: How do I change (update, reset) my password?
 A: Click My Profile at the bottom of the sidebar, then click Change Password. Enter your current password and your new password, then click Save.
-Q: How do I log out (sign out)?
+Q: How do I log out (sign out) of ForenTrace?
 A: Click Sign out at the bottom of the sidebar. Your session ends and you return to the login page.
 Q: How do I register (add, report) a missing person?
 A: Log in as an Officer, open Missing Persons and click Register person. Fill in details such as name, gender, date of birth, missing date, last seen location, city and description, then click Register Missing Person. Only Officers can register missing persons.
@@ -47,7 +47,7 @@ Q: What DNA sample types can be registered?
 A: ForenTrace supports these sample types: Buccal Swab, Blood Sample, Hair Strand, Bone Sample, Tissue Sample and Personal Belonging.
 Q: What do the DNA sample statuses (Awaiting Analysis, In Analysis, Analyzed, Rejected) mean?
 A: Awaiting Analysis means the sample is registered and waiting in the laboratory queue. In Analysis means a technician is processing it. Analyzed means the DNA profile code has been recorded. Rejected means the sample was unusable.
-Q: How does a lab technician analyse (process, test) a DNA sample? What is the lab analysis workflow?
+Q: How does a lab technician analyse (process, test) a DNA sample and record the analysis result? What is the lab analysis workflow?
 A: The technician opens DNA Samples, which shows only their laboratory's samples, and clicks Analyze on a sample. On the Analyze Sample page they set the status to In Analysis, Analyzed or Rejected, enter the DNA profile code and laboratory remarks, then click Save Analysis. The DNA profile code is required when the status is Analyzed.
 Q: What is a DNA profile code?
 A: A DNA profile code is the result of the laboratory analysis, stored as 6 to 50 letters, numbers or hyphens. The system compares these codes to measure how similar two samples are. Only Analyzed samples have a profile code and can be compared.
@@ -57,7 +57,7 @@ Q: What is the similarity percentage of a DNA match? How is it calculated?
 A: The similarity percentage is the number of positions where the two DNA profile codes are the same, divided by the length of the longer code, times 100. For example, codes that are the same in 7 of 8 positions give 87.5%. Admins and Officers can also enter a similarity percentage manually.
 Q: What is the confidence level (High, Medium, Low) of a DNA match?
 A: The confidence level is based on the similarity percentage. 90% or more is High, 80% up to 90% is Medium, and below 80% is Low.
-Q: What do the DNA match statuses (Pending Review, Confirmed, Rejected) mean? How do I confirm or reject a match?
+Q: How do I confirm or reject a DNA match? What do the DNA match statuses (Pending Review, Confirmed, Rejected) mean?
 A: A new match starts as Pending Review. An Admin or Officer opens the match in DNA Matches and clicks Confirm Match or Reject Match. Lab Technicians can create comparisons but cannot confirm or reject matches.
 Q: What happens after (when) a DNA match is confirmed?
 A: When a match status becomes Confirmed, a database trigger automatically changes the status of the missing person linked to the reference sample to Identified. No manual status change is needed. Rejecting a match does not change the person's status.
@@ -65,9 +65,9 @@ Q: What does the dashboard show? What is on my dashboard?
 A: Each role has its own dashboard. The Admin Dashboard shows system-wide statistics such as solved and pending cases, samples awaiting analysis, police stations and DNA labs. The Officer dashboard shows active cases, pending cases, samples awaiting results and new DNA matches, and the Lab Technician dashboard shows samples awaiting analysis, analyzed samples and DNA matches.
 Q: What reports are available? How do I export (download) a report?
 A: Open Reports to see solved and total cases per police station and the average identification time, and click Export Report (CSV) to download a CSV file. The DNA Sample Report shows whether each sample is Matched or Awaiting Match, and the Labs Intersection report lists labs with above-average technician capacity and active technicians. Admins and Lab Technicians can also open DNA Analytics.
-Q: How does the Admin manage police stations, police officers, DNA labs and lab technicians?
+Q: How does the Admin add (create) and manage police stations, police officers, DNA labs (laboratories) and lab technicians?
 A: The Admin uses the sidebar pages Police Stations, Police Officers, DNA Labs and Lab Technicians. Each page has an Add button, and each record can be viewed, edited or deleted. Users & Accounts is used to edit, activate or deactivate login accounts.
-Q: Is my data secure? How does ForenTrace protect data (privacy, security, access control)?
+Q: Is my data secure? How does ForenTrace protect data (privacy, security, access control)? How are passwords stored?
 A: Every user must sign in, and each role can only open the pages and records allowed for that role. Officers only manage their assigned cases, and Lab Technicians only see their own laboratory's samples. Passwords are stored in hashed (encrypted) form, never as plain text.
 Q: Can the assistant (chatbot) tell me about a specific case, person or DNA result? Can it show private data?
 A: No. For privacy, the ForenTrace assistant only explains how the system works and cannot see any case, missing person or DNA data. It never shares names, DNA profile codes or match results. Please log in and open the relevant page to see the records you are allowed to access.
