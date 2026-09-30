@@ -1,16 +1,16 @@
 import express from 'express';
 import * as labTechnicianController from '../controllers/labTechnicianController.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
+import { requireRole } from '../middleware/roleMiddleware.js';
 
 const router = express.Router();
 
-// Technician CRUD routes
-router.get('/', labTechnicianController.getTechnicians);
-router.get('/:id', labTechnicianController.getTechnicianById);
-router.post('/', labTechnicianController.createTechnician);
-router.put('/:id', labTechnicianController.updateTechnician);
-router.delete('/:id', labTechnicianController.deleteTechnician);
+router.get('/', requireAuth, labTechnicianController.getTechnicians);
+router.get('/:id', requireAuth, labTechnicianController.getTechnicianById);
+router.post('/', requireAuth, requireRole('Admin'), labTechnicianController.createTechnician);
+router.put('/:id', requireAuth, requireRole('Admin'), labTechnicianController.updateTechnician);
+router.delete('/:id', requireAuth, requireRole('Admin'), labTechnicianController.deleteTechnician);
 
-// Step 8: Link Technician to User Account (1:1 Mapping)
-router.post('/:id/link-user', labTechnicianController.linkUserAccount);
+router.post('/:id/link-user', requireAuth, requireRole('Admin'), labTechnicianController.linkUserAccount);
 
 export default router;
