@@ -17,7 +17,7 @@ The earlier CB-1…CB-8 work is in `MEMBER1_CHATBOT_CHANGES.md`.
 | 2 | Step 2 | Evaluation script, main + holdout question files, choose the threshold | `evaluate.js`, `data/eval_questions.json`, `data/holdout_questions.json` | ✅ Done (main 10/10, holdout 81/91 → **86/91** after the 8 wording changes (Phase 2b); threshold kept at 0.65) |
 | 3 | Step 3 | Pre-flight check (env, model, FAQ loaded, index, smoke test) | `preflight.js` | ✅ Done (5/5 ✅; failure paths tested) |
 | 4 | Step 4 | Teach-the-bot test (swap in FAQ v2, re-ingest, restore) | `teachTest.js` | ✅ Done (blocked 0.6445 → answered 0.8265 by the new entry; original restored; pre-flight 5/5) |
-| 5 | Step 5 | FAQ checker (roles, exact menu names, vague answers) + wording list | `checkFaq.js`, `data/faq_terms.json` | ⏳ Next |
+| 5 | Step 5 | FAQ checker (roles, exact menu names, vague answers) + wording list | `checkFaq.js`, `data/faq_terms.json` | ✅ Checker done (5 entries flagged, 5 wording changes checked offline: 0 problems after them); ⏳ waiting for you to apply them |
 | 6 | Step 6 | Bangla search-side test file | `data/bangla_questions.json` | ⏳ |
 | 7 | Step 7 | Follow-up search-side test (copy of Member 2's rule) | `followupTest.js`, `data/followup_questions.json` | ⏳ |
 | 8 | Step 8 | Draft FAQ entries for the new features (not added yet) | `data/new_feature_faq_drafts.txt` | ⏳ |
@@ -1447,3 +1447,348 @@ Nothing more. The v2 files stay on the Desktop for step 12 (the same test throug
 - **Should the delete Q&A go into the real FAQ?** It is accurate (checked against `main`) and fixes the ⚠ above. That's your call. If yes, add it to `forentrace_faq.docx` and `forentrace_faq_source.txt`, re-export and re-ingest. The teach test would then need a different "new" question.
 - If the test is stopped halfway (Ctrl+C, laptop sleeps), `forentrace_faq.backup.pdf` is left in `data/`. The next run refuses to start and prints the restore steps.
 - `waitForIndexSync()` uses `limit 100`, so it assumes the FAQ has at most 100 chunks (today: 37).
+
+---
+
+## Phase 5 — Step 5: Make the FAQ ready for follow-ups
+
+### Goal
+A follow-up like "Who can do that?" or "Where do I find it?" is answered from the **same chunk** as the first question. So every how-to answer must name the role, and every menu/button must use the exact name from the app. This phase adds a checker that finds entries that break this, and a list of exact wording changes, one per flagged entry.
+
+### Files changed
+
+| File | Type | Purpose |
+| --- | --- | --- |
+| `backend/chatbot/data/faq_terms.json` | **New** | The real roles, sidebar menus, buttons and form labels, **taken from `origin/main`** (not from memory) |
+| `backend/chatbot/checkFaq.js` | **New** | Reads every chunk in Atlas and flags: how-to answers without a role, names that aren't exact, the same menu written differently, and short or vague answers |
+
+### Where the names in `faq_terms.json` come from (checked on `origin/main`)
+
+| Group | Source |
+| --- | --- |
+| Roles: Admin, Officer, Lab Technician | `backend/routes/*` `requireRole(...)`, `frontend/src/routes/AppRoutes.jsx` `allowedRoles` |
+| 17 menus (Dashboard … DNA Sample Report, My Profile, Sign out) | `frontend/src/layouts/AppLayout.jsx` (`navByRole` + sidebar bottom) |
+| 34 buttons | Button/link labels grepped in `frontend/src/pages/*.jsx`. Every name the FAQ uses was confirmed to exist. The admin pages' add buttons are **Add Station, Add Officer, Add DNA Lab, Add Technician** (`Administration.jsx`). |
+| Form/page labels | `Analyze Sample`, `Sample Type`, `Unknown / Evidence Sample`, `Matched / Reference Sample`, `Family Member (reference sample)`, sample statuses (`Laboratory.jsx`) |
+
+### Code — `backend/chatbot/checkFaq.js` (full new file)
+
+```js
+// backend/chatbot/checkFaq.js   →   run from backend folder: node chatbot/checkFaq.js
+// Reads every chunk in Atlas and flags FAQ wording that will hurt follow-up answers:
+//   - "How do I… / How does…" answers that don't name a role (Admin / Officer / Lab Technician)
+//   - menu/button names after "open / click / go to / choose / select / use / in" that are not
+//     an exact name from data/faq_terms.json (taken from the real app on main)
+//   - the same menu written a different way ("Add a Sample" vs "Add Sample", wrong capital letters)
+//   - answers that are very short or vague ("an Add button", "etc")
+// Exit code 1 if anything is flagged. (Follow-up e "Who can do that?" er uttor dite role/menu naam lagbe)
+import 'dotenv/config';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { getCollection, closeMongo } from './mongoClient.js';
+import { questionLine } from './evaluate.js';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const TERMS = JSON.parse(fs.readFileSync(path.join(here, 'data', 'faq_terms.json'), 'utf8'));
+
+// Lomba naam age — "Register DNA Sample" ke "Register DNA" er age mele
+const KNOWN = [...TERMS.menus, ...TERMS.buttons, ...TERMS.fields].sort((a, b) => b.length - a.length);
+const ROLE_WORDS = Object.values(TERMS.roles).flat();
+const MIN_ANSWER_WORDS = 20;
+
+// Ei word er porer Title Case phrase = menu/button/page er naam
+const NAV = /\b(open|opens|click|clicks|go to|goes to|choose|select|use|uses|in)\s+(?:the\s+|an?\s+)?/gi;
+// "+ Add Family Member", "Users & Accounts", "Unknown / Evidence Sample", "Export Report (CSV)",
+// ar vul "Add a Family Member" o puro dhore (majhe a/an/the/of thakle)
+const TITLE_PHRASE = /^(?:\+\s)?[A-Z][\w()]*(?:\s(?:&|\/|(?:(?:a|an|the|of)\s)?[A-Z(][\w()]*))*/;
+const VAGUE = [
+  [/\ban? (Add|Edit|Save|Delete) button\b/i, 'generic button — say the exact label'],
+  [/\bthe button\b/i, 'generic "the button" — say the exact label'],
+  [/\betc\b\.?/i, '"etc" — list the items'],
+  [/\bsomewhere\b/i, '"somewhere" — say where'],
+  [/\band so on\b/i, '"and so on" — list the items']
+];
+
+const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const wordCount = s => s.split(/\s+/).filter(Boolean).length;
+// "+ Add a Sample" → "add sample" — article, symbol, capital letter, plural 's' bad diye tulona
+const norm = s => s.toLowerCase().replace(/\b(a|an|the)\b/g, ' ').replace(/[^a-z0-9&/]+/g, ' ').trim()
+  .split(' ').map(w => (w.length > 3 ? w.replace(/s$/, '') : w)).join(' ');
+const NORM_KNOWN = new Map(KNOWN.map(k => [norm(k), k]));
+const endsWord = (text, len) => !/[A-Za-z0-9]/.test(text[len] ?? '');
+
+// Ektu mile emon known naam (word overlap) — suggestion er jonno
+function closestKnown(phrase) {
+  const words = new Set(norm(phrase).split(' '));
+  let best = null;
+  for (const k of KNOWN) {
+    const kw = norm(k).split(' ');
+    const overlap = kw.filter(w => words.has(w)).length / Math.max(kw.length, words.size);
+    if (!best || overlap > best.overlap) best = { k, overlap };
+  }
+  return best && best.overlap >= 0.34 ? best.k : null;
+}
+
+function splitQA(text) {
+  const [q, ...rest] = String(text).split(/\bA:/);
+  return { question: q.replace(/^Q:/, '').trim(), answer: rest.join('A:').trim() };
+}
+
+// Answer er shob menu/button naam check
+function checkNames(answer) {
+  const problems = [];
+  for (const m of answer.matchAll(NAV)) {
+    if (m[1] === 'In') continue; // boro haater "In" = sentence er shuru ba "In Analysis" status, menu na
+    const trigger = m[1].toLowerCase();
+    const rest = answer.slice(m.index + m[0].length);
+
+    const exact = KNOWN.find(k => rest.startsWith(k) && endsWord(rest, k.length));
+    if (exact) continue; // thik naam
+
+    // Choto/boro haat vul: "click register dna sample" ("in" er por prose hote pare, tai bad)
+    if (trigger !== 'in') {
+      const loose = KNOWN.find(k => k.includes(' ') && rest.toLowerCase().startsWith(k.toLowerCase()) && endsWord(rest, k.length));
+      if (loose) {
+        problems.push(`"${rest.slice(0, loose.length)}" is written differently from the menu name "${loose}"`);
+        continue;
+      }
+    }
+
+    const title = rest.match(TITLE_PHRASE);
+    if (!title) continue; // lowercase prose ("open a sample") — UI naam na
+    const phrase = title[0].replace(/[.,;:]+$/, '').trim();
+    if (TERMS.ignore.includes(phrase) || ROLE_WORDS.includes(phrase)) continue;
+
+    const same = NORM_KNOWN.get(norm(phrase));
+    if (same) {
+      problems.push(`"${phrase}" is written differently from the menu name "${same}"`);
+    } else {
+      const hint = closestKnown(phrase);
+      problems.push(`"${phrase}" (after "${m[1]}") is not an exact menu/button name${hint ? ` — did you mean "${hint}"?` : ''}`);
+    }
+  }
+  return problems;
+}
+
+function checkChunk(text) {
+  const problems = [];
+  const { question, answer } = splitQA(text);
+
+  // "How do I / How does … work" — step-by-step answer e ke korte pare sheta thakte hobe
+  // (follow-up "Who can do that?" er uttor ei chunk thekei ashbe)
+  if (/\bHow (do|does|can)\b/i.test(question)) {
+    const namesRole = ROLE_WORDS.some(r => new RegExp(`\\b${esc(r)}\\b`).test(answer));
+    if (!namesRole) problems.push('"How do I…" answer does not say which role can do it (Admin / Officer / Lab Technician)');
+  }
+
+  problems.push(...checkNames(answer));
+
+  const words = wordCount(answer);
+  if (words < MIN_ANSWER_WORDS) problems.push(`very short answer (${words} words)`);
+  for (const [re, why] of VAGUE) {
+    const m = answer.match(re);
+    if (m) problems.push(`vague: "${m[0]}" — ${why}`);
+  }
+  return problems;
+}
+
+try {
+  const col = await getCollection();
+  const docs = await col.find({}, { projection: { text: 1, chunkIndex: 1 } }).sort({ chunkIndex: 1 }).toArray();
+  const qaDocs = docs.filter(d => String(d.text).startsWith('Q:')); // intro chunk e Q&A nei
+
+  const flagged = [];
+  for (const doc of qaDocs) {
+    const problems = checkChunk(doc.text);
+    if (problems.length) flagged.push({ doc, problems });
+  }
+
+  console.log(`Checked ${qaDocs.length} Q&A chunks (roles and menu names from data/faq_terms.json)`);
+  if (flagged.length === 0) {
+    console.log('✅ No problems found');
+  } else {
+    const total = flagged.reduce((n, f) => n + f.problems.length, 0);
+    console.log(`❌ ${total} problem(s) in ${flagged.length} FAQ entries:\n`);
+    for (const { doc, problems } of flagged) {
+      console.log(`[chunk ${doc.chunkIndex}] ${questionLine(doc.text)}`);
+      problems.forEach(p => console.log(`   - ${p}`));
+    }
+    process.exitCode = 1;
+  }
+} catch (err) {
+  console.error('FAQ check FAILED:', err.message);
+  process.exitCode = 1;
+} finally {
+  await closeMongo(); // fail korleo connection bondho
+}
+```
+
+### Code — `backend/chatbot/data/faq_terms.json` (full new file)
+
+```json
+{
+  "description": "Real roles and exact UI names in ForenTrace, taken from origin/main (frontend/src/layouts/AppLayout.jsx navByRole, pages/*.jsx buttons, backend role checks). Used by checkFaq.js.",
+  "roles": {
+    "Admin": ["Admin", "Admins", "Administrator"],
+    "Officer": ["Officer", "Officers", "Police Officer", "Police Officers"],
+    "Lab Technician": ["Lab Technician", "Lab Technicians", "technician", "technicians"]
+  },
+  "menus": [
+    "Dashboard",
+    "Missing Persons",
+    "Family Members",
+    "Investigation Cases",
+    "DNA Samples",
+    "DNA Matches",
+    "Police Stations",
+    "Police Officers",
+    "DNA Labs",
+    "Lab Technicians",
+    "DNA Analytics",
+    "Users & Accounts",
+    "Reports",
+    "Labs Intersection",
+    "DNA Sample Report",
+    "My Profile",
+    "Sign out"
+  ],
+  "buttons": [
+    "Sign in",
+    "Register as an officer or lab technician",
+    "Register as Police Officer (Detailed)",
+    "Register person",
+    "Register Missing Person",
+    "Create Case",
+    "Save Case",
+    "Edit Case",
+    "Delete Case",
+    "Delete",
+    "+ Add Family Member",
+    "Save Family Member",
+    "Register DNA",
+    "Confirm & Register DNA Sample",
+    "Register DNA Sample",
+    "Save DNA Sample",
+    "Analyze",
+    "Save Analysis",
+    "New Comparison",
+    "Compare",
+    "Run Comparison",
+    "Save Match",
+    "Confirm Match",
+    "Reject Match",
+    "Change Password",
+    "Save",
+    "Activate",
+    "Deactivate",
+    "+ Link User",
+    "Add Station",
+    "Add Officer",
+    "Add DNA Lab",
+    "Add Technician",
+    "Export Report (CSV)"
+  ],
+  "fields": [
+    "Analyze Sample",
+    "Sample Type",
+    "Unknown / Evidence Sample",
+    "Matched / Reference Sample",
+    "Family Member (reference sample)",
+    "In Analysis",
+    "Analyzed",
+    "Rejected"
+  ],
+  "ignore": ["ForenTrace", "DNA", "Q", "A"]
+}
+```
+
+### What each part does
+
+| Part | What it does |
+| --- | --- |
+| `KNOWN` | All menus, buttons and form labels, **longest first**, so "Register DNA Sample" is matched before "Register DNA". |
+| Role check | For questions with "How do / does / can", the answer must contain a role word from `faq_terms.json` (Admin, Officer, Lab Technician, technician …). The plan asked for "How do I…". "How does DNA matching work?" was added because its answer is also click-by-click, and "Who can do that?" needs a role. |
+| `NAV` + name check | After `open / click / go to / choose / select / use / in (the / a / an)`, the text must start with an exact known name. If not, the capitalized phrase there is taken as a UI name and checked. Lowercase prose ("open a sample", "the login page") is ignored. A capital "In" is skipped, because it starts a sentence or the status "In Analysis". |
+| `norm()` | Compares names without articles, symbols, capital letters or a plural "s": "Add a Family Member" → `add family member` = "+ Add Family Member", and "DNA Sample" = "DNA Samples". Same name, different text → **"written differently"**. |
+| Lowercase check | "click register dna sample" → written differently from "Register DNA Sample" (not after "in", where normal prose is common). |
+| `closestKnown()` | For an unknown name, suggests the known name that shares the most words. |
+| Short / vague | Answer under 20 words; "an Add button" / "the button" (say the exact label); "etc", "somewhere", "and so on". |
+| Exit code | 1 if anything is flagged. `closeMongo()` in `finally`. |
+
+### Testing results
+
+**Offline rule test (bad examples):**
+
+| Example | Flagged as |
+| --- | --- |
+| "Click Sign out … click My Profile then Change Password" | *(nothing)* ✅ |
+| "Open DNA Sample and click Save" | "DNA Sample" written differently from "DNA Samples" ✅ |
+| "click Add a Family Member" | written differently from "+ Add Family Member" ✅ |
+| "click register dna sample" | written differently from "Register DNA Sample" ✅ |
+| "Open Sample Manager and click Upload Sample" | 2 × not an exact menu/button name ✅ |
+| "How do I log out? A: Click Sign out …" (no role) | doesn't say which role ✅ |
+| "… Police Stations etc. Each page has an Add button …" | vague "an Add button", vague "etc" ✅ |
+| "A: X is a thing." | very short ✅ |
+
+Two fixes came from this test: articles inside a name ("Add **a** Family Member" was cut at "a"), and singular/plural ("DNA Sample" wasn't matched to "DNA Samples"). The first real run also flagged "In Analysis" as a menu, so a capital "In" is now skipped.
+
+**Real run on Atlas (36 Q&A chunks):**
+```text
+Checked 36 Q&A chunks (roles and menu names from data/faq_terms.json)
+❌ 6 problem(s) in 5 FAQ entries:
+
+[chunk 11] Q: How do I change (update, reset) my password?
+   - "How do I…" answer does not say which role can do it (Admin / Officer / Lab Technician)
+[chunk 12] Q: How do I log out (sign out) of ForenTrace?
+   - "How do I…" answer does not say which role can do it (Admin / Officer / Lab Technician)
+   - very short answer (19 words)
+[chunk 22] Q: What DNA sample types can be registered?
+   - very short answer (18 words)
+[chunk 26] Q: How does DNA matching (DNA comparison) work in ForenTrace?
+   - "How do I…" answer does not say which role can do it (Admin / Officer / Lab Technician)
+[chunk 33] Q: How does the Admin add (create) and manage police stations, police officers, DNA labs (laboratories) and lab technicians?
+   - vague: "an Add button" — generic button — say the exact label
+```
+Every menu and button name the FAQ uses is already exact, and nothing is written two different ways.
+
+### ⚠ App finding: Change Password doesn't work on `main`
+While checking the password answer against the code: `frontend/src/pages/Administration.jsx` (`Profile`) calls `changePassword` from `services/mockAuth.js`, which only does:
+```js
+export function changePassword(_id, _currentPassword, _nextPassword) {
+  throw new Error('Password changes are not available yet. Contact an administrator.')
+}
+```
+No backend route changes a password. So the current FAQ answer ("click Change Password … then click Save") describes something that shows an error. This is **not** Member 1's code. Tell the team. If someone implements it before the demo, keep the old answer instead of change 1 below.
+
+### Suggested wording changes (one per flagged entry; answers only, questions unchanged)
+
+Every fact was checked on `origin/main`: comparisons are allowed for `Admin, Officer, Lab Technician` (`dnaMatchRoutes.js`, `POST /compare` and `POST /`); My Profile is open to all 3 roles (`AppRoutes.jsx`); the `Sample Type` field is in the Register DNA Sample form (`Laboratory.jsx`); the admin add buttons are in `Administration.jsx`.
+
+| # | FAQ entry | Current answer | New answer |
+| --- | --- | --- | --- |
+| 1 | Change password | A: Click My Profile at the bottom of the sidebar, then click Change Password. Enter your current password and your new password, then click Save. | A: Any user (Admin, Officer or Lab Technician) can click My Profile at the bottom of the sidebar, then click Change Password. Changing the password is not available yet, so please contact the Admin. |
+| 2 | Log out | A: Click Sign out at the bottom of the sidebar. Your session ends and you return to the login page. | A: Any user (Admin, Officer or Lab Technician) can click Sign out at the bottom of the sidebar. Your session ends and you return to the login page. |
+| 3 | Sample types | A: ForenTrace supports these sample types: Buccal Swab, Blood Sample, Hair Strand, Bone Sample, Tissue Sample and Personal Belonging. | A: ForenTrace supports these sample types: Buccal Swab, Blood Sample, Hair Strand, Bone Sample, Tissue Sample and Personal Belonging. Admins and Officers choose the type in the Sample Type field when they click Register DNA Sample. |
+| 4 | DNA matching | A: Open DNA Matches and click New Comparison, or click Compare … | A: **Admins, Officers and Lab Technicians can run a DNA comparison.** Open DNA Matches and click New Comparison, or click Compare … *(rest unchanged)* |
+| 5 | Admin management | … Each page has an Add button, and each record can be viewed, edited or deleted. … | … Each page has its own add button (Add Station, Add Officer, Add DNA Lab or Add Technician), and each record can be viewed, edited or deleted. … *(rest unchanged)* |
+
+### Checked before suggesting (offline; the FAQ and Atlas were not touched)
+
+| Check | Result with all 5 changes |
+| --- | --- |
+| `checkFaq.js` rules on the edited FAQ text | **0 problems** (36 Q&A chunks, longest 79 words) |
+| Chunk rules (step 1) | Still one Q&A per chunk, nothing over 120 words |
+| Main file (step 2) | 10/10, lowest on 0.8088, highest off 0.5926 (unchanged) |
+| Holdout (step 2) | 86/91 → **85/91** |
+
+**The one holdout loss:** the typo question "how to chnage my pasword". Before: the password entry came first, but at 0.6348 it was **blocked**. After: a different entry comes first at 0.6203, and it is still **blocked**. The user sees the same refusal both times. Three other password wordings were tried (shorter, longer, "password" repeated more). All lost this same typo, so any correction of the password answer costs it. The correct answer is worth more than this one blocked typo. If you'd rather keep 86/91, skip change 1 and ask the team to implement Change Password.
+
+### What you (Member 1) do for this step
+1. Read the table above and the ⚠ app finding.
+2. Apply the changes (all 5, or 2–5 without the password one) in `forentrace_faq.docx` + `forentrace_faq_source.txt`, export the PDF, and say **"re-ingest and re-run"**. Or ask the agent to apply them, as in Phase 2b. The agent then re-runs steps 1, 2 and 5 (`checkChunks.js`, both evaluations, `checkFaq.js`) and confirms.
+3. Tell the team about Change Password.
+
+### Known gaps / notes
+- The name check only looks at text after open/click/go to/choose/select/use/in. A menu name mentioned any other way ("the Reports page shows …") isn't checked.
+- `faq_terms.json` must be updated if the app's menus or buttons change on `main`.
