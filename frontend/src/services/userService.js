@@ -15,6 +15,20 @@ export async function createManagedUser(values) {
   return response.data
 }
 
+export async function changeOwnPassword(currentPassword, newPassword) {
+  const response = await api.put('/users/password', {
+    currentPassword,
+    newPassword,
+  })
+
+  return response.data
+}
+
+export async function resetUserPassword(id, newPassword) {
+  const response = await api.put(`/users/${id}/password/reset`, { newPassword })
+  return response.data
+}
+
 export async function updateUser(id, values) {
   const response = await api.put(`/users/${id}`, {
     name: values.name,
