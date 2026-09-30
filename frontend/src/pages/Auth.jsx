@@ -6,6 +6,7 @@ import { registerUser, registerOfficer } from '../services/authService'
 import { getStations } from '../services/policeStationService'
 import { useData } from '../data/DataContext'
 import { dashboardPath } from '../utils/auth'
+import { DnaHelix } from '../components/DnaEffects' // DNA animation (UI upgrade)
 
 export const REGISTERABLE_ROLES = ['Officer', 'Lab Technician']
 
@@ -159,6 +160,8 @@ export default function Login() {
           Centralized management for missing-person investigations,
           forensic DNA samples, and identification records.
         </p>
+        {/* Boro ghurte thaka DNA helix — login page er decoration (UI upgrade) */}
+        <DnaHelix rungs={10} size="large" />
       </section>
 
       <section className="login-form-wrap">

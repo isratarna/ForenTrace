@@ -21,6 +21,9 @@ This file records every change made for Member 1, phase by phase. Each phase mat
 | 6 | Issue 6: SQL UNION Report | ✅ Done |
 | 7 | Issue 7: Connect the lab frontend to the real backend | ✅ Done |
 | Extra | Stored procedure `compare_dna_samples` | ✅ Done |
+| UI 1 | UI upgrade: black + teal DNA theme, live elements, scroll effects (branch `ui/m1-ui-upgrade`) | ✅ Done |
+| UI 1b | UI minimal pass: neutral dark, teal only as accent, fewer/quieter effects | ✅ Done |
+| UI 2 | DNA Analytics page onto the theme + removed unprotected duplicate `/dna-analytics` route | ✅ Done |
 
 ---
 
@@ -7004,3 +7007,2176 @@ With this extra, Member 1's advanced SQL covers:
 | **UNION** (assigned) | `union_report.sql` | DNA Sample Report |
 | **Stored procedure** (extra) | `compare_dna_samples_procedure.sql` | `POST /api/dna-matches/compare` + computed match create |
 | Recursive CTE (standalone version) | `dna_matches.sql` query 1 | Reference / verification query |
+
+---
+
+# UI Phase 1 — Black + Teal DNA Theme (branch `ui/m1-ui-upgrade`)
+
+## Goal
+
+Upgrade the look of the **whole project** without rewriting the pages:
+
+- colour scheme **black + teal**, so it feels like a DNA matching / forensic lab system,
+- **micro-transitions** (hover, click, focus, page enter),
+- **scroll effects** (progress bar, back-to-top, cards reveal on scroll),
+- **live elements** (moving DNA helix, A/T/G/C sequencer ticker, live clock),
+- a **non-solid background** (moving teal glow + lab grid + scanner line),
+- **minimal, beginner-friendly code**: plain CSS in one file + one small component file, existing components reused.
+
+Work is on its own branch (`ui/m1-ui-upgrade`, made from the latest `main`) so teammates working on `main` are not affected.
+
+## Files changed
+
+| File | Type | What changed |
+|---|---|---|
+| `frontend/index.html` | Modified | `data-bs-theme="dark"` turns on Bootstrap 5.3's built-in dark mode for every page. Real page title |
+| `frontend/src/components/DnaEffects.jsx` | **New** | 4 small live components: `DnaHelix`, `DnaTicker`, `LiveClock`, `ScrollProgress` |
+| `frontend/src/index.css` | Rewritten | The whole black + teal theme. Keeps **every old class name**, adds colour variables, animated background, Bootstrap overrides, micro-transitions, scroll reveal |
+| `frontend/src/layouts/AppLayout.jsx` | Modified | Uses the new components: helix logo, ticker + live clock in the topbar, scroll progress bar |
+| `frontend/src/pages/Auth.jsx` | Modified | Login side panel gets the ticker and a big spinning DNA helix |
+| `frontend/src/pages/Laboratory.jsx` | Modified (1 line) | DNA code comparison cells: light green / pink → teal glow / soft red, readable on dark |
+
+No backend or database changes.
+
+## How the theme reaches every page (why the change is small)
+
+1. **Bootstrap dark mode** — one attribute (`data-bs-theme="dark"`) makes all Bootstrap parts dark: cards, tables, forms, modals, alerts, dropdowns.
+2. **Bootstrap variables → teal** — Bootstrap reads its colours from CSS variables (`--bs-primary`, `--bs-link-color`, …). `index.css` changes those variables, so every `btn-primary`, link, badge, progress bar, checkbox becomes teal without touching the pages.
+3. **Old class names kept** — `.sidebar`, `.side-link`, `.topbar`, `.metric-card`, `.page-header`, `.detail-grid`, `.match-hero`, `.login-*` … all still exist, only restyled. So no page JSX needed to change.
+4. **Light-only classes fixed in one place** — pages use `bg-white`, `bg-light`, `table-light`, `text-dark`, `btn-light` (made for a light theme). `index.css` re-colours these for dark, instead of editing ~40 lines across pages.
+
+## Live elements & effects
+
+| Effect | Where | How (simple) |
+|---|---|---|
+| Moving background glow + grid | Every page | `body::before` (fixed layer behind everything), slowly moved with a CSS `@keyframes` |
+| Scanner line | Every page | `#root::before`, a soft teal strip that moves top → bottom forever |
+| DNA helix (small) | Sidebar logo | `DnaHelix` — each rung is a line with 2 dots, flipped with `scaleX(1 → -1 → 1)`; each rung starts a bit later, so together they look like a twisting helix |
+| DNA helix (large) | Login page | Same component, `size="large"` |
+| A/T/G/C ticker | Topbar + login | `DnaTicker` — the sequence is written twice and slides left by 50% in a loop, so it never jumps |
+| Live clock + pulsing dot | Topbar | `LiveClock` — `setInterval` every 1 s. Kept as its own component, so only the clock re-renders, not the whole page |
+| Scanner beam | Topbar bottom edge | `.topbar::after`, a short teal line moving left → right |
+| Scroll progress bar | Top of screen | `ScrollProgress` — `window.scrollY / (page height − screen height)` → width % |
+| Back-to-top button | Bottom right | Appears after 20% scroll, `window.scrollTo({ top: 0, behavior: 'smooth' })` |
+| Cards reveal on scroll | All cards | CSS only: `animation-timeline: view()` — a card fades + slides up as it enters the screen. Wrapped in `@supports`, so browsers without it just show the card normally |
+| Page enter | All pages | Page parts fade up one by one (`.content-wrap > *` with small delays) |
+| Blinking cursor | Login "AUTHORIZED ACCESS_" | `.eyebrow::after` with `content: '_'` + blink |
+| Match score glow pulse | DNA match hero | `.match-score b` text-shadow pulse |
+
+**Micro-transitions:** sidebar links slide right on hover and show a glowing teal bar when active. Cards get a teal border glow on hover. Metric cards and report cards lift up. Buttons glow on hover and press in on click (`scale(.96)`). Inputs glow teal on focus. Table rows light up with a teal left edge on hover. The user avatar grows on hover.
+
+**Forensic touches:** a gel-electrophoresis band pattern on metric cards, a teal "LED" dot before each card title, monospace (JetBrains Mono) for numbers, clock, ticker and labels, a lab-grid background, and the scanner line.
+
+**Accessibility:** if the user has "reduce motion" on in their OS, all animations and transitions are switched off (`prefers-reduced-motion`).
+
+## Design decisions
+
+- **Minimal JS.** All effects are CSS except the four tiny components (clock, ticker, helix, scroll bar). There are no new npm packages.
+- **Live components are separate.** The clock ticks every second and the scroll bar updates on every scroll. If that state lived in `AppLayout`, the whole current page would re-render each second. As separate components, only they re-render.
+- **`body` is transparent.** The live background is `body::before` with `z-index: -1`. A solid `body` background would be painted **over** it (this happened in testing: the glow was only visible below short pages). So the black colour sits on `:root` (html), and `body` stays transparent.
+- **No `transform` left on page wrappers after animation.** The page-enter animation uses `backwards` fill, so after it ends nothing is left on the element. A leftover `transform` would break `position: fixed` modals inside the page (e.g. the Lab Technicians "Link user" modal).
+- **Helix size class is `helix-large`, not `large`.** `Auth.jsx` already had a `.login-brand .large` rule (58×58 px for the FT logo). The first version used `large` and the helix got squashed into 58 px, so it was renamed.
+- **Card reveal uses the `translate` property, and hover uses `transform`.** These are two different CSS properties, so the scroll animation and the hover lift don't cancel each other.
+
+---
+
+## UI1.1 `frontend/index.html` (modified)
+
+| Change | Why |
+|---|---|
+| `data-bs-theme="dark"` on `<html>` | Turns on Bootstrap's dark mode for the whole app |
+| `<title>` | Was the Vite default `frontend` |
+
+```diff
+diff --git a/frontend/index.html b/frontend/index.html
+index f94d687..faf9179 100644
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -1,10 +1,10 @@
+ <!doctype html>
+-<html lang="en">
++<html lang="en" data-bs-theme="dark">
+   <head>
+     <meta charset="UTF-8" />
+     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-    <title>frontend</title>
++    <title>ForenTrace — DNA Identification System</title>
+   </head>
+   <body>
+     <div id="root"></div>
+```
+
+## UI1.2 `frontend/src/components/DnaEffects.jsx` (new)
+
+| Part | What it does |
+|---|---|
+| `DnaHelix({ rungs, size })` | Makes `rungs` spans. Each gets a negative `animationDelay` (`index * -0.2s`), so every rung is at a different point of the spin → twisted DNA look. `size` adds class `helix-small` / `helix-large` |
+| `SEQUENCE` + `DnaTicker()` | Splits `SEQUENCE + SEQUENCE` into letters, each in a `base-A/T/G/C` span (each base has its own colour). CSS slides the track left by 50% → seamless loop |
+| `LiveClock()` | `useState(new Date())` + `setInterval` every 1000 ms. The cleanup (`clearInterval`) stops the timer when the component leaves the screen |
+| `ScrollProgress()` | Listens to `scroll`, calculates the % scrolled, sets the bar width. Shows the back-to-top button after 20 % |
+
+```jsx
+import { useEffect, useState } from 'react'
+
+// Choto choto "live" UI element gula ekhane — DNA / forensic feel dewar jonno
+// (UI upgrade - Member 1). Shob styling index.css e ache.
+
+// 1) DnaHelix — ghurte thaka DNA er sidi (double helix)
+// Protiti "rung" holo ekta line, tar dui mathay duita dot.
+// Protiti rung er animation ektu por por shuru hoy, tai pura ta pechano DNA er moto dekhay.
+export function DnaHelix({ rungs = 6, size = 'small' }) {
+  const list = Array.from({ length: rungs }, (_, index) => index) // [0, 1, 2, ...]
+  return (
+    <div className={`dna-helix helix-${size}`} aria-hidden="true">
+      {list.map(index => (
+        <span key={index} className="dna-rung" style={{ animationDelay: `${index * -0.2}s` }} />
+      ))}
+    </div>
+  )
+}
+
+// 2) DnaTicker — A T G C base gula bam dike cholte thake (sequencer screen er moto)
+// Sequence ta duibar boshano hoy, jate loop ta kothao kete na jay.
+const SEQUENCE = 'ATGCGTACCTAGGATCCGATCGTAGCTAGGCTTAACGGATCCATGGCTA'
+
+export function DnaTicker() {
+  const bases = (SEQUENCE + SEQUENCE).split('')
+  return (
+    <div className="dna-ticker" aria-hidden="true">
+      <div className="dna-ticker-track">
+        {bases.map((base, index) => <span key={index} className={`base-${base}`}>{base}</span>)}
+      </div>
+    </div>
+  )
+}
+
+// 3) LiveClock — proti second e time update hoy, pashe ekta "live" dot jole-nebhe
+// Alada component rakha hoyeche, jate shudhu clock ta re-render hoy, pura page na.
+export function LiveClock() {
+  const [now, setNow] = useState(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000) // 1 second por por
+    return () => clearInterval(timer) // component chole gele timer bondho
+  }, [])
+
+  return (
+    <span className="live-status">
+      <span className="live-dot" />
+      <span>SYSTEM LIVE</span>
+      <span className="live-time">{now.toLocaleTimeString()}</span>
+    </span>
+  )
+}
+
+// 4) ScrollProgress — upore ekta teal bar, page koto tuku scroll hoyeche dekhay
+// + onek niche gele "back to top" button ashe.
+export function ScrollProgress() {
+  const [percent, setPercent] = useState(0)
+
+  useEffect(() => {
+    const onScroll = () => {
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight
+      setPercent(maxScroll > 0 ? (window.scrollY / maxScroll) * 100 : 0)
+    }
+    onScroll() // prothom bar o ekbar hishab kori
+    window.addEventListener('scroll', onScroll)
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  return (
+    <>
+      <div className="scroll-progress" style={{ width: `${percent}%` }} />
+      {percent > 20 && (
+        <button
+          type="button"
+          className="back-to-top"
+          aria-label="Back to top"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
+          ↑
+        </button>
+      )}
+    </>
+  )
+}
+```
+
+## UI1.3 `frontend/src/index.css` (rewritten)
+
+The old file was a few very long lines. The new file has the same class names, split into readable sections with Banglish comments:
+
+| Section | What it does |
+|---|---|
+| `:root` variables (`--ft-*`) | All theme colours in one place: black background, teal, borders, text, mono font |
+| `:root[data-bs-theme="dark"]` | Bootstrap's own variables re-pointed to black + teal (primary, links, borders, focus ring, text) |
+| Live background | `body::before` (glow + grid, `bg-drift`), `#root::before` (scanner line, `scan-down`) |
+| App shell | Sticky sidebar with glass gradient, sliding/glowing `.side-link`, sticky blurred `.topbar` with beam, glowing `.user-chip` |
+| Live elements | `.dna-helix` / `.dna-rung` (`helix-spin`), `.dna-ticker` (`ticker`), `.live-status` / `.live-dot` (`pulse`), `.scroll-progress`, `.back-to-top` (`pop-in`) |
+| Page content | Page-enter `fade-up`, page header gradient title + growing underline, cards, metric cards (gel bands), tables, badges |
+| Buttons / forms | `btn-primary`, `btn-outline-primary`, `btn-light` re-coloured. Press + glow micro-transitions. Teal focus glow on inputs |
+| Other Bootstrap parts | progress, nav-pills, dropdown, list-group, modal → teal |
+| Light-class fixes | `bg-white`, `bg-light`, `text-dark`, `table-light` made dark-friendly (with `!important`, because Bootstrap's utilities use it) |
+| Detail / match / report / login | Old classes re-coloured. Match score pulse, blinking eyebrow cursor, login glass card |
+| Scroll reveal | `@supports (animation-timeline: view())` + `prefers-reduced-motion: no-preference` → `.content-wrap .card` uses `reveal` |
+| Reduce motion | Turns every animation/transition off for users who ask for it |
+| Small screens | Existing breakpoints kept. Sidebar becomes non-sticky on phones, ticker/clock hidden when there's no room |
+
+```css
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+/* =====================================================================
+   ForenTrace theme — Black + Teal (DNA / forensic lab look)
+   UI upgrade (Member 1). Shob rong ekhane variable hishebe rakha,
+   rong bodlate chaile shudhu ei jaygay bodlalei hobe.
+   ===================================================================== */
+:root {
+  --ft-bg: #040809;                          /* main kalo background */
+  --ft-surface: rgba(10, 22, 24, 0.82);      /* card er background (ektu transparent) */
+  --ft-surface-solid: #0a1618;               /* same, but solid */
+  --ft-border: rgba(45, 212, 191, 0.14);     /* halka teal border */
+  --ft-border-strong: rgba(45, 212, 191, 0.45);
+  --ft-teal: #14b8a6;                        /* main teal */
+  --ft-teal-light: #2dd4bf;                  /* ujjol teal (glow, link) */
+  --ft-teal-glow: rgba(45, 212, 191, 0.35);
+  --ft-text: #d5e4e6;                        /* normal lekha */
+  --ft-muted: #8aa4a8;                       /* halka lekha */
+  --ft-mono: 'JetBrains Mono', Consolas, monospace; /* sequencer / code er font */
+
+  font-family: 'DM Sans', Arial, sans-serif;
+  color: var(--ft-text);
+  background: var(--ft-bg);
+}
+
+/* Bootstrap dark mode er rong gula teal e bodlano (index.html e data-bs-theme="dark" deya ache) */
+:root[data-bs-theme="dark"] {
+  --bs-body-bg: #040809;
+  --bs-body-bg-rgb: 4, 8, 9;
+  --bs-body-color: #d5e4e6;
+  --bs-body-color-rgb: 213, 228, 230;
+  --bs-heading-color: #f0fdfa;
+  --bs-emphasis-color: #ffffff;
+  --bs-secondary-color: rgba(160, 190, 194, 0.8);
+  --bs-secondary-bg: #0c1a1c;
+  --bs-tertiary-bg: #081315;
+  --bs-border-color: rgba(45, 212, 191, 0.14);
+  --bs-border-color-translucent: rgba(45, 212, 191, 0.12);
+  --bs-primary: #14b8a6;
+  --bs-primary-rgb: 20, 184, 166;
+  --bs-primary-text-emphasis: #5eead4;
+  --bs-primary-bg-subtle: #042f2c;
+  --bs-primary-border-subtle: #0f766e;
+  --bs-link-color: #2dd4bf;
+  --bs-link-color-rgb: 45, 212, 191;
+  --bs-link-hover-color: #99f6e4;
+  --bs-link-hover-color-rgb: 153, 246, 228;
+  --bs-focus-ring-color: rgba(45, 212, 191, 0.3);
+  --bs-font-sans-serif: 'DM Sans', Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+/* body transparent rakha — noile pichoner live background (body::before) dhaka pore jay.
+   Kalo rong ta :root (html) e deya ache. */
+body { margin: 0; min-width: 320px; background: transparent; }
+a { text-decoration: none; transition: color .2s ease; }
+::selection { background: rgba(45, 212, 191, 0.35); color: #fff; }
+
+/* Scrollbar o teal */
+html { scrollbar-color: #134e4a var(--ft-bg); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--ft-bg); }
+::-webkit-scrollbar-thumb { background: #134e4a; border-radius: 10px; border: 2px solid var(--ft-bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--ft-teal); }
+
+/* ---------------------------------------------------------------------
+   Live background (solid na) — shob page er pichone
+   body::before = teal alo (glow) + grid, dhire dhire nore
+   #root::before = ekta scanner line upor theke niche nambe
+   --------------------------------------------------------------------- */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 72% 22%, rgba(20, 184, 166, 0.22), transparent 32%),
+    radial-gradient(circle at 30% 80%, rgba(8, 145, 178, 0.16), transparent 35%),
+    linear-gradient(rgba(45, 212, 191, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45, 212, 191, 0.05) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 42px 42px, 42px 42px;
+  animation: bg-drift 22s ease-in-out infinite alternate;
+}
+
+#root::before {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 140px;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, rgba(45, 212, 191, 0.07), transparent);
+  animation: scan-down 9s linear infinite;
+}
+
+@keyframes bg-drift {
+  from { transform: translate(0, 0) rotate(0deg); }
+  to { transform: translate(4%, -3%) rotate(3deg); }
+}
+@keyframes scan-down {
+  from { transform: translateY(-140px); }
+  to { transform: translateY(100vh); }
+}
+
+/* ---------------------------------------------------------------------
+   App shell: sidebar + topbar
+   --------------------------------------------------------------------- */
+.app-shell { display: flex; min-height: 100vh; }
+
+/* Sidebar scroll korleo ek jaygay thake (sticky) */
+.sidebar {
+  width: 255px;
+  flex: 0 0 255px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: linear-gradient(180deg, rgba(2, 6, 7, 0.94), rgba(3, 17, 18, 0.94));
+  border-right: 1px solid var(--ft-border);
+  color: var(--ft-text);
+  padding: 1.4rem .85rem;
+  display: flex;
+  flex-direction: column;
+}
+.brand { color: white; display: flex; align-items: center; gap: .7rem; font-size: 1.15rem; font-weight: 700; padding: 0 .55rem 1.6rem; }
+.brand small { display: block; font-size: .63rem; color: var(--ft-teal-light); letter-spacing: .04em; font-weight: 400; opacity: .85; }
+.brand-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  background: rgba(45, 212, 191, 0.08);
+  border: 1px solid var(--ft-border-strong);
+  box-shadow: 0 0 14px rgba(45, 212, 191, 0.25);
+  color: var(--ft-teal-light);
+  border-radius: 10px;
+  display: inline-grid;
+  place-items: center;
+  font-size: .7rem;
+  font-weight: 700;
+  overflow: hidden;
+}
+.role-label { margin: 0 .55rem .55rem; text-transform: uppercase; color: var(--ft-teal); font-family: var(--ft-mono); font-size: .66rem; letter-spacing: .12em; }
+
+/* Menu link — hover e dane shore, active hole bam e teal bar jole */
+.side-link {
+  position: relative;
+  display: block;
+  color: #9fb8bc;
+  border-radius: 8px;
+  padding: .62rem .75rem;
+  margin: .08rem 0;
+  font-size: .88rem;
+  transition: background-color .25s ease, color .25s ease, padding-left .25s ease;
+}
+.side-link::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--ft-teal-light);
+  box-shadow: 0 0 10px var(--ft-teal-light);
+  transform: scaleY(0);
+  transition: transform .25s ease;
+}
+.side-link:hover { background: rgba(45, 212, 191, 0.07); color: #fff; padding-left: 1rem; }
+.side-link.active { background: linear-gradient(90deg, rgba(45, 212, 191, 0.18), rgba(45, 212, 191, 0.02)); color: #fff; }
+.side-link.active::before { transform: scaleY(1); }
+.sidebar-bottom { margin-top: auto; border-top: 1px solid var(--ft-border); padding-top: .7rem; }
+
+.main-content { min-width: 0; flex: 1; }
+
+/* Topbar — upore atkano, pichone blur (glass effect), niche ekta scanner alo chole */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1010;
+  overflow: hidden;
+  min-height: 64px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 2rem;
+  background: rgba(3, 8, 9, 0.72);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--ft-border);
+}
+.topbar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 25%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--ft-teal-light), transparent);
+  animation: beam 5s linear infinite;
+}
+@keyframes beam {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(400%); }
+}
+.topbar-left { display: flex; align-items: center; gap: 1.2rem; min-width: 0; }
+.role-switch { width: 135px; }
+.user-chip {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ft-teal-light), #0e7490);
+  color: #031312;
+  display: grid;
+  place-items: center;
+  font-size: .72rem;
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(45, 212, 191, 0.35);
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.user-chip:hover { color: #031312; transform: scale(1.08); box-shadow: 0 0 20px rgba(45, 212, 191, 0.6); }
+
+/* ---------------------------------------------------------------------
+   Live element gula (components/DnaEffects.jsx)
+   --------------------------------------------------------------------- */
+
+/* DNA helix: protiti rung ghore (scaleX 1 -> -1 -> 1), delay er karone pechano dekhay */
+.dna-helix { display: flex; flex-direction: column; justify-content: center; gap: 4px; width: 20px; }
+.dna-rung {
+  position: relative;
+  display: block;
+  height: 2px;
+  width: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--ft-teal-light), rgba(45, 212, 191, 0.45), #e6fffb);
+  animation: helix-spin 2.4s ease-in-out infinite;
+}
+.dna-rung::before,
+.dna-rung::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.dna-rung::before { left: -3px; background: var(--ft-teal-light); box-shadow: 0 0 6px var(--ft-teal-light); }
+.dna-rung::after { right: -3px; background: #e6fffb; box-shadow: 0 0 6px rgba(230, 255, 251, 0.8); }
+.dna-helix.helix-large { width: 110px; gap: 16px; }
+.dna-helix.helix-large .dna-rung { height: 3px; }
+.dna-helix.helix-large .dna-rung::before,
+.dna-helix.helix-large .dna-rung::after { width: 12px; height: 12px; top: -4.5px; }
+.dna-helix.helix-large .dna-rung::before { left: -6px; }
+.dna-helix.helix-large .dna-rung::after { right: -6px; }
+@keyframes helix-spin {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(-1); }
+}
+
+/* A T G C ticker — bam dike cholte thake */
+.dna-ticker {
+  width: 260px;
+  overflow: hidden;
+  font-family: var(--ft-mono);
+  font-size: .72rem;
+  letter-spacing: .22em;
+  mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
+}
+.dna-ticker-track { display: inline-flex; white-space: nowrap; animation: ticker 24s linear infinite; }
+.base-A { color: #2dd4bf; }
+.base-T { color: #67e8f9; }
+.base-G { color: #ecfeff; }
+.base-C { color: #0d9488; }
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); } /* sequence duibar ache, tai ordhek gele abar shuru */
+}
+
+/* "SYSTEM LIVE" + clock */
+.live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .3rem .7rem;
+  border: 1px solid var(--ft-border);
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.05);
+  color: var(--ft-teal-light);
+  font-family: var(--ft-mono);
+  font-size: .66rem;
+  letter-spacing: .12em;
+  white-space: nowrap;
+}
+.live-time { color: #fff; }
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ft-teal-light);
+  animation: pulse 1.8s ease-out infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.7); }
+  100% { box-shadow: 0 0 0 9px rgba(45, 212, 191, 0); }
+}
+
+/* Scroll progress bar + back to top button */
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  z-index: 1100;
+  pointer-events: none;
+  background: linear-gradient(90deg, #0d9488, var(--ft-teal-light), #a5f3fc);
+  box-shadow: 0 0 12px var(--ft-teal-glow);
+  transition: width .1s linear;
+}
+.back-to-top {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  z-index: 1030;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--ft-border-strong);
+  background: rgba(4, 12, 13, 0.9);
+  color: var(--ft-teal-light);
+  font-size: 1.2rem;
+  box-shadow: 0 0 16px rgba(45, 212, 191, 0.25);
+  animation: pop-in .3s ease;
+  transition: transform .2s ease, background-color .2s ease, color .2s ease;
+}
+.back-to-top:hover { transform: translateY(-3px); background: var(--ft-teal); color: #031312; }
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(.6); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ---------------------------------------------------------------------
+   Page content
+   --------------------------------------------------------------------- */
+.content-wrap { padding: 2rem; max-width: 1500px; }
+
+/* Notun page khulle content niche theke fade hoye uthe ashe (microtransition) */
+.content-wrap > * { animation: fade-up .5s ease backwards; }
+.content-wrap > *:nth-child(2) { animation-delay: .06s; }
+.content-wrap > *:nth-child(3) { animation-delay: .12s; }
+.content-wrap > *:nth-child(4) { animation-delay: .18s; }
+@keyframes fade-up {
+  from { opacity: 0; translate: 0 14px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+.page-header { position: relative; margin-bottom: 1.55rem; padding-bottom: 1rem; border-bottom: 1px solid var(--ft-border); }
+.page-header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 90px;
+  height: 2px;
+  background: var(--ft-teal-light);
+  box-shadow: 0 0 10px var(--ft-teal-light);
+  animation: grow-line .8s ease backwards;
+}
+@keyframes grow-line {
+  from { width: 0; }
+}
+/* Title e shada theke teal gradient */
+.page-header h1 {
+  display: inline-block;
+  font-size: 1.55rem;
+  margin: 0 0 .25rem;
+  font-weight: 700;
+  background: linear-gradient(90deg, #ffffff, #5eead4);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.text-secondary { color: var(--ft-muted) !important; }
+
+/* Card — halka transparent kalo, hover e teal glow */
+.card {
+  --bs-card-bg: var(--ft-surface);
+  --bs-card-border-color: var(--ft-border);
+  --bs-card-cap-bg: rgba(45, 212, 191, 0.04);
+  --bs-card-color: var(--ft-text);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  transition: border-color .3s ease, box-shadow .3s ease, transform .3s ease;
+}
+.card:hover { border-color: var(--ft-border-strong); box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 24px rgba(45, 212, 191, 0.08); }
+.card-header, .card-footer { border-color: var(--ft-border); }
+/* Card title er age ekta choto teal "LED" */
+.card-header strong::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: .55rem;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--ft-teal-light);
+  box-shadow: 0 0 8px var(--ft-teal-light);
+}
+
+/* Metric card — upore teal line, kone gel-electrophoresis er moto band, hover e upore uthe */
+.metric-card { position: relative; overflow: hidden; }
+.metric-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--ft-teal-light), transparent);
+}
+.metric-card::after {
+  content: '';
+  position: absolute;
+  right: 16px;
+  top: 54px;
+  width: 44px;
+  height: 22px;
+  background: repeating-linear-gradient(to bottom, var(--ft-teal-light) 0 2px, transparent 2px 7px);
+  opacity: .18;
+  transition: opacity .3s ease;
+}
+.metric-card:hover { transform: translateY(-4px); }
+.metric-card:hover::after { opacity: .5; }
+.metric-card h2 { font-size: 1.75rem; margin: 0; font-family: var(--ft-mono); color: #fff; text-shadow: 0 0 18px rgba(45, 212, 191, 0.4); }
+.metric-mark { float: right; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: #031312; font-weight: 700; }
+.metric-mark.primary { background: var(--ft-teal-light); box-shadow: 0 0 12px rgba(45, 212, 191, 0.45); }
+.metric-mark.success { background: #34d399; box-shadow: 0 0 12px rgba(52, 211, 153, 0.45); }
+.metric-mark.warning { background: #fbbf24; box-shadow: 0 0 12px rgba(251, 191, 36, 0.4); }
+
+/* Table — transparent, hover row e teal alo + bam e teal dag */
+.table {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--ft-text);
+  --bs-table-border-color: var(--ft-border);
+  --bs-table-hover-bg: rgba(45, 212, 191, 0.07);
+  --bs-table-hover-color: #fff;
+  --bs-table-striped-bg: rgba(255, 255, 255, 0.02);
+  font-size: .87rem;
+}
+.table > :not(caption) > * > * { transition: box-shadow .2s ease, color .2s ease; }
+.table-hover > tbody > tr:hover > :first-child { box-shadow: inset 3px 0 0 var(--ft-teal-light), inset 0 0 0 9999px var(--bs-table-hover-bg); }
+.table thead th { color: #5eead4; font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; white-space: nowrap; opacity: .85; }
+.table-light { --bs-table-bg: rgba(45, 212, 191, 0.06); --bs-table-color: #5eead4; --bs-table-border-color: var(--ft-border); }
+.status-badge { font-weight: 600; font-size: .7rem; letter-spacing: .03em; border-radius: 999px; padding: .38em .75em; }
+
+/* Button — teal, hover e glow, click e ektu chapa (microtransition) */
+.btn { transition: color .2s ease, background-color .2s ease, border-color .2s ease, box-shadow .2s ease, transform .15s ease; }
+.btn:not(:disabled):active { transform: scale(.96); }
+.btn-primary {
+  --bs-btn-color: #031312;
+  --bs-btn-bg: var(--ft-teal);
+  --bs-btn-border-color: var(--ft-teal);
+  --bs-btn-hover-color: #031312;
+  --bs-btn-hover-bg: var(--ft-teal-light);
+  --bs-btn-hover-border-color: var(--ft-teal-light);
+  --bs-btn-active-color: #031312;
+  --bs-btn-active-bg: #0d9488;
+  --bs-btn-active-border-color: #0d9488;
+  --bs-btn-disabled-color: rgba(3, 19, 18, 0.7);
+  --bs-btn-disabled-bg: #0f766e;
+  --bs-btn-disabled-border-color: #0f766e;
+  --bs-btn-focus-shadow-rgb: 45, 212, 191;
+  font-weight: 600;
+}
+.btn-primary:hover { box-shadow: 0 0 18px rgba(45, 212, 191, 0.45); }
+.btn-outline-primary {
+  --bs-btn-color: var(--ft-teal-light);
+  --bs-btn-border-color: rgba(45, 212, 191, 0.5);
+  --bs-btn-hover-color: #031312;
+  --bs-btn-hover-bg: var(--ft-teal-light);
+  --bs-btn-hover-border-color: var(--ft-teal-light);
+  --bs-btn-active-color: #031312;
+  --bs-btn-active-bg: var(--ft-teal);
+  --bs-btn-active-border-color: var(--ft-teal);
+  --bs-btn-focus-shadow-rgb: 45, 212, 191;
+}
+.btn-outline-primary:hover { box-shadow: 0 0 14px rgba(45, 212, 191, 0.35); }
+/* btn-light dark theme e shada dekhay, tai eke glass button banano */
+.btn-light {
+  --bs-btn-color: var(--ft-text);
+  --bs-btn-bg: rgba(255, 255, 255, 0.05);
+  --bs-btn-border-color: var(--ft-border);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: rgba(45, 212, 191, 0.12);
+  --bs-btn-hover-border-color: var(--ft-border-strong);
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: rgba(45, 212, 191, 0.2);
+  --bs-btn-active-border-color: var(--ft-border-strong);
+}
+
+/* Form input — focus korle teal glow */
+.form-control,
+.form-select {
+  background-color: rgba(3, 10, 11, 0.6);
+  border-color: var(--ft-border);
+  color: var(--ft-text);
+  transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
+}
+.form-control:focus,
+.form-select:focus {
+  background-color: rgba(3, 10, 11, 0.85);
+  border-color: var(--ft-teal-light);
+  box-shadow: 0 0 0 .2rem rgba(45, 212, 191, 0.18), 0 0 16px rgba(45, 212, 191, 0.15);
+  color: #fff;
+}
+.form-control::placeholder { color: rgba(160, 190, 194, 0.45); }
+.form-label { color: #b8cdd0; font-size: .85rem; }
+.form-check-input:checked { background-color: var(--ft-teal); border-color: var(--ft-teal); }
+.form-check-input:focus { border-color: var(--ft-teal-light); box-shadow: 0 0 0 .2rem rgba(45, 212, 191, 0.2); }
+
+/* Baki Bootstrap jinish er blue -> teal */
+.progress { --bs-progress-bg: rgba(255, 255, 255, 0.06); --bs-progress-bar-bg: var(--ft-teal-light); height: .55rem; }
+.progress-bar { box-shadow: 0 0 10px var(--ft-teal-glow); }
+.nav-pills { --bs-nav-pills-link-active-bg: var(--ft-teal); --bs-nav-pills-link-active-color: #031312; }
+.dropdown-menu { --bs-dropdown-link-active-bg: var(--ft-teal); --bs-dropdown-bg: var(--ft-surface-solid); --bs-dropdown-border-color: var(--ft-border); }
+.list-group { --bs-list-group-active-bg: var(--ft-teal); --bs-list-group-active-border-color: var(--ft-teal); --bs-list-group-bg: transparent; }
+.modal { --bs-modal-bg: var(--ft-surface-solid); --bs-modal-border-color: var(--ft-border-strong); }
+.modal-content { box-shadow: 0 0 40px rgba(45, 212, 191, 0.15); }
+
+/* Kichu page e bg-white / bg-light / text-dark lekha ache — dark theme e egulo thik kora */
+.bg-white, .bg-light { background-color: var(--ft-surface-solid) !important; color: var(--ft-text); }
+.card-header.bg-white, .card-footer.bg-white { background-color: rgba(45, 212, 191, 0.04) !important; }
+.text-dark:not(.bg-info):not(.bg-warning) { color: var(--ft-text) !important; }
+
+/* ---------------------------------------------------------------------
+   Detail / match / report page er purono class
+   --------------------------------------------------------------------- */
+.detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem 2rem; }
+.detail-grid span { font-size: .75rem; color: var(--ft-muted); text-transform: uppercase; letter-spacing: .05em; }
+.detail-grid b { display: block; margin-top: .2rem; color: #f0fdfa; font-size: .9rem; }
+.person-placeholder {
+  height: 205px;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(rgba(45, 212, 191, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45, 212, 191, 0.06) 1px, transparent 1px),
+    radial-gradient(circle, rgba(20, 184, 166, 0.25), rgba(3, 10, 11, 0.9));
+  background-size: 20px 20px, 20px 20px, 100% 100%;
+  color: var(--ft-teal-light);
+  text-shadow: 0 0 20px var(--ft-teal-glow);
+  font-size: 3rem;
+  font-weight: 700;
+}
+.bar-row { display: grid; grid-template-columns: 80px 1fr 35px; gap: .7rem; align-items: center; font-size: .83rem; margin: .9rem 0; }
+.eyebrow { font-size: .68rem; color: var(--ft-teal-light); letter-spacing: .14em; font-weight: 600; font-family: var(--ft-mono); }
+.eyebrow::after { content: '_'; animation: blink 1s steps(1) infinite; } /* terminal er moto blink kora cursor */
+@keyframes blink {
+  50% { opacity: 0; }
+}
+.match-hero { background: rgba(4, 30, 30, 0.6); }
+.match-hero .card-body { display: flex; justify-content: space-between; align-items: center; text-align: center; padding: 2rem 8%; }
+.match-hero h3 { margin: .4rem 0 0; }
+.match-score b { display: block; color: var(--ft-teal-light); font-size: 2.2rem; font-family: var(--ft-mono); animation: glow-pulse 2.5s ease-in-out infinite; }
+.match-score span { display: block; color: var(--ft-muted); margin-bottom: .5rem; }
+@keyframes glow-pulse {
+  0%, 100% { text-shadow: 0 0 8px rgba(45, 212, 191, 0.3); }
+  50% { text-shadow: 0 0 24px rgba(45, 212, 191, 0.8); }
+}
+.profile-avatar { width: 82px; height: 82px; border-radius: 50%; display: grid; place-items: center; margin: auto; background: rgba(45, 212, 191, 0.1); border: 1px solid var(--ft-border-strong); box-shadow: 0 0 20px rgba(45, 212, 191, 0.2); color: var(--ft-teal-light); font-weight: 700; font-size: 1.4rem; }
+.report-card p { min-height: 2.4em; }
+.report-card h3 { font-size: 1.35rem; }
+.report-card:hover { transform: translateY(-4px); }
+
+/* ---------------------------------------------------------------------
+   Login page
+   --------------------------------------------------------------------- */
+.login-page { min-height: 100vh; display: grid; grid-template-columns: 42% 58%; }
+.login-brand {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(160deg, rgba(2, 7, 8, 0.95), rgba(4, 32, 31, 0.85));
+  border-right: 1px solid var(--ft-border);
+  color: white;
+  padding: max(12vh, 5rem) 14%;
+}
+.login-brand h1 {
+  margin: 1rem 0 .1rem;
+  font-size: 2.5rem;
+  background: linear-gradient(90deg, #ffffff, #5eead4);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.login-brand p { color: #a7c4c8; max-width: 380px; }
+.login-brand .large { width: 58px; height: 58px; font-size: 1rem; }
+.login-brand hr { border-color: var(--ft-border-strong); margin: 2rem 0; }
+.login-brand .dna-ticker { width: 100%; max-width: 380px; margin-top: 1rem; }
+.login-brand .dna-helix { margin: 3.5rem 0 0 8px; }
+.login-form-wrap { display: grid; place-items: center; padding: 2rem; }
+.login-card {
+  width: min(440px, 100%);
+  padding: 2.2rem;
+  background: var(--ft-surface);
+  border: 1px solid var(--ft-border);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(45, 212, 191, 0.08);
+  animation: fade-up .6s ease backwards;
+}
+.login-card h2 { font-size: 1.7rem; margin: .4rem 0 .5rem; color: #f0fdfa; }
+
+/* ---------------------------------------------------------------------
+   Scroll effect: card screen e dhukle fade + upore uthe ashe.
+   Shudhu je browser e support ache (Chrome / Edge), ar jara motion bondho
+   rakheni tader jonno. Na thakle card shadharon vabe dekhabe.
+   --------------------------------------------------------------------- */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .content-wrap .card {
+      animation: reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 50%;
+    }
+  }
+}
+@keyframes reveal {
+  from { opacity: 0; translate: 0 30px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+/* Je user "reduce motion" on rakhe, tar jonno animation bondho */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ---------------------------------------------------------------------
+   Choto screen
+   --------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .sidebar { width: 205px; flex-basis: 205px; }
+  .content-wrap { padding: 1.25rem; }
+  .topbar { padding: 0 1.25rem; }
+  .topbar .dna-ticker { display: none; }
+}
+@media (max-width: 650px) {
+  .app-shell { display: block; }
+  .sidebar { width: 100%; position: static; height: auto; padding: .8rem; }
+  .sidebar nav { display: flex; overflow: auto; }
+  .side-link { white-space: nowrap; }
+  .sidebar-bottom { display: none; }
+  .brand { padding-bottom: .5rem; }
+  .role-label { display: none; }
+  .live-status { display: none; }
+  .login-page { grid-template-columns: 1fr; }
+  .login-brand { padding: 3rem 10%; }
+  .login-brand .dna-helix { display: none; }
+  .detail-grid { grid-template-columns: 1fr; }
+  .match-hero .card-body { padding: 1.5rem; gap: 1rem; }
+  .match-hero h3 { font-size: 1rem; }
+}
+```
+
+## UI1.4 `frontend/src/layouts/AppLayout.jsx` (modified)
+
+| Change | What it does |
+|---|---|
+| `import { DnaHelix, DnaTicker, LiveClock, ScrollProgress }` | New live components |
+| `<ScrollProgress />` | Teal progress bar at the top + back-to-top button |
+| `brand-icon` → `<DnaHelix rungs={5} />` | The "FT" text logo becomes a small spinning helix |
+| `topbar-left` with `<DnaTicker />` | Sequencer ticker next to the "Authorized forensic records system" text |
+| `<LiveClock />` | "● SYSTEM LIVE hh:mm:ss" pill before the user name |
+
+```diff
+diff --git a/frontend/src/layouts/AppLayout.jsx b/frontend/src/layouts/AppLayout.jsx
+index 5e9e3f3..1d689c6 100644
+--- a/frontend/src/layouts/AppLayout.jsx
++++ b/frontend/src/layouts/AppLayout.jsx
+@@ -1,5 +1,6 @@
+ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+ import { useAuth } from '../context/AuthContext'
++import { DnaHelix, DnaTicker, LiveClock, ScrollProgress } from '../components/DnaEffects' // live UI element (UI upgrade)
+ 
+ const navByRole = {
+   Admin: [
+@@ -51,9 +52,10 @@ export default function AppLayout() {
+ 
+   return (
+     <div className="app-shell">
++      <ScrollProgress />
+       <aside className="sidebar">
+         <NavLink to="/" className="brand">
+-          <span className="brand-icon">FT</span>
++          <span className="brand-icon"><DnaHelix rungs={5} /></span>
+           <span>ForenTrace<small>DNA Identification System</small></span>
+         </NavLink>
+         <div className="role-label">{role} portal</div>
+@@ -75,8 +77,12 @@ export default function AppLayout() {
+       </aside>
+       <main className="main-content">
+         <header className="topbar">
+-          <span className="text-secondary small">Authorized forensic records system</span>
+-          <div className="d-flex align-items-center gap-2">
++          <div className="topbar-left">
++            <span className="text-secondary small">Authorized forensic records system</span>
++            <DnaTicker />
++          </div>
++          <div className="d-flex align-items-center gap-3">
++            <LiveClock />
+             <span className="small text-secondary d-none d-sm-inline">{user?.name}</span>
+             <NavLink to="/profile" className="user-chip" aria-label="My profile">{user?.initials}</NavLink>
+           </div>
+```
+
+## UI1.5 `frontend/src/pages/Auth.jsx` (modified)
+
+| Change | What it does |
+|---|---|
+| `<DnaTicker />` under the subtitle | A/T/G/C ticker on the login panel |
+| `<DnaHelix rungs={12} size="large" />` | Big spinning helix under the description (hidden on phones) |
+
+```diff
+diff --git a/frontend/src/pages/Auth.jsx b/frontend/src/pages/Auth.jsx
+index ff8a123..79e19ec 100644
+--- a/frontend/src/pages/Auth.jsx
++++ b/frontend/src/pages/Auth.jsx
+@@ -6,6 +6,7 @@ import { registerUser, registerOfficer } from '../services/authService'
+ import { getStations } from '../services/policeStationService'
+ import { useData } from '../data/DataContext'
+ import { dashboardPath } from '../utils/auth'
++import { DnaHelix, DnaTicker } from '../components/DnaEffects' // DNA animation (UI upgrade)
+ 
+ export const REGISTERABLE_ROLES = ['Officer', 'Lab Technician']
+ 
+@@ -154,11 +155,14 @@ export default function Login() {
+         <div className="brand-icon large">FT</div>
+         <h1>ForenTrace</h1>
+         <p>DNA Identification System</p>
++        <DnaTicker />
+         <hr />
+         <p className="small">
+           Centralized management for missing-person investigations,
+           forensic DNA samples, and identification records.
+         </p>
++        {/* Boro ghurte thaka DNA helix — login page er decoration (UI upgrade) */}
++        <DnaHelix rungs={12} size="large" />
+       </section>
+ 
+       <section className="login-form-wrap">
+```
+
+## UI1.6 `frontend/src/pages/Laboratory.jsx` (modified: 1 line + comment)
+
+`CodeComparison` shows two DNA profile codes position by position. Its inline colours were light green / light pink. On the dark theme the text became light-on-light and hard to read. Now matching positions are teal glow and mismatches are soft red, with matching text colours.
+
+```diff
+diff --git a/frontend/src/pages/Laboratory.jsx b/frontend/src/pages/Laboratory.jsx
+index 7431afd..1ecb9d5 100644
+--- a/frontend/src/pages/Laboratory.jsx
++++ b/frontend/src/pages/Laboratory.jsx
+@@ -499,7 +499,8 @@ const sampleLabel = sample => `#${sample.id} — ${sampleProvider(sample)} · ${
+ function CodeComparison({ first, second }) {
+   const length = Math.max(first?.length || 0, second?.length || 0)
+   const positions = Array.from({ length }, (_, index) => index)
+-  const cell = (char, same) => ({ display: 'inline-block', width: '1.6rem', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, borderRadius: 4, margin: 1, padding: '2px 0', background: same ? '#d1e7dd' : '#f8d7da' })
++  // Dark theme er jonno: mile gele teal glow, na mille lal (UI upgrade)
++  const cell = (char, same) => ({ display: 'inline-block', width: '1.6rem', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, borderRadius: 4, margin: 1, padding: '2px 0', background: same ? 'rgba(45, 212, 191, 0.2)' : 'rgba(248, 113, 113, 0.16)', color: same ? '#5eead4' : '#fca5a5' })
+   return (
+     <div className="overflow-auto">
+       {[first, second].map((code, row) => (
+```
+
+---
+
+## UI Phase 1 testing
+
+| Test | Result |
+|---|---|
+| `npm run build` | ✅ Builds (the only warning is the old "chunk > 500 kB") |
+| `oxlint` on changed files | ✅ Only the old `REGISTERABLE_ROLES` fast-refresh warning in `Auth.jsx` (was already there) |
+| Login page screenshot (headless Edge) | ✅ Black + teal, glass card, ticker, big twisting helix, blinking cursor, grid + glow background |
+| Admin dashboard / Cases / DNA Samples screenshots (fake API data, only for screenshots) | ✅ Sticky sidebar with glowing active link, helix logo, ticker, live clock, teal table headers, glowing metric cards, `bg-white` card headers now dark |
+| Scroll test (DNA Samples) | ✅ Progress bar fills at the top, back-to-top button appears |
+| Found & fixed during testing | Solid `body` hid the live background → `body` made transparent. Helix squashed by the old `.login-brand .large` rule → renamed to `helix-large`. Gel bands overlapped hint text → moved up. Logo subtitle wrapped → normal font |
+
+## Known gaps after UI Phase 1
+
+| Page | Problem | Suggested next step |
+|---|---|---|
+| `DnaAnalyticsDashboard.jsx` | Styled with ~75 **inline** light colours (not Bootstrap), so the theme can't reach it. Its table header and "Relational Mapping" bar are light-on-light. `/dna-analytics` is also declared at the top level of `AppRoutes.jsx` (line 74, outside `AppLayout`) and that route is the one that renders, so the page shows with no sidebar/topbar | Convert the inline styles to Bootstrap classes (`card`, `table`, `nav-tabs`). They would then follow the theme automatically |
+| `PoliceStations.jsx` | Uses **Tailwind** class names (`fixed inset-0`, `rounded-lg`, `divide-y`…), but Tailwind is not installed, so its modals/layout were already unstyled before this phase | Convert to Bootstrap classes |
+| Back-to-top position | Sits bottom-right. The chatbot widget (other branch) may also sit bottom-right | Move one of them when the chatbot is merged |
+| Scroll reveal | Only works in browsers with scroll-driven animations (Chrome / Edge). Firefox shows cards normally (no animation, nothing broken) | None needed |
+
+---
+
+# UI Phase 1b — Minimal Pass (branch `ui/m1-ui-upgrade`)
+
+## Goal
+
+After UI Phase 1 the look was too busy ("tacky"): neon glows, teal borders everywhere, a scrolling ticker, scanner lines, gradient titles, dots before every card title, gel-band patterns, a blinking cursor. This pass keeps black + teal and the live feel, but makes it **minimal**:
+
+- **neutral first:** black / dark grey surfaces and light grey borders,
+- **teal only as an accent:** active menu link, primary button, links, focus ring, small icons,
+- **few, quiet live elements:** a small spinning helix logo, a pulsing "live" dot + time, a thin scroll bar, a very faint moving grid.
+
+This section **replaces** the Phase 1 versions of `index.css` and `DnaEffects.jsx`. The full final files are below.
+
+## Files changed
+
+| File | What changed |
+|---|---|
+| `frontend/src/index.css` | Rewritten calmer (full file below) |
+| `frontend/src/components/DnaEffects.jsx` | `DnaTicker` removed. `LiveClock` now shows only a dot + `h:mm` |
+| `frontend/src/layouts/AppLayout.jsx` | Ticker removed from the topbar (topbar text is back to the original single span) |
+| `frontend/src/pages/Auth.jsx` | Ticker removed from the login panel. Helix 12 → 10 rungs (and faded in CSS) |
+
+## Removed vs kept
+
+| Removed (too loud) | Kept (quiet version) |
+|---|---|
+| A/T/G/C scrolling ticker | Small helix logo (thinner, softer) |
+| Scanner line + topbar beam | Pulsing live dot + time (no pill, muted text) |
+| Neon glows / `box-shadow` glows everywhere | Faint grid + one soft teal light, fading out at the bottom (`mask-image`) |
+| Teal borders on every card, input and table | Neutral grey borders (`rgba(255,255,255,.08)`) |
+| Gradient text on titles, the growing underline | Plain white titles |
+| LED dot before card titles, gel bands, top line on metric cards | Metric card lift on hover (2 px) |
+| Neon solid metric icons | Soft tinted icons (teal / green / amber at 12% + coloured symbol) |
+| Solid bright status badges | **Soft badges**: tinted background + coloured text (`.status-badge.text-bg-*`) |
+| Blinking `_` cursor, match-score pulse | Thin 2 px scroll bar, back-to-top, page fade-in, card reveal on scroll |
+
+## `frontend/src/components/DnaEffects.jsx` (final)
+
+| Part | What it does |
+|---|---|
+| `DnaHelix` | Unchanged (sidebar logo + login panel) |
+| `LiveClock` | Dot + `toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })`, e.g. `2:53 PM` |
+| `ScrollProgress` | Unchanged |
+
+```jsx
+import { useEffect, useState } from 'react'
+
+// Choto choto "live" UI element gula ekhane — DNA / forensic feel dewar jonno
+// (UI upgrade - Member 1). Shob styling index.css e ache.
+
+// 1) DnaHelix — ghurte thaka DNA er sidi (double helix)
+// Protiti "rung" holo ekta line, tar dui mathay duita dot.
+// Protiti rung er animation ektu por por shuru hoy, tai pura ta pechano DNA er moto dekhay.
+export function DnaHelix({ rungs = 6, size = 'small' }) {
+  const list = Array.from({ length: rungs }, (_, index) => index) // [0, 1, 2, ...]
+  return (
+    <div className={`dna-helix helix-${size}`} aria-hidden="true">
+      {list.map(index => (
+        <span key={index} className="dna-rung" style={{ animationDelay: `${index * -0.2}s` }} />
+      ))}
+    </div>
+  )
+}
+
+// 2) LiveClock — choto ekta "live" dot + ghonta:minit, 1 second por por update hoy
+// Alada component rakha hoyeche, jate shudhu clock ta re-render hoy, pura page na.
+export function LiveClock() {
+  const [now, setNow] = useState(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000) // 1 second por por
+    return () => clearInterval(timer) // component chole gele timer bondho
+  }, [])
+
+  return (
+    <span className="live-status" title="System online">
+      <span className="live-dot" />
+      {now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+    </span>
+  )
+}
+
+// 3) ScrollProgress — upore ekta teal bar, page koto tuku scroll hoyeche dekhay
+// + onek niche gele "back to top" button ashe.
+export function ScrollProgress() {
+  const [percent, setPercent] = useState(0)
+
+  useEffect(() => {
+    const onScroll = () => {
+      const maxScroll = document.documentElement.scrollHeight - window.innerHeight
+      setPercent(maxScroll > 0 ? (window.scrollY / maxScroll) * 100 : 0)
+    }
+    onScroll() // prothom bar o ekbar hishab kori
+    window.addEventListener('scroll', onScroll)
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  return (
+    <>
+      <div className="scroll-progress" style={{ width: `${percent}%` }} />
+      {percent > 20 && (
+        <button
+          type="button"
+          className="back-to-top"
+          aria-label="Back to top"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
+          ↑
+        </button>
+      )}
+    </>
+  )
+}
+```
+
+## `frontend/src/index.css` (final)
+
+Same sections as Phase 1. The main difference is the variables: `--ft-border` is now neutral grey, and teal is only in `--ft-teal`, `--ft-teal-light` and `--ft-teal-soft` (a 12% teal tint used for active link, icons, avatar).
+
+```css
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* =====================================================================
+   ForenTrace theme — Black + Teal, minimal
+   UI upgrade (Member 1). Rule: shob kichu neutral (kalo/dhushor),
+   teal shudhu accent hishebe — active link, primary button, link, focus.
+   Rong bodlate chaile shudhu ei variable gula bodlao.
+   ===================================================================== */
+:root {
+  --ft-bg: #060809;                          /* main kalo background */
+  --ft-surface: rgba(17, 21, 23, 0.85);      /* card er background */
+  --ft-surface-solid: #111517;               /* same, but solid */
+  --ft-surface-hover: rgba(255, 255, 255, 0.04);
+  --ft-border: rgba(255, 255, 255, 0.08);    /* neutral border */
+  --ft-border-hover: rgba(255, 255, 255, 0.16);
+  --ft-teal: #14b8a6;                        /* accent */
+  --ft-teal-light: #2dd4bf;
+  --ft-teal-soft: rgba(45, 212, 191, 0.12);  /* halka teal background */
+  --ft-text: #e4e9ea;                        /* normal lekha */
+  --ft-muted: #8b9699;                       /* halka lekha */
+  --ft-mono: 'JetBrains Mono', Consolas, monospace;
+
+  font-family: 'DM Sans', Arial, sans-serif;
+  color: var(--ft-text);
+  background: var(--ft-bg);
+}
+
+/* Bootstrap dark mode er rong (index.html e data-bs-theme="dark") — blue er jaygay teal */
+:root[data-bs-theme="dark"] {
+  --bs-body-bg: #060809;
+  --bs-body-bg-rgb: 6, 8, 9;
+  --bs-body-color: #e4e9ea;
+  --bs-body-color-rgb: 228, 233, 234;
+  --bs-heading-color: #f4f7f7;
+  --bs-emphasis-color: #ffffff;
+  --bs-secondary-color: rgba(160, 172, 175, 0.85);
+  --bs-secondary-bg: #15191b;
+  --bs-tertiary-bg: #0d1011;
+  --bs-border-color: rgba(255, 255, 255, 0.08);
+  --bs-border-color-translucent: rgba(255, 255, 255, 0.08);
+  --bs-primary: #14b8a6;
+  --bs-primary-rgb: 20, 184, 166;
+  --bs-primary-text-emphasis: #5eead4;
+  --bs-primary-bg-subtle: #042f2c;
+  --bs-primary-border-subtle: #0f766e;
+  --bs-link-color: #2dd4bf;
+  --bs-link-color-rgb: 45, 212, 191;
+  --bs-link-hover-color: #5eead4;
+  --bs-link-hover-color-rgb: 94, 234, 212;
+  --bs-focus-ring-color: rgba(45, 212, 191, 0.25);
+  --bs-font-sans-serif: 'DM Sans', Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+/* body transparent rakha — noile pichoner background layer (body::before) dhaka pore jay.
+   Kalo rong ta :root (html) e deya ache. */
+body { margin: 0; min-width: 320px; background: transparent; }
+a { text-decoration: none; transition: color .2s ease; }
+::selection { background: rgba(45, 212, 191, 0.3); color: #fff; }
+
+/* Scrollbar */
+html { scrollbar-color: #2a3134 var(--ft-bg); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--ft-bg); }
+::-webkit-scrollbar-thumb { background: #2a3134; border-radius: 10px; border: 2px solid var(--ft-bg); }
+::-webkit-scrollbar-thumb:hover { background: #3b4448; }
+
+/* ---------------------------------------------------------------------
+   Background (solid na, kintu shanto) — upore halka teal alo +
+   khub halka lab grid, dhire dhire nore. Niche grid mile jay (mask).
+   --------------------------------------------------------------------- */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -10%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 70% 0%, rgba(20, 184, 166, 0.10), transparent 50%),
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 100% 100%, 48px 48px, 48px 48px;
+  mask-image: linear-gradient(to bottom, #000 30%, transparent 90%);
+  animation: bg-drift 30s ease-in-out infinite alternate;
+}
+@keyframes bg-drift {
+  from { transform: translate(0, 0); }
+  to { transform: translate(-3%, 2%); }
+}
+
+/* ---------------------------------------------------------------------
+   App shell: sidebar + topbar
+   --------------------------------------------------------------------- */
+.app-shell { display: flex; min-height: 100vh; }
+
+/* Sidebar scroll korleo ek jaygay thake (sticky) */
+.sidebar {
+  width: 255px;
+  flex: 0 0 255px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: rgba(8, 10, 11, 0.92);
+  border-right: 1px solid var(--ft-border);
+  color: var(--ft-text);
+  padding: 1.4rem .85rem;
+  display: flex;
+  flex-direction: column;
+}
+.brand { color: #fff; display: flex; align-items: center; gap: .7rem; font-size: 1.1rem; font-weight: 700; padding: 0 .55rem 1.6rem; }
+.brand:hover { color: #fff; }
+.brand small { display: block; font-size: .65rem; color: var(--ft-muted); font-weight: 400; letter-spacing: .02em; }
+.brand-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  background: var(--ft-teal-soft);
+  color: var(--ft-teal-light);
+  border-radius: 9px;
+  display: inline-grid;
+  place-items: center;
+  font-size: .7rem;
+  font-weight: 700;
+  overflow: hidden;
+}
+.role-label { margin: 0 .55rem .55rem; text-transform: uppercase; color: var(--ft-muted); font-size: .66rem; letter-spacing: .1em; }
+
+/* Menu link — hover e halka background, active hole teal lekha + bam e patla dag */
+.side-link {
+  position: relative;
+  display: block;
+  color: #a3adb0;
+  border-radius: 7px;
+  padding: .55rem .75rem;
+  margin: .06rem 0;
+  font-size: .88rem;
+  transition: background-color .2s ease, color .2s ease;
+}
+.side-link::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  bottom: 25%;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--ft-teal-light);
+  transform: scaleY(0);
+  transition: transform .2s ease;
+}
+.side-link:hover { background: var(--ft-surface-hover); color: #fff; }
+.side-link.active { background: var(--ft-teal-soft); color: var(--ft-teal-light); }
+.side-link.active::before { transform: scaleY(1); }
+.sidebar-bottom { margin-top: auto; border-top: 1px solid var(--ft-border); padding-top: .7rem; }
+
+.main-content { min-width: 0; flex: 1; }
+
+/* Topbar — upore atkano, pichone halka blur */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1010;
+  min-height: 60px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 2rem;
+  background: rgba(6, 8, 9, 0.75);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--ft-border);
+}
+.role-switch { width: 135px; }
+.user-chip {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--ft-teal-soft);
+  color: var(--ft-teal-light);
+  display: grid;
+  place-items: center;
+  font-size: .7rem;
+  font-weight: 700;
+  transition: background-color .2s ease;
+}
+.user-chip:hover { background: rgba(45, 212, 191, 0.22); color: var(--ft-teal-light); }
+
+/* ---------------------------------------------------------------------
+   Live element gula (components/DnaEffects.jsx)
+   --------------------------------------------------------------------- */
+
+/* DNA helix: protiti rung ghore (scaleX 1 -> -1 -> 1), delay er karone pechano dekhay */
+.dna-helix { display: flex; flex-direction: column; justify-content: center; gap: 4px; width: 18px; }
+.dna-rung {
+  position: relative;
+  display: block;
+  height: 1.5px;
+  width: 100%;
+  border-radius: 2px;
+  background: rgba(45, 212, 191, 0.4);
+  animation: helix-spin 3s ease-in-out infinite;
+}
+.dna-rung::before,
+.dna-rung::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.dna-rung::before { left: -2.5px; background: var(--ft-teal-light); }
+.dna-rung::after { right: -2.5px; background: #e6fffb; }
+.dna-helix.helix-large { width: 90px; gap: 14px; opacity: .55; }
+.dna-helix.helix-large .dna-rung { height: 2px; }
+.dna-helix.helix-large .dna-rung::before,
+.dna-helix.helix-large .dna-rung::after { width: 9px; height: 9px; top: -3.5px; }
+.dna-helix.helix-large .dna-rung::before { left: -4.5px; }
+.dna-helix.helix-large .dna-rung::after { right: -4.5px; }
+@keyframes helix-spin {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(-1); }
+}
+
+/* Live clock — choto dot + shomoy */
+.live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  color: var(--ft-muted);
+  font-family: var(--ft-mono);
+  font-size: .72rem;
+  white-space: nowrap;
+}
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ft-teal-light);
+  animation: pulse 2.4s ease-out infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.5); }
+  100% { box-shadow: 0 0 0 6px rgba(45, 212, 191, 0); }
+}
+
+/* Scroll progress bar + back to top button */
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 2px;
+  z-index: 1100;
+  pointer-events: none;
+  background: var(--ft-teal-light);
+  transition: width .1s linear;
+}
+.back-to-top {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  z-index: 1030;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--ft-border-hover);
+  background: var(--ft-surface-solid);
+  color: var(--ft-text);
+  font-size: 1.05rem;
+  animation: pop-in .25s ease;
+  transition: transform .2s ease, border-color .2s ease, color .2s ease;
+}
+.back-to-top:hover { transform: translateY(-2px); border-color: var(--ft-teal-light); color: var(--ft-teal-light); }
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(.7); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ---------------------------------------------------------------------
+   Page content
+   --------------------------------------------------------------------- */
+.content-wrap { padding: 2rem; max-width: 1500px; }
+
+/* Notun page khulle content halka fade hoye ashe */
+.content-wrap > * { animation: fade-up .4s ease backwards; }
+.content-wrap > *:nth-child(2) { animation-delay: .05s; }
+.content-wrap > *:nth-child(3) { animation-delay: .1s; }
+@keyframes fade-up {
+  from { opacity: 0; translate: 0 8px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+.page-header { margin-bottom: 1.6rem; }
+.page-header h1 { font-size: 1.5rem; margin: 0 0 .25rem; font-weight: 700; letter-spacing: -.01em; }
+.text-secondary { color: var(--ft-muted) !important; }
+
+/* Card — shanto kalo, hover e border ektu ujjol */
+.card {
+  --bs-card-bg: var(--ft-surface);
+  --bs-card-border-color: var(--ft-border);
+  --bs-card-cap-bg: transparent;
+  --bs-card-color: var(--ft-text);
+  border-radius: 10px;
+  transition: border-color .2s ease, transform .2s ease;
+}
+.card:hover { border-color: var(--ft-border-hover); }
+.card-header, .card-footer { border-color: var(--ft-border); }
+
+/* Metric card — boro number, hover e ektu upore */
+.metric-card:hover { transform: translateY(-2px); }
+.metric-card h2 { font-size: 1.75rem; margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.metric-mark { float: right; width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-size: .8rem; font-weight: 700; }
+.metric-mark.primary { background: var(--ft-teal-soft); color: var(--ft-teal-light); }
+.metric-mark.success { background: rgba(52, 211, 153, 0.12); color: #34d399; }
+.metric-mark.warning { background: rgba(251, 191, 36, 0.12); color: #fbbf24; }
+
+/* Table — transparent, hover row e halka alo */
+.table {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--ft-text);
+  --bs-table-border-color: var(--ft-border);
+  --bs-table-hover-bg: var(--ft-surface-hover);
+  --bs-table-hover-color: #fff;
+  --bs-table-striped-bg: rgba(255, 255, 255, 0.02);
+  font-size: .87rem;
+}
+.table thead th { color: var(--ft-muted); font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.table-light { --bs-table-bg: rgba(255, 255, 255, 0.03); --bs-table-color: var(--ft-muted); --bs-table-border-color: var(--ft-border); }
+.status-badge { font-weight: 600; font-size: .7rem; border-radius: 999px; padding: .35em .7em; }
+/* Status badge — gadho rong er bodole halka background + rongin lekha (shanto dekhay) */
+.status-badge.text-bg-success { background-color: rgba(52, 211, 153, 0.12) !important; color: #34d399 !important; }
+.status-badge.text-bg-warning { background-color: rgba(251, 191, 36, 0.12) !important; color: #fbbf24 !important; }
+.status-badge.text-bg-primary { background-color: var(--ft-teal-soft) !important; color: var(--ft-teal-light) !important; }
+.status-badge.text-bg-danger { background-color: rgba(248, 113, 113, 0.12) !important; color: #f87171 !important; }
+.status-badge.text-bg-secondary { background-color: rgba(255, 255, 255, 0.07) !important; color: #b9c2c4 !important; }
+
+/* Button — flat teal, click e ektu chapa (microtransition) */
+.btn { transition: color .2s ease, background-color .2s ease, border-color .2s ease, transform .1s ease; }
+.btn:not(:disabled):active { transform: scale(.98); }
+.btn-primary {
+  --bs-btn-color: #04201d;
+  --bs-btn-bg: var(--ft-teal);
+  --bs-btn-border-color: var(--ft-teal);
+  --bs-btn-hover-color: #04201d;
+  --bs-btn-hover-bg: var(--ft-teal-light);
+  --bs-btn-hover-border-color: var(--ft-teal-light);
+  --bs-btn-active-color: #04201d;
+  --bs-btn-active-bg: #0d9488;
+  --bs-btn-active-border-color: #0d9488;
+  --bs-btn-disabled-color: rgba(4, 32, 29, 0.7);
+  --bs-btn-disabled-bg: #0f766e;
+  --bs-btn-disabled-border-color: #0f766e;
+  --bs-btn-focus-shadow-rgb: 45, 212, 191;
+  font-weight: 600;
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--ft-teal-light);
+  --bs-btn-border-color: rgba(45, 212, 191, 0.4);
+  --bs-btn-hover-color: #04201d;
+  --bs-btn-hover-bg: var(--ft-teal-light);
+  --bs-btn-hover-border-color: var(--ft-teal-light);
+  --bs-btn-active-color: #04201d;
+  --bs-btn-active-bg: var(--ft-teal);
+  --bs-btn-active-border-color: var(--ft-teal);
+  --bs-btn-focus-shadow-rgb: 45, 212, 191;
+}
+/* btn-light dark theme e shada dekhay, tai eke shanto dark button banano */
+.btn-light {
+  --bs-btn-color: var(--ft-text);
+  --bs-btn-bg: rgba(255, 255, 255, 0.05);
+  --bs-btn-border-color: var(--ft-border);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: rgba(255, 255, 255, 0.09);
+  --bs-btn-hover-border-color: var(--ft-border-hover);
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: rgba(255, 255, 255, 0.12);
+  --bs-btn-active-border-color: var(--ft-border-hover);
+}
+
+/* Form input — focus korle teal border */
+.form-control,
+.form-select {
+  background-color: rgba(255, 255, 255, 0.03);
+  border-color: var(--ft-border-hover);
+  color: var(--ft-text);
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.form-control:focus,
+.form-select:focus {
+  background-color: rgba(255, 255, 255, 0.04);
+  border-color: var(--ft-teal);
+  box-shadow: 0 0 0 .2rem rgba(45, 212, 191, 0.15);
+  color: #fff;
+}
+.form-control::placeholder { color: rgba(160, 172, 175, 0.5); }
+.form-label { color: #b9c2c4; font-size: .85rem; }
+.form-check-input:checked { background-color: var(--ft-teal); border-color: var(--ft-teal); }
+.form-check-input:focus { border-color: var(--ft-teal); box-shadow: 0 0 0 .2rem rgba(45, 212, 191, 0.15); }
+
+/* Baki Bootstrap jinish er blue -> teal */
+.progress { --bs-progress-bg: rgba(255, 255, 255, 0.06); --bs-progress-bar-bg: var(--ft-teal); height: .5rem; }
+.nav-pills { --bs-nav-pills-link-active-bg: var(--ft-teal); --bs-nav-pills-link-active-color: #04201d; }
+.nav-tabs { --bs-nav-tabs-border-color: var(--ft-border); --bs-nav-tabs-link-active-color: var(--ft-teal-light); --bs-nav-tabs-link-active-bg: transparent; --bs-nav-tabs-link-active-border-color: var(--ft-border) var(--ft-border) var(--ft-bg); }
+.nav-tabs .nav-link { color: var(--ft-muted); font-size: .88rem; }
+.nav-tabs .nav-link:hover { color: var(--ft-text); }
+.nav-tabs .nav-link.active { color: var(--ft-teal-light); }
+.dropdown-menu { --bs-dropdown-link-active-bg: var(--ft-teal); --bs-dropdown-bg: var(--ft-surface-solid); --bs-dropdown-border-color: var(--ft-border); }
+.list-group { --bs-list-group-active-bg: var(--ft-teal); --bs-list-group-active-border-color: var(--ft-teal); --bs-list-group-bg: transparent; }
+.modal { --bs-modal-bg: var(--ft-surface-solid); --bs-modal-border-color: var(--ft-border-hover); }
+
+/* Kichu page e bg-white / bg-light / text-dark lekha ache — dark theme e egulo thik kora */
+.bg-white, .bg-light { background-color: var(--ft-surface-solid) !important; color: var(--ft-text); }
+.card-header.bg-white, .card-footer.bg-white { background-color: transparent !important; }
+.text-dark:not(.bg-info):not(.bg-warning) { color: var(--ft-text) !important; }
+
+/* ---------------------------------------------------------------------
+   Detail / match / report page er purono class
+   --------------------------------------------------------------------- */
+.detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem 2rem; }
+.detail-grid span { font-size: .78rem; color: var(--ft-muted); }
+.detail-grid b { display: block; margin-top: .2rem; color: #f4f7f7; font-size: .9rem; }
+.person-placeholder { height: 205px; display: grid; place-items: center; background: var(--ft-teal-soft); color: var(--ft-teal-light); font-size: 3rem; font-weight: 700; }
+.bar-row { display: grid; grid-template-columns: 80px 1fr 35px; gap: .7rem; align-items: center; font-size: .83rem; margin: .9rem 0; }
+.eyebrow { font-size: .68rem; color: var(--ft-teal-light); letter-spacing: .12em; font-weight: 600; }
+.match-hero { background: var(--ft-surface-solid); }
+.match-hero .card-body { display: flex; justify-content: space-between; align-items: center; text-align: center; padding: 2rem 8%; }
+.match-hero h3 { margin: .4rem 0 0; }
+.match-score b { display: block; color: var(--ft-teal-light); font-size: 2.2rem; font-variant-numeric: tabular-nums; }
+.match-score span { display: block; color: var(--ft-muted); margin-bottom: .5rem; }
+.profile-avatar { width: 82px; height: 82px; border-radius: 50%; display: grid; place-items: center; margin: auto; background: var(--ft-teal-soft); color: var(--ft-teal-light); font-weight: 700; font-size: 1.4rem; }
+.report-card p { min-height: 2.4em; }
+.report-card h3 { font-size: 1.35rem; }
+.report-card:hover { transform: translateY(-2px); }
+
+/* ---------------------------------------------------------------------
+   Login page
+   --------------------------------------------------------------------- */
+.login-page { min-height: 100vh; display: grid; grid-template-columns: 42% 58%; }
+.login-brand {
+  background: rgba(8, 10, 11, 0.9);
+  border-right: 1px solid var(--ft-border);
+  color: #fff;
+  padding: max(12vh, 5rem) 14%;
+}
+.login-brand h1 { margin: 1rem 0 .1rem; font-size: 2.4rem; font-weight: 700; letter-spacing: -.02em; }
+.login-brand p { color: var(--ft-muted); max-width: 380px; }
+.login-brand .large { width: 56px; height: 56px; font-size: 1rem; }
+.login-brand hr { border-color: var(--ft-border-hover); margin: 2rem 0; }
+.login-brand .dna-helix { margin: 3.5rem 0 0 6px; }
+.login-form-wrap { display: grid; place-items: center; padding: 2rem; }
+.login-card {
+  width: min(420px, 100%);
+  padding: 2rem;
+  background: var(--ft-surface);
+  border: 1px solid var(--ft-border);
+  border-radius: 14px;
+  animation: fade-up .4s ease backwards;
+}
+.login-card h2 { font-size: 1.6rem; margin: .4rem 0 .5rem; }
+
+/* ---------------------------------------------------------------------
+   Scroll effect: card screen e dhukle halka fade + upore uthe ashe.
+   Shudhu je browser e support ache (Chrome / Edge), ar jara motion bondho
+   rakheni tader jonno. Na thakle card shadharon vabe dekhabe.
+   --------------------------------------------------------------------- */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .content-wrap .card {
+      animation: reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 40%;
+    }
+  }
+}
+@keyframes reveal {
+  from { opacity: 0; translate: 0 16px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+/* Je user "reduce motion" on rakhe, tar jonno animation bondho */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ---------------------------------------------------------------------
+   Choto screen
+   --------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .sidebar { width: 205px; flex-basis: 205px; }
+  .content-wrap { padding: 1.25rem; }
+  .topbar { padding: 0 1.25rem; }
+}
+@media (max-width: 650px) {
+  .app-shell { display: block; }
+  .sidebar { width: 100%; position: static; height: auto; padding: .8rem; }
+  .sidebar nav { display: flex; overflow: auto; }
+  .side-link { white-space: nowrap; }
+  .sidebar-bottom { display: none; }
+  .brand { padding-bottom: .5rem; }
+  .role-label { display: none; }
+  .live-status { display: none; }
+  .login-page { grid-template-columns: 1fr; }
+  .login-brand { padding: 3rem 10%; }
+  .login-brand .dna-helix { display: none; }
+  .detail-grid { grid-template-columns: 1fr; }
+  .match-hero .card-body { padding: 1.5rem; gap: 1rem; }
+  .match-hero h3 { font-size: 1rem; }
+}
+```
+
+## `AppLayout.jsx` and `Auth.jsx` (final diff against `main`)
+
+```diff
+diff --git a/frontend/src/layouts/AppLayout.jsx b/frontend/src/layouts/AppLayout.jsx
+index 5e9e3f3..af7de37 100644
+--- a/frontend/src/layouts/AppLayout.jsx
++++ b/frontend/src/layouts/AppLayout.jsx
+@@ -1,5 +1,6 @@
+ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+ import { useAuth } from '../context/AuthContext'
++import { DnaHelix, LiveClock, ScrollProgress } from '../components/DnaEffects' // live UI element (UI upgrade)
+ 
+ const navByRole = {
+   Admin: [
+@@ -51,9 +52,10 @@ export default function AppLayout() {
+ 
+   return (
+     <div className="app-shell">
++      <ScrollProgress />
+       <aside className="sidebar">
+         <NavLink to="/" className="brand">
+-          <span className="brand-icon">FT</span>
++          <span className="brand-icon"><DnaHelix rungs={5} /></span>
+           <span>ForenTrace<small>DNA Identification System</small></span>
+         </NavLink>
+         <div className="role-label">{role} portal</div>
+@@ -76,7 +78,8 @@ export default function AppLayout() {
+       <main className="main-content">
+         <header className="topbar">
+           <span className="text-secondary small">Authorized forensic records system</span>
+-          <div className="d-flex align-items-center gap-2">
++          <div className="d-flex align-items-center gap-3">
++            <LiveClock />
+             <span className="small text-secondary d-none d-sm-inline">{user?.name}</span>
+             <NavLink to="/profile" className="user-chip" aria-label="My profile">{user?.initials}</NavLink>
+           </div>
+```
+
+```diff
+diff --git a/frontend/src/pages/Auth.jsx b/frontend/src/pages/Auth.jsx
+index ff8a123..52ccb87 100644
+--- a/frontend/src/pages/Auth.jsx
++++ b/frontend/src/pages/Auth.jsx
+@@ -6,6 +6,7 @@ import { registerUser, registerOfficer } from '../services/authService'
+ import { getStations } from '../services/policeStationService'
+ import { useData } from '../data/DataContext'
+ import { dashboardPath } from '../utils/auth'
++import { DnaHelix } from '../components/DnaEffects' // DNA animation (UI upgrade)
+ 
+ export const REGISTERABLE_ROLES = ['Officer', 'Lab Technician']
+ 
+@@ -159,6 +160,8 @@ export default function Login() {
+           Centralized management for missing-person investigations,
+           forensic DNA samples, and identification records.
+         </p>
++        {/* Boro ghurte thaka DNA helix — login page er decoration (UI upgrade) */}
++        <DnaHelix rungs={10} size="large" />
+       </section>
+ 
+       <section className="login-form-wrap">
+```
+
+## UI Phase 1b testing
+
+| Test | Result |
+|---|---|
+| `npm run build` | ✅ |
+| Screenshots (login, admin dashboard, DNA samples) | ✅ Neutral dark UI, teal only on active link / primary button / links / icons. Soft badges. Faint helix on login |
+
+---
+
+# UI Phase 2 — DNA Analytics Page Onto the Theme (branch `ui/m1-ui-upgrade`)
+
+## Goal
+
+Two pages were left out of the theme in UI Phase 1. This phase fixes the one that is actually used.
+
+## What was found
+
+| Page | Finding | Action |
+|---|---|---|
+| `DnaAnalyticsDashboard.jsx` | ~75 inline light styles (white / pastel boxes, blue tabs). On the dark theme the table header and top bar were light-on-light (unreadable) | **Converted** to the app's components + Bootstrap classes |
+| `/dna-analytics` route | Declared **twice** in `AppRoutes.jsx`: line 74 at the top level (no `ProtectedRoute`, no `AppLayout`) and inside the protected layout (`Admin` / `Lab Technician`). The top-level one won, so the page had **no sidebar** and the page itself opened **without login** | **Removed** the top-level duplicate |
+| `PoliceStations.jsx` | Tailwind classes, but **no route imports this file**. The sidebar's "Police Stations" (`/admin/police-stations`) renders `AdminList kind="stations"` from `Administration.jsx`, which is Bootstrap and already themed. The file is also broken (expects `response.success`, but the service returns an array) | **Not touched.** It's dead code. Deleting it is for the team to decide (looks like part of the "remove duplicate/mock admin pages" work) |
+
+## Files changed
+
+| File | What changed |
+|---|---|
+| `frontend/src/pages/DnaAnalyticsDashboard.jsx` | Render part rewritten with `PageHeader`, `MetricCard`, `nav-tabs`, `card`, `table`, soft badges. **Data fetching (API calls, filter, state) unchanged** |
+| `frontend/src/routes/AppRoutes.jsx` | Removed the unprotected top-level `/dna-analytics` route (a Banglish comment marks the spot) |
+| `frontend/src/index.css` | `.status-badge.text-bg-danger` (soft red, for "0 Technicians"), `.nav-tabs` colours + smaller tab text so the 3 query tabs fit in one line (already inside the full file above) |
+
+## Old → new (DnaAnalyticsDashboard)
+
+| Old (inline style) | New (shared class / component) |
+|---|---|
+| `<h2>` + `<p>` with inline colours | `<PageHeader title subtitle />` |
+| Red error `div` | `alert alert-danger` |
+| 3 pastel stat boxes (blue / green / purple) | 3 × `<MetricCard />` in `row g-3` |
+| 3 hand-styled tab buttons (blue underline) | `TABS` array → `nav nav-tabs` with `nav-link active` |
+| Bordered `div` + light header bar | `card` + `card-header` |
+| Plain `<table>` with light `thead` | `table table-hover` inside `table-responsive` |
+| Inline select | `form-select w-auto` + `<label htmlFor>` |
+| Pastel badge spans | `badge status-badge text-bg-primary / success / danger` (soft badges from Phase 1b) |
+
+## `frontend/src/pages/DnaAnalyticsDashboard.jsx` (modified)
+
+```diff
+diff --git a/frontend/src/pages/DnaAnalyticsDashboard.jsx b/frontend/src/pages/DnaAnalyticsDashboard.jsx
+index d656fd9..4ec928f 100644
+--- a/frontend/src/pages/DnaAnalyticsDashboard.jsx
++++ b/frontend/src/pages/DnaAnalyticsDashboard.jsx
+@@ -1,4 +1,12 @@
+ import React, { useState, useEffect } from 'react';
++import { MetricCard, PageHeader } from '../components/Ui'; // app er baki page er moto same component (UI Phase 2)
++
++// Tab gula ekhane list kora — niche map kore button banano hoy (UI Phase 2)
++const TABS = [
++    ['overview', 'Query 1: Multitable Staff Overview (JOIN)'],
++    ['capacity', 'Query 2: Lab Staffing Capacity (GROUP BY & HAVING)'],
++    ['subquery', 'Query 3: Above Average Labs (Subquery)'],
++];
+ 
+ const OVERVIEW_API = 'http://localhost:8000/api/analytics/dna/technician-overview';
+ const CAPACITY_API = 'http://localhost:8000/api/analytics/dna/lab-capacity';
+@@ -54,144 +62,104 @@ export default function DnaAnalyticsDashboard() {
+         }
+     };
+ 
++    // Inline style er bodole Bootstrap class + app er component — tai dark theme automatic lage (UI Phase 2)
+     return (
+-        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto', fontFamily: 'system-ui, sans-serif' }}>
+-            <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>DNA Analytics & Staffing Intelligence</h2>
+-            <p style={{ color: '#64748b', marginBottom: '20px', fontSize: '14px' }}>
+-                CP2 Raw SQL Query Demonstrations: Multitable JOIN, GROUP BY / HAVING, and Nested Subqueries.
+-            </p>
++        <>
++            <PageHeader
++                title="DNA Analytics & Staffing Intelligence"
++                subtitle="CP2 Raw SQL Query Demonstrations: Multitable JOIN, GROUP BY / HAVING, and Nested Subqueries."
++            />
+ 
+-            {error && (
+-                <div style={{ background: '#fee2e2', color: '#991b1b', padding: '12px', borderRadius: '6px', marginBottom: '16px' }}>
+-                    {error}
+-                </div>
+-            )}
++            {error && <div className="alert alert-danger">{error}</div>}
+ 
+             {/* Summary Stat Cards */}
+-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+-                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '16px' }}>
+-                    <div style={{ fontSize: '13px', color: '#1e40af', fontWeight: '600' }}>TOTAL REGISTERED STAFF</div>
+-                    <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#1e3a8a', marginTop: '4px' }}>{overviewData.length}</div>
+-                    <div style={{ fontSize: '12px', color: '#3b82f6', marginTop: '4px' }}>Multitable JOIN Coverage</div>
++            <div className="row g-3 mb-4">
++                <div className="col-md-4">
++                    <MetricCard label="Total Registered Staff" value={overviewData.length} hint="Multitable JOIN Coverage" />
+                 </div>
+-                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '16px' }}>
+-                    <div style={{ fontSize: '13px', color: '#166534', fontWeight: '600' }}>TOTAL DNA LABS</div>
+-                    <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#14532d', marginTop: '4px' }}>{capacityData.length}</div>
+-                    <div style={{ fontSize: '12px', color: '#22c55e', marginTop: '4px' }}>Aggregated Laboratories</div>
++                <div className="col-md-4">
++                    <MetricCard label="Total DNA Labs" value={capacityData.length} hint="Aggregated Laboratories" tone="success" />
+                 </div>
+-                <div style={{ background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: '8px', padding: '16px' }}>
+-                    <div style={{ fontSize: '13px', color: '#6b21a8', fontWeight: '600' }}>ABOVE-AVG CAPACITY LABS</div>
+-                    <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#581c87', marginTop: '4px' }}>{aboveAvgData.length}</div>
+-                    <div style={{ fontSize: '12px', color: '#a855f7', marginTop: '4px' }}>Subquery Filtered Results</div>
++                <div className="col-md-4">
++                    <MetricCard label="Above-Avg Capacity Labs" value={aboveAvgData.length} hint="Subquery Filtered Results" />
+                 </div>
+             </div>
+ 
+             {/* Navigation Tabs */}
+-            <div style={{ display: 'flex', gap: '8px', borderBottom: '2px solid #e2e8f0', marginBottom: '20px' }}>
+-                <button
+-                    onClick={() => setActiveTab('overview')}
+-                    style={{
+-                        padding: '10px 16px',
+-                        border: 'none',
+-                        background: 'none',
+-                        fontWeight: '600',
+-                        fontSize: '14px',
+-                        cursor: 'pointer',
+-                        borderBottom: activeTab === 'overview' ? '3px solid #2563eb' : '3px solid transparent',
+-                        color: activeTab === 'overview' ? '#2563eb' : '#64748b'
+-                    }}
+-                >
+-                    Query 1: Multitable Staff Overview (JOIN)
+-                </button>
+-                <button
+-                    onClick={() => setActiveTab('capacity')}
+-                    style={{
+-                        padding: '10px 16px',
+-                        border: 'none',
+-                        background: 'none',
+-                        fontWeight: '600',
+-                        fontSize: '14px',
+-                        cursor: 'pointer',
+-                        borderBottom: activeTab === 'capacity' ? '3px solid #2563eb' : '3px solid transparent',
+-                        color: activeTab === 'capacity' ? '#2563eb' : '#64748b'
+-                    }}
+-                >
+-                    Query 2: Lab Staffing Capacity (GROUP BY & HAVING)
+-                </button>
+-                <button
+-                    onClick={() => setActiveTab('subquery')}
+-                    style={{
+-                        padding: '10px 16px',
+-                        border: 'none',
+-                        background: 'none',
+-                        fontWeight: '600',
+-                        fontSize: '14px',
+-                        cursor: 'pointer',
+-                        borderBottom: activeTab === 'subquery' ? '3px solid #2563eb' : '3px solid transparent',
+-                        color: activeTab === 'subquery' ? '#2563eb' : '#64748b'
+-                    }}
+-                >
+-                    Query 3: Above Average Labs (Subquery)
+-                </button>
+-            </div>
++            <ul className="nav nav-tabs mb-3">
++                {TABS.map(([key, label]) => (
++                    <li className="nav-item" key={key}>
++                        <button
++                            type="button"
++                            className={`nav-link ${activeTab === key ? 'active' : ''}`}
++                            onClick={() => setActiveTab(key)}
++                        >
++                            {label}
++                        </button>
++                    </li>
++                ))}
++            </ul>
+ 
+             {loading ? (
+-                <p>Loading analytics data...</p>
++                <p className="text-secondary">Loading analytics data...</p>
+             ) : (
+                 <>
+                     {/* TAB 1: Multitable JOIN */}
+                     {activeTab === 'overview' && (
+-                        <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+-                            <div style={{ padding: '12px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontWeight: '600', fontSize: '14px' }}>
+-                                Relational Mapping: `dna_labs` ⨝ `lab_technicians` ⟕ `users`
++                        <div className="card">
++                            <div className="card-header">
++                                <strong>Relational Mapping: `dna_labs` ⨝ `lab_technicians` ⟕ `users`</strong>
+                             </div>
+-                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+-                                <thead style={{ background: '#f1f5f9' }}>
+-                                    <tr>
+-                                        <th style={{ padding: '12px' }}>Staff Name</th>
+-                                        <th style={{ padding: '12px' }}>Designation</th>
+-                                        <th style={{ padding: '12px' }}>Assigned DNA Lab</th>
+-                                        <th style={{ padding: '12px' }}>Lab City</th>
+-                                        <th style={{ padding: '12px' }}>Contact</th>
+-                                        <th style={{ padding: '12px' }}>System Account</th>
+-                                    </tr>
+-                                </thead>
+-                                <tbody>
+-                                    {overviewData.map((row) => (
+-                                        <tr key={row.technician_id} style={{ borderTop: '1px solid #e2e8f0' }}>
+-                                            <td style={{ padding: '12px', fontWeight: '500' }}>{row.technician_name}</td>
+-                                            <td style={{ padding: '12px' }}>{row.designation}</td>
+-                                            <td style={{ padding: '12px' }}>{row.lab_name}</td>
+-                                            <td style={{ padding: '12px' }}>{row.lab_city}</td>
+-                                            <td style={{ padding: '12px', fontSize: '13px', color: '#475569' }}>
+-                                                <div>{row.technician_email}</div>
+-                                                <div>{row.technician_phone}</div>
+-                                            </td>
+-                                            <td style={{ padding: '12px' }}>
+-                                                {row.username ? (
+-                                                    <span style={{ background: '#dbeafe', color: '#1e40af', padding: '2px 8px', borderRadius: '4px', fontSize: '12px' }}>
+-                                                        @{row.username} ({row.account_status})
+-                                                    </span>
+-                                                ) : (
+-                                                    <span style={{ color: '#94a3b8', fontSize: '12px' }}>Unlinked</span>
+-                                                )}
+-                                            </td>
++                            <div className="table-responsive">
++                                <table className="table table-hover mb-0">
++                                    <thead>
++                                        <tr>
++                                            <th>Staff Name</th>
++                                            <th>Designation</th>
++                                            <th>Assigned DNA Lab</th>
++                                            <th>Lab City</th>
++                                            <th>Contact</th>
++                                            <th>System Account</th>
+                                         </tr>
+-                                    ))}
+-                                </tbody>
+-                            </table>
++                                    </thead>
++                                    <tbody>
++                                        {overviewData.map((row) => (
++                                            <tr key={row.technician_id}>
++                                                <td className="fw-semibold">{row.technician_name}</td>
++                                                <td>{row.designation}</td>
++                                                <td>{row.lab_name}</td>
++                                                <td>{row.lab_city}</td>
++                                                <td className="small text-secondary">
++                                                    <div>{row.technician_email}</div>
++                                                    <div>{row.technician_phone}</div>
++                                                </td>
++                                                <td>
++                                                    {row.username ? (
++                                                        <span className="badge text-bg-primary status-badge">
++                                                            @{row.username} ({row.account_status})
++                                                        </span>
++                                                    ) : (
++                                                        <span className="small text-secondary">Unlinked</span>
++                                                    )}
++                                                </td>
++                                            </tr>
++                                        ))}
++                                    </tbody>
++                                </table>
++                            </div>
+                         </div>
+                     )}
+ 
+                     {/* TAB 2: GROUP BY & HAVING */}
+                     {activeTab === 'capacity' && (
+-                        <div>
+-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+-                                <label style={{ fontSize: '14px', fontWeight: '500' }}>Filter by Min Technicians (HAVING clause):</label>
++                        <>
++                            <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
++                                <label className="form-label mb-0" htmlFor="minTechFilter">Filter by Min Technicians (HAVING clause):</label>
+                                 <select
++                                    id="minTechFilter"
++                                    className="form-select w-auto"
+                                     value={minTechFilter}
+                                     onChange={(e) => handleCapacityFilter(e.target.value)}
+-                                    style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                                 >
+                                     <option value="0">All Labs (HAVING &ge; 0)</option>
+                                     <option value="1">At least 1 Technician (HAVING &ge; 1)</option>
+@@ -199,34 +167,68 @@ export default function DnaAnalyticsDashboard() {
+                                 </select>
+                             </div>
+ 
+-                            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+-                                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+-                                    <thead style={{ background: '#f1f5f9' }}>
++                            <div className="card">
++                                <div className="table-responsive">
++                                    <table className="table table-hover mb-0">
++                                        <thead>
++                                            <tr>
++                                                <th>Lab ID</th>
++                                                <th>Laboratory Name</th>
++                                                <th>Location / City</th>
++                                                <th>Contact Hotline</th>
++                                                <th>Total Assigned Staff</th>
++                                            </tr>
++                                        </thead>
++                                        <tbody>
++                                            {capacityData.map((lab) => (
++                                                <tr key={lab.lab_id}>
++                                                    <td className="fw-semibold">#{lab.lab_id}</td>
++                                                    <td>{lab.lab_name}</td>
++                                                    <td>{lab.city}</td>
++                                                    <td>{lab.contact_number}</td>
++                                                    <td>
++                                                        {/* Technician thakle shobuj, na thakle lal badge */}
++                                                        <span className={`badge status-badge ${lab.total_technicians > 0 ? 'text-bg-success' : 'text-bg-danger'}`}>
++                                                            {lab.total_technicians} Technicians
++                                                        </span>
++                                                    </td>
++                                                </tr>
++                                            ))}
++                                        </tbody>
++                                    </table>
++                                </div>
++                            </div>
++                        </>
++                    )}
++
++                    {/* TAB 3: Nested Subquery */}
++                    {activeTab === 'subquery' && (
++                        <div className="card">
++                            <div className="card-header small text-secondary">
++                                Displaying labs where staff count is greater than or equal to the calculated subquery system average.
++                            </div>
++                            <div className="table-responsive">
++                                <table className="table table-hover mb-0">
++                                    <thead>
+                                         <tr>
+-                                            <th style={{ padding: '12px' }}>Lab ID</th>
+-                                            <th style={{ padding: '12px' }}>Laboratory Name</th>
+-                                            <th style={{ padding: '12px' }}>Location / City</th>
+-                                            <th style={{ padding: '12px' }}>Contact Hotline</th>
+-                                            <th style={{ padding: '12px' }}>Total Assigned Staff</th>
++                                            <th>Lab ID</th>
++                                            <th>Laboratory Name</th>
++                                            <th>City</th>
++                                            <th>Technician Count</th>
++                                            <th>Calculated System Average</th>
++                                            <th>Status</th>
+                                         </tr>
+                                     </thead>
+                                     <tbody>
+-                                        {capacityData.map((lab) => (
+-                                            <tr key={lab.lab_id} style={{ borderTop: '1px solid #e2e8f0' }}>
+-                                                <td style={{ padding: '12px', fontWeight: 'bold' }}>#{lab.lab_id}</td>
+-                                                <td style={{ padding: '12px', fontWeight: '500' }}>{lab.lab_name}</td>
+-                                                <td style={{ padding: '12px' }}>{lab.city}</td>
+-                                                <td style={{ padding: '12px' }}>{lab.contact_number}</td>
+-                                                <td style={{ padding: '12px' }}>
+-                                                    <span style={{
+-                                                        background: lab.total_technicians > 0 ? '#dcfce7' : '#fee2e2',
+-                                                        color: lab.total_technicians > 0 ? '#166534' : '#991b1b',
+-                                                        padding: '3px 10px',
+-                                                        borderRadius: '12px',
+-                                                        fontWeight: '600'
+-                                                    }}>
+-                                                        {lab.total_technicians} Technicians
+-                                                    </span>
++                                        {aboveAvgData.map((lab) => (
++                                            <tr key={lab.lab_id}>
++                                                <td className="fw-semibold">#{lab.lab_id}</td>
++                                                <td>{lab.lab_name}</td>
++                                                <td>{lab.city}</td>
++                                                <td className="fw-semibold text-success">{lab.technician_count} Staff</td>
++                                                <td className="text-secondary">{lab.system_avg_technicians} Staff / Lab</td>
++                                                <td>
++                                                    <span className="badge text-bg-primary status-badge">&ge; Average</span>
+                                                 </td>
+                                             </tr>
+                                         ))}
+@@ -235,45 +237,8 @@ export default function DnaAnalyticsDashboard() {
+                             </div>
+                         </div>
+                     )}
+-
+-                    {/* TAB 3: Nested Subquery */}
+-                    {activeTab === 'subquery' && (
+-                        <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+-                            <div style={{ padding: '12px 16px', background: '#faf5ff', borderBottom: '1px solid #e2e8f0', fontSize: '14px', color: '#581c87' }}>
+-                                Displaying labs where staff count is greater than or equal to the calculated subquery system average.
+-                            </div>
+-                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+-                                <thead style={{ background: '#f1f5f9' }}>
+-                                    <tr>
+-                                        <th style={{ padding: '12px' }}>Lab ID</th>
+-                                        <th style={{ padding: '12px' }}>Laboratory Name</th>
+-                                        <th style={{ padding: '12px' }}>City</th>
+-                                        <th style={{ padding: '12px' }}>Technician Count</th>
+-                                        <th style={{ padding: '12px' }}>Calculated System Average</th>
+-                                        <th style={{ padding: '12px' }}>Status</th>
+-                                    </tr>
+-                                </thead>
+-                                <tbody>
+-                                    {aboveAvgData.map((lab) => (
+-                                        <tr key={lab.lab_id} style={{ borderTop: '1px solid #e2e8f0' }}>
+-                                            <td style={{ padding: '12px', fontWeight: 'bold' }}>#{lab.lab_id}</td>
+-                                            <td style={{ padding: '12px', fontWeight: '500' }}>{lab.lab_name}</td>
+-                                            <td style={{ padding: '12px' }}>{lab.city}</td>
+-                                            <td style={{ padding: '12px', fontWeight: 'bold', color: '#16a34a' }}>{lab.technician_count} Staff</td>
+-                                            <td style={{ padding: '12px', color: '#64748b' }}>{lab.system_avg_technicians} Staff / Lab</td>
+-                                            <td style={{ padding: '12px' }}>
+-                                                <span style={{ background: '#f3e8ff', color: '#6b21a8', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '500' }}>
+-                                                    &ge; Average
+-                                                </span>
+-                                            </td>
+-                                        </tr>
+-                                    ))}
+-                                </tbody>
+-                            </table>
+-                        </div>
+-                    )}
+                 </>
+             )}
+-        </div>
++        </>
+     );
+ }
+\ No newline at end of file
+```
+
+## `frontend/src/routes/AppRoutes.jsx` (modified)
+
+```diff
+diff --git a/frontend/src/routes/AppRoutes.jsx b/frontend/src/routes/AppRoutes.jsx
+index 7d9428e..8e556e8 100644
+--- a/frontend/src/routes/AppRoutes.jsx
++++ b/frontend/src/routes/AppRoutes.jsx
+@@ -71,7 +71,8 @@ export default function AppRoutes() {
+ 
+       <Route path="/dna-labs" element={<DnaLabsPage />} />
+       <Route path="/lab-technicians" element={<LabTechniciansPage />} />
+-      <Route path="/dna-analytics" element={<DnaAnalyticsDashboard />} />
++      {/* /dna-analytics ekhane chilo (login chara, sidebar chara) — shoriye deya hoyeche.
++          Ekhon shudhu niche protected route ta kaj kore (Admin / Lab Technician, sidebar shoho). UI Phase 2 */}
+ 
+       <Route
+         path="/unauthorized"
+```
+
+## Access after this phase
+
+| Who | `/dna-analytics` before | After |
+|---|---|---|
+| Not logged in | Page opened (top-level route) | Redirected to login (`ProtectedRoute`) |
+| Officer | Page opened | `/unauthorized` (allowed roles: Admin, Lab Technician) |
+| Admin / Lab Technician | Page opened, no sidebar | Page opens **inside the app layout** |
+
+## UI Phase 2 testing
+
+| Test | Result |
+|---|---|
+| `npm run build` | ✅ |
+| `oxlint` on changed files | ✅ Only an old warning: unused `err` in the analytics `catch` (data code, not touched) |
+| DNA Analytics screenshot (Admin, fake API data) | ✅ Sidebar + topbar present, "DNA Analytics" active, 3 metric cards, 3 tabs on one line, readable table, soft "@user (active)" badge |
+| Tab 2 (click "Query 2") | ✅ Filter select themed. "2 Technicians" soft green, "0 Technicians" soft red |
+| `/admin/police-stations` screenshot | ✅ The real stations page (`AdminList`) is already themed |
+
+## Known gaps after UI Phase 2
+
+| Item | Note |
+|---|---|
+| `PoliceStations.jsx` | Unused + broken file (see above). Team decision whether to delete it |
+| `/dna-labs`, `/lab-technicians` | Also declared at the top level of `AppRoutes.jsx` without `ProtectedRoute`. The sidebar uses `/admin/labs` and `/admin/technicians`, so these look like leftovers. Not changed (other members' area); flag to the team |
+| Back-to-top position | Bottom-right. Check again when the chatbot widget is merged |

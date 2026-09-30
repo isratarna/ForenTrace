@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { DnaHelix, LiveClock, ScrollProgress } from '../components/DnaEffects' // live UI element (UI upgrade)
 
 const navByRole = {
   Admin: [
@@ -51,9 +52,10 @@ export default function AppLayout() {
 
   return (
     <div className="app-shell">
+      <ScrollProgress />
       <aside className="sidebar">
         <NavLink to="/" className="brand">
-          <span className="brand-icon">FT</span>
+          <span className="brand-icon"><DnaHelix rungs={5} /></span>
           <span>ForenTrace<small>DNA Identification System</small></span>
         </NavLink>
         <div className="role-label">{role} portal</div>
@@ -76,7 +78,8 @@ export default function AppLayout() {
       <main className="main-content">
         <header className="topbar">
           <span className="text-secondary small">Authorized forensic records system</span>
-          <div className="d-flex align-items-center gap-2">
+          <div className="d-flex align-items-center gap-3">
+            <LiveClock />
             <span className="small text-secondary d-none d-sm-inline">{user?.name}</span>
             <NavLink to="/profile" className="user-chip" aria-label="My profile">{user?.initials}</NavLink>
           </div>

@@ -71,7 +71,8 @@ export default function AppRoutes() {
 
       <Route path="/dna-labs" element={<DnaLabsPage />} />
       <Route path="/lab-technicians" element={<LabTechniciansPage />} />
-      <Route path="/dna-analytics" element={<DnaAnalyticsDashboard />} />
+      {/* /dna-analytics ekhane chilo (login chara, sidebar chara) — shoriye deya hoyeche.
+          Ekhon shudhu niche protected route ta kaj kore (Admin / Lab Technician, sidebar shoho). UI Phase 2 */}
 
       <Route
         path="/unauthorized"
