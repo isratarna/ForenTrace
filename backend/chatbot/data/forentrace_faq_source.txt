@@ -22,9 +22,9 @@ A: Open the login page, enter your registered email address and password, and cl
 Q: Why can't I log in? My login failed or my account is not active (pending).
 A: "Invalid email or password" means the email or password is wrong. "Account is not active" means the Admin has not approved your registration yet, or your account was deactivated. Contact the Admin to activate your account.
 Q: How do I change (update, reset) my password?
-A: Click My Profile at the bottom of the sidebar, then click Change Password. Enter your current password and your new password, then click Save.
+A: Any user (Admin, Officer or Lab Technician) can click My Profile at the bottom of the sidebar, then click Change Password. Changing the password is not available yet, so please contact the Admin.
 Q: How do I log out (sign out) of ForenTrace?
-A: Click Sign out at the bottom of the sidebar. Your session ends and you return to the login page.
+A: Any user (Admin, Officer or Lab Technician) can click Sign out at the bottom of the sidebar. Your session ends and you return to the login page.
 Q: How do I register (add, report) a missing person?
 A: Log in as an Officer, open Missing Persons and click Register person. Fill in details such as name, gender, date of birth, missing date, last seen location, city and description, then click Register Missing Person. Only Officers can register missing persons.
 Q: What are the missing person statuses (Missing, Identified)?
@@ -44,7 +44,7 @@ A: Open Family Members and click Register DNA beside the family member. Choose t
 Q: How do I register (add, create, collect) a DNA sample?
 A: Go to DNA Samples and click Register DNA Sample. Select the missing person, a family member only if it is a reference sample, the DNA lab, an optional technician, the sample type, collection date and storage location, then click Save DNA Sample. Only Admins and Officers can register DNA samples.
 Q: What DNA sample types can be registered?
-A: ForenTrace supports these sample types: Buccal Swab, Blood Sample, Hair Strand, Bone Sample, Tissue Sample and Personal Belonging.
+A: ForenTrace supports these sample types: Buccal Swab, Blood Sample, Hair Strand, Bone Sample, Tissue Sample and Personal Belonging. Admins and Officers choose the type in the Sample Type field when they click Register DNA Sample.
 Q: What do the DNA sample statuses (Awaiting Analysis, In Analysis, Analyzed, Rejected) mean?
 A: Awaiting Analysis means the sample is registered and waiting in the laboratory queue. In Analysis means a technician is processing it. Analyzed means the DNA profile code has been recorded. Rejected means the sample was unusable.
 Q: How does a lab technician analyse (process, test) a DNA sample and record the analysis result? What is the lab analysis workflow?
@@ -52,7 +52,7 @@ A: The technician opens DNA Samples, which shows only their laboratory's samples
 Q: What is a DNA profile code?
 A: A DNA profile code is the result of the laboratory analysis, stored as 6 to 50 letters, numbers or hyphens. The system compares these codes to measure how similar two samples are. Only Analyzed samples have a profile code and can be compared.
 Q: How does DNA matching (DNA comparison) work in ForenTrace?
-A: Open DNA Matches and click New Comparison, or click Compare on an analyzed evidence sample. Select an Unknown / Evidence Sample and a Matched / Reference Sample, then click Run Comparison. The system compares the two DNA profile codes position by position and shows the similarity percentage and confidence level. Click Save Match to record the result.
+A: Admins, Officers and Lab Technicians can run a DNA comparison. Open DNA Matches and click New Comparison, or click Compare on an analyzed evidence sample. Select an Unknown / Evidence Sample and a Matched / Reference Sample, then click Run Comparison. The system compares the two DNA profile codes position by position and shows the similarity percentage and confidence level. Click Save Match to record the result.
 Q: What is the similarity percentage of a DNA match? How is it calculated?
 A: The similarity percentage is the number of positions where the two DNA profile codes are the same, divided by the length of the longer code, times 100. For example, codes that are the same in 7 of 8 positions give 87.5%. Admins and Officers can also enter a similarity percentage manually.
 Q: What is the confidence level (High, Medium, Low) of a DNA match?
@@ -66,7 +66,7 @@ A: Each role has its own dashboard. The Admin Dashboard shows system-wide statis
 Q: What reports are available? How do I export (download) a report?
 A: Open Reports to see solved and total cases per police station and the average identification time, and click Export Report (CSV) to download a CSV file. The DNA Sample Report shows whether each sample is Matched or Awaiting Match, and the Labs Intersection report lists labs with above-average technician capacity and active technicians. Admins and Lab Technicians can also open DNA Analytics.
 Q: How does the Admin add (create) and manage police stations, police officers, DNA labs (laboratories) and lab technicians?
-A: The Admin uses the sidebar pages Police Stations, Police Officers, DNA Labs and Lab Technicians. Each page has an Add button, and each record can be viewed, edited or deleted. Users & Accounts is used to edit, activate or deactivate login accounts.
+A: The Admin uses the sidebar pages Police Stations, Police Officers, DNA Labs and Lab Technicians. Each page has its own add button (Add Station, Add Officer, Add DNA Lab or Add Technician), and each record can be viewed, edited or deleted. Users & Accounts is used to edit, activate or deactivate login accounts.
 Q: Is my data secure? How does ForenTrace protect data (privacy, security, access control)? How are passwords stored?
 A: Every user must sign in, and each role can only open the pages and records allowed for that role. Officers only manage their assigned cases, and Lab Technicians only see their own laboratory's samples. Passwords are stored in hashed (encrypted) form, never as plain text.
 Q: Can the assistant (chatbot) tell me about a specific case, person or DNA result? Can it show private data?

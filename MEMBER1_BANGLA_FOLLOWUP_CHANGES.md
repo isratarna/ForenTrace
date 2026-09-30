@@ -17,8 +17,8 @@ The earlier CB-1…CB-8 work is in `MEMBER1_CHATBOT_CHANGES.md`.
 | 2 | Step 2 | Evaluation script, main + holdout question files, choose the threshold | `evaluate.js`, `data/eval_questions.json`, `data/holdout_questions.json` | ✅ Done (main 10/10, holdout 81/91 → **86/91** after the 8 wording changes (Phase 2b); threshold kept at 0.65) |
 | 3 | Step 3 | Pre-flight check (env, model, FAQ loaded, index, smoke test) | `preflight.js` | ✅ Done (5/5 ✅; failure paths tested) |
 | 4 | Step 4 | Teach-the-bot test (swap in FAQ v2, re-ingest, restore) | `teachTest.js` | ✅ Done (blocked 0.6445 → answered 0.8265 by the new entry; original restored; pre-flight 5/5) |
-| 5 | Step 5 | FAQ checker (roles, exact menu names, vague answers) + wording list | `checkFaq.js`, `data/faq_terms.json` | ✅ Checker done (5 entries flagged, 5 wording changes checked offline: 0 problems after them); ⏳ waiting for you to apply them |
-| 6 | Step 6 | Bangla search-side test file | `data/bangla_questions.json` | ⏳ |
+| 5 | Step 5 | FAQ checker (roles, exact menu names, vague answers) + wording list | `checkFaq.js`, `data/faq_terms.json` | ✅ Done (5 entries fixed in Phase 5b → checker 0 problems; main 10/10, holdout 85/91, same answer/block decisions) |
+| 6 | Step 6 | Bangla search-side test file | `data/bangla_questions.json` | ⏳ Next |
 | 7 | Step 7 | Follow-up search-side test (copy of Member 2's rule) | `followupTest.js`, `data/followup_questions.json` | ⏳ |
 | 8 | Step 8 | Draft FAQ entries for the new features (not added yet) | `data/new_feature_faq_drafts.txt` | ⏳ |
 | — | Steps 9–13 | End-to-end Bangla / follow-up tests, run-all, team message | — | ⏸ Waiting for Members 2 and 3 |
@@ -1792,3 +1792,87 @@ Every fact was checked on `origin/main`: comparisons are allowed for `Admin, Off
 ### Known gaps / notes
 - The name check only looks at text after open/click/go to/choose/select/use/in. A menu name mentioned any other way ("the Reports page shows …") isn't checked.
 - `faq_terms.json` must be updated if the app's menus or buttons change on `main`.
+
+---
+
+## Phase 5b — The 5 follow-up wording changes applied, steps 1, 2 and 5 re-run
+
+### Goal
+Apply all 5 answer changes from Phase 5 (you said "proceed" after the Phase 5 recommendation), re-ingest, and confirm with steps 1, 2 and 5 (plus the pre-flight and the teach test) that everything still passes.
+
+### Files changed
+
+| File | Type | Change |
+| --- | --- | --- |
+| `backend/chatbot/data/forentrace_faq_source.txt` | Modified | The 5 answer changes (answers only, question lines unchanged) |
+| `backend/chatbot/data/forentrace_faq.docx` | Modified | Rebuilt from the source text (same builder as Phase 2b; 75 paragraphs) |
+| `backend/chatbot/data/forentrace_faq.pdf` | Modified | Exported from the Word file by Word; text identical to the source |
+| `backend/chatbot/data/*_thresholds.csv` | Modified (tracked since the step 2 commit) | Re-written by the evaluation runs |
+| `C:\Users\MSI\Desktop\forentrace_faq_v2.pdf` / `.docx` | Outside the repo | Rebuilt = **current** FAQ + the delete Q&A, so the teach test never brings back old answers |
+
+The originals (source, PDF, Word file before this phase) were backed up in the session scratchpad first. Each replacement had to match the old text **exactly once**, or nothing was written.
+
+### The 5 changes (diff of `forentrace_faq_source.txt`)
+```diff
+-A: Click My Profile at the bottom of the sidebar, then click Change Password. Enter your current password and your new password, then click Save.
++A: Any user (Admin, Officer or Lab Technician) can click My Profile at the bottom of the sidebar, then click Change Password. Changing the password is not available yet, so please contact the Admin.
+-A: Click Sign out at the bottom of the sidebar. Your session ends and you return to the login page.
++A: Any user (Admin, Officer or Lab Technician) can click Sign out at the bottom of the sidebar. Your session ends and you return to the login page.
+-A: ForenTrace supports these sample types: Buccal Swab, Blood Sample, Hair Strand, Bone Sample, Tissue Sample and Personal Belonging.
++A: ForenTrace supports these sample types: Buccal Swab, Blood Sample, Hair Strand, Bone Sample, Tissue Sample and Personal Belonging. Admins and Officers choose the type in the Sample Type field when they click Register DNA Sample.
+-A: Open DNA Matches and click New Comparison, or click Compare on an analyzed evidence sample. …
++A: Admins, Officers and Lab Technicians can run a DNA comparison. Open DNA Matches and click New Comparison, or click Compare on an analyzed evidence sample. …
+-… Each page has an Add button, and each record can be viewed, edited or deleted. …
++… Each page has its own add button (Add Station, Add Officer, Add DNA Lab or Add Technician), and each record can be viewed, edited or deleted. …
+```
+
+### Testing results (real Atlas, after re-ingest)
+```text
+PDF text == source: true   (4 pages)
+Created 37 chunks / Inserted 37 chunks into MongoDB
+
+> node chatbot/preflight.js
+   …no search result yet, waiting for vector_index to sync (1/6)
+Pre-flight: 5/5 checks passed
+
+> node chatbot/checkChunks.js                              (step 1)
+Checked 37 chunks in faq_chunks — Q&A chunks: 36, intro/other: 1
+✅ No problems found
+
+> node chatbot/evaluate.js                                 (step 2, main)
+Accuracy (right FAQ entry first): 10/10 (100.0%)
+Lowest "on" score:  0.8088   Highest "off" score: 0.5926
+At 0.65: on answered 10/10, off blocked 12/12
+
+> node chatbot/evaluate.js holdout_questions.json          (step 2, holdout)
+Accuracy (right FAQ entry first): 85/91 (93.4%)
+Lowest "on" score:  0.6078   Highest "off" score: 0.5971
+At 0.65: on answered 89/91, off blocked 15/15
+Misses: sign up, Pending Review, add a DNA lab, 3 typos
+
+> node chatbot/checkFaq.js                                 (step 5)
+Checked 36 Q&A chunks (roles and menu names from data/faq_terms.json)
+✅ No problems found
+
+> node chatbot/teachTest.js                                (step 4, with the rebuilt v2)
+✅ 1. Before: main question blocked — "Can I delete a case?" 0.6445 → blocked
+✅ 3. After: new entry first and answered — "Can I delete a case?" 0.8265; 4/4 wordings answered by the new entry
+✅ 4. Original FAQ restored — PDF identical, 37 chunks re-ingested, backup removed
+✅ 5. Pre-flight after restore — all checks passed
+```
+
+| Check | Before Phase 5b | After |
+| --- | --- | --- |
+| FAQ checker (step 5) | 6 problems in 5 entries | **0 problems** ✅ |
+| Chunk checker (step 1) | 0 | 0 ✅ |
+| Main file (step 2) | 10/10 | 10/10 ✅ |
+| Holdout (step 2) | 86/91 | 85/91: the one typo "how to chnage my pasword", **blocked both before and after**, as predicted offline |
+| Answered / blocked at 0.65 | on 99/101, off 27/27 | on 99/101, off 27/27 (unchanged) |
+
+Every number is exactly what the offline check in Phase 5 predicted.
+
+**Step 5 done:** ✅ the FAQ checker reports zero problems, and what users see from step 2 did not change (same answered/blocked decisions for every question).
+
+### Known gaps / notes
+- **Tell the team:** (1) you re-ingested (5 answers changed), (2) Change Password on `main` only shows "not available yet". If someone implements it, change FAQ answer 1 back to the step-by-step version.
+- The two `*_thresholds.csv` files are tracked in git since the step 2 commit, so every evaluation run shows them as modified. Commit them when you want the latest numbers saved, or stop tracking them with `git rm --cached backend/chatbot/data/*_thresholds.csv`.
