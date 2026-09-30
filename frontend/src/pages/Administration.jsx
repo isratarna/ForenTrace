@@ -11,15 +11,11 @@ import { getLabs, getLabsWithoutTechnicians, getMatches, getSamples } from '../s
 const recordConfig = {
   stations: { title: 'Police Stations', subtitle: 'Manage police station records.', button: 'Add Station', fields: [['name', 'Station name'], ['district', 'District'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email', 'email']] },
   officers: { title: 'Police Officers', subtitle: 'Manage officer records and station assignments.', button: 'Add Officer', fields: [['name', 'Full name'], ['rank', 'Rank'], ['badge', 'Badge number'], ['station', 'Police station'], ['phone', 'Phone'], ['email', 'Email', 'email'], ['status', 'Status', 'select', ['Active', 'Inactive']]] },
-  labs: { title: 'DNA Labs', subtitle: 'Manage forensic DNA laboratory records.', button: 'Add DNA Lab', fields: [['name', 'Lab name'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email', 'email']] },
-  technicians: { title: 'Lab Technicians', subtitle: 'Manage technician records and laboratory assignments.', button: 'Add Technician', fields: [['name', 'Full name'], ['designation', 'Designation'], ['lab', 'DNA laboratory'], ['phone', 'Phone'], ['email', 'Email', 'email'], ['status', 'Status', 'select', ['Active', 'Inactive']]] },
 }
 
 const displayColumns = {
   stations: [['name', 'Station'], ['district', 'District'], ['city', 'City'], ['contact', 'Contact'], ['email', 'Email']],
   officers: [['name', 'Officer'], ['rank', 'Rank'], ['badge', 'Badge Number'], ['station', 'Police Station'], ['phone', 'Phone'], ['email', 'Email'], ['status', 'Status']],
-  labs: [['name', 'Lab'], ['city', 'City'], ['address', 'Address'], ['contact', 'Contact'], ['email', 'Email']],
-  technicians: [['name', 'Technician'], ['designation', 'Designation'], ['lab', 'DNA Lab'], ['phone', 'Phone'], ['email', 'Email'], ['status', 'Status']],
   users: [['name', 'Name'], ['email', 'Email'], ['role', 'Role'], ['linked', 'Linked Person'], ['status', 'Status'], ['lastLogin', 'Last Login']],
 }
 
@@ -204,13 +200,12 @@ function AdminPasswordResetForm({ account, onCancel, onSave }) {
 
 export function AdminList({ kind }) {
   const { user: currentUser } = useAuth()
-  const { data, addAdminRecord, updateAdminRecord, removeAdminRecord } = useData()
   const [query, setQuery] = useState('')
   const [activeOnly, setActiveOnly] = useState(false)
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [accountRows, setAccountRows] = useState([])
-  const [stationRows, setStationRows] = useState(data.stations)
+  const [stationRows, setStationRows] = useState([])
   const [labRows, setLabRows] = useState([])
   const [creatingUser, setCreatingUser] = useState(false)
   const [resettingUser, setResettingUser] = useState(null)
@@ -248,7 +243,7 @@ export function AdminList({ kind }) {
     refreshRecords()
   }, [kind, refreshRecords])
 
-  const rows = backendKinds.includes(kind) ? accountRows : data[kind]
+  const rows = accountRows
   const columns = displayColumns[kind]
   const filtered = useMemo(() => rows.filter(row => (!activeOnly || row.status === 'Active') && (!query || Object.values(row).some(value => String(value ?? '').toLowerCase().includes(query.toLowerCase())))), [rows, activeOnly, query])
 
@@ -334,10 +329,6 @@ export function AdminList({ kind }) {
       }
       return
     }
-
-    if (editing?.id) updateAdminRecord(kind, editing.id, values)
-    else addAdminRecord(kind, values)
-    setEditing(null)
   }
 
   const remove = async record => {
@@ -361,8 +352,6 @@ export function AdminList({ kind }) {
       }
       return
     }
-    const result = removeAdminRecord(kind, record.id)
-    if (!result.ok) window.alert(result.message)
   }
 
   const activateUser = async record => {

@@ -70,15 +70,6 @@ export default function AppRoutes() {
       />
 
       <Route
-        path="/dna-labs"
-        element={
-          <ProtectedRoute allowedRoles={['Admin']}>
-            <DnaLabsPage />
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
         path="/unauthorized"
         element={<Unauthorized />}
       />
@@ -385,15 +376,6 @@ export default function AppRoutes() {
         />
 
         <Route
-          path="labs"
-          element={
-            <ProtectedRoute allowedRoles={['Admin']}>
-              <DnaLabsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
           path="admin/technicians"
           element={
             <ProtectedRoute allowedRoles={['Admin']}>
@@ -403,19 +385,10 @@ export default function AppRoutes() {
         />
 
         <Route
-          path="technicians"
+          path="admin/users"
           element={
             <ProtectedRoute allowedRoles={['Admin']}>
-              <LabTechniciansPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="lab-technicians"
-          element={
-            <ProtectedRoute allowedRoles={['Admin']}>
-              <LabTechniciansPage />
+              <AdminList kind="users" />
             </ProtectedRoute>
           }
         />
@@ -429,13 +402,31 @@ export default function AppRoutes() {
           }
         />
 
+        {/* REDIRECTS FOR LEGACY / DUPLICATE ROUTES */}
+
         <Route
-          path="admin/users"
-          element={
-            <ProtectedRoute allowedRoles={['Admin']}>
-              <AdminList kind="users" />
-            </ProtectedRoute>
-          }
+          path="police-stations"
+          element={<Navigate to="/admin/police-stations" replace />}
+        />
+
+        <Route
+          path="labs"
+          element={<Navigate to="/admin/labs" replace />}
+        />
+
+        <Route
+          path="dna-labs"
+          element={<Navigate to="/admin/labs" replace />}
+        />
+
+        <Route
+          path="technicians"
+          element={<Navigate to="/admin/technicians" replace />}
+        />
+
+        <Route
+          path="lab-technicians"
+          element={<Navigate to="/admin/technicians" replace />}
         />
 
       </Route>
