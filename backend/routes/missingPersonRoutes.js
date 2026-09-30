@@ -17,7 +17,7 @@ router.get('/', requireAuth, requireRole('Admin', 'Officer'), listMissingPersons
 router.get('/statistics', requireAuth, requireRole('Admin', 'Officer'), getMissingPersonStatistics)
 router.get('/statistics/above-average-cities', requireAuth, requireRole('Admin', 'Officer'), getAboveAverageCityMissingPersons)
 router.get('/:id', requireAuth, requireRole('Admin', 'Officer'), getMissingPerson)
-router.post('/', requireAuth, requireRole('Officer'), createMissingPerson)
+router.post('/', requireAuth, requireRole('Admin', 'Officer'), createMissingPerson)
 router.put('/:id', requireAuth, requireRole('Officer'), updateMissingPerson)
 router.delete('/:id', requireAuth, requireRole('Officer'), deleteMissingPerson)
 
