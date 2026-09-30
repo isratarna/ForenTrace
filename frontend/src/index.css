@@ -1,4 +1,509 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
-:root { font-family: 'DM Sans', Arial, sans-serif; color: #1c2d41; background: #f4f7fa; }
-* { box-sizing: border-box; } body { margin: 0; min-width: 320px; background: #f4f7fa; } a { text-decoration: none; }
-.app-shell { display: flex; min-height: 100vh; }.sidebar { width: 255px; flex: 0 0 255px; min-height: 100vh; background: #102a43; color: #d9e2ec; padding: 1.4rem .85rem; display: flex; flex-direction: column; }.brand { color: white; display: flex; align-items: center; gap: .7rem; font-size: 1.15rem; font-weight: 700; padding: 0 .55rem 1.6rem; }.brand small { display: block; font-size: .63rem; color: #9fb3c8; letter-spacing: .03em; font-weight: 400; }.brand-icon { width: 34px; height: 34px; background: #1f7a8c; color: white; border-radius: 8px; display: inline-grid; place-items: center; font-size: .7rem; font-weight: 700; }.role-label { margin: 0 .55rem .55rem; text-transform: uppercase; color: #829ab1; font-size: .68rem; letter-spacing: .09em; }.side-link { display: block; color: #bcccdc; border-radius: 6px; padding: .62rem .7rem; margin: .08rem 0; font-size: .88rem; }.side-link:hover,.side-link.active { background: #243b53; color: white; }.sidebar-bottom { margin-top: auto; border-top: 1px solid #334e68; padding-top: .7rem; }.main-content { min-width: 0; flex: 1; }.topbar { min-height: 64px; display: flex; justify-content: space-between; align-items: center; padding: 0 2rem; background: white; border-bottom: 1px solid #e8eef3; }.role-switch { width: 135px; }.user-chip { width: 33px; height: 33px; border-radius: 50%; background: #d9eaf0; color: #1f5a69; display:grid; place-items:center; font-size: .72rem; font-weight:700; }.content-wrap { padding: 2rem; max-width: 1500px; }.page-header { margin-bottom: 1.55rem; }.page-header h1 { font-size: 1.55rem; margin: 0 0 .25rem; font-weight: 700; }.card { border: 1px solid #e0e8ef; box-shadow: 0 1px 2px rgba(20,44,68,.025); border-radius: 9px; }.card-header,.card-footer { border-color: #e7edf2; }.metric-card h2 { font-size: 1.75rem; margin: 0; }.metric-mark { float: right; width: 27px; height: 27px; border-radius: 7px; display:grid; place-items:center; color: white; font-weight:700; }.metric-mark.primary { background:#2f80a1; }.metric-mark.success { background:#299b6c; }.metric-mark.warning { background:#d89614; }.table { font-size: .87rem; }.table thead th { color:#627d98; font-size:.72rem; text-transform:uppercase; letter-spacing:.025em; white-space: nowrap; }.status-badge { font-weight: 600; font-size: .7rem; }.detail-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap: 1.2rem 2rem; }.detail-grid span { font-size:.78rem; color:#627d98; }.detail-grid b { display:block; margin-top:.2rem; color:#243b53; font-size:.9rem; }.person-placeholder { height: 205px; display:grid; place-items:center; background:#d9eaf0; color:#276678; font-size:3rem; font-weight:700; }.bar-row { display:grid; grid-template-columns:80px 1fr 35px; gap:.7rem; align-items:center; font-size:.83rem; margin:.9rem 0; }.progress { height:.55rem; }.login-page { min-height:100vh; display:grid; grid-template-columns: 42% 58%; }.login-brand { background:#102a43; color:white; padding: max(12vh,5rem) 14%; }.login-brand h1 { margin:1rem 0 .1rem; font-size:2.5rem; }.login-brand p { color:#b9cbdc; max-width:380px; }.login-brand .large { width:58px; height:58px; font-size:1rem; }.login-brand hr { border-color:#486581; margin:2rem 0; }.login-form-wrap { display:grid; place-items:center; padding:2rem; }.login-card { width:min(420px,100%); }.login-card h2 { font-size:1.7rem; margin:.4rem 0 .5rem; }.eyebrow { font-size:.68rem; color:#2f80a1; letter-spacing:.1em; font-weight:700; }.match-hero { background:#f8fbfc; }.match-hero .card-body { display:flex; justify-content:space-between; align-items:center; text-align:center; padding:2rem 8%; }.match-hero h3 { margin:.4rem 0 0; }.match-score b { display:block; color:#167354; font-size:2.2rem; }.match-score span { display:block; color:#627d98; margin-bottom:.5rem; }.profile-avatar { width:82px; height:82px; border-radius:50%; display:grid; place-items:center; margin:auto; background:#d9eaf0; color:#276678; font-weight:700; font-size:1.4rem; }.report-card p { min-height: 2.4em; }.report-card h3 { font-size:1.35rem; } @media(max-width: 900px) { .sidebar { width:205px; flex-basis:205px; }.content-wrap { padding:1.25rem; }.topbar { padding:0 1.25rem; } } @media(max-width: 650px) { .app-shell { display:block; }.sidebar { width:100%; min-height:auto; padding:.8rem; }.sidebar nav { display:flex; overflow:auto; }.side-link { white-space:nowrap; }.sidebar-bottom { display:none; }.brand { padding-bottom:.5rem; }.role-label { display:none; }.login-page { grid-template-columns:1fr; }.login-brand { padding:3rem 10%; }.detail-grid { grid-template-columns:1fr; }.match-hero .card-body { padding:1.5rem; gap:1rem; } .match-hero h3{font-size:1rem;} }
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* =====================================================================
+   ForenTrace theme — Black + Teal, minimal
+   UI upgrade (Member 1). Rule: shob kichu neutral (kalo/dhushor),
+   teal shudhu accent hishebe — active link, primary button, link, focus.
+   Rong bodlate chaile shudhu ei variable gula bodlao.
+   ===================================================================== */
+:root {
+  --ft-bg: #060809;                          /* main kalo background */
+  --ft-surface: rgba(17, 21, 23, 0.85);      /* card er background */
+  --ft-surface-solid: #111517;               /* same, but solid */
+  --ft-surface-hover: rgba(255, 255, 255, 0.04);
+  --ft-border: rgba(255, 255, 255, 0.08);    /* neutral border */
+  --ft-border-hover: rgba(255, 255, 255, 0.16);
+  --ft-teal: #14b8a6;                        /* accent */
+  --ft-teal-light: #2dd4bf;
+  --ft-teal-soft: rgba(45, 212, 191, 0.12);  /* halka teal background */
+  --ft-text: #e4e9ea;                        /* normal lekha */
+  --ft-muted: #8b9699;                       /* halka lekha */
+  --ft-mono: 'JetBrains Mono', Consolas, monospace;
+
+  font-family: 'DM Sans', Arial, sans-serif;
+  color: var(--ft-text);
+  background: var(--ft-bg);
+}
+
+/* Bootstrap dark mode er rong (index.html e data-bs-theme="dark") — blue er jaygay teal */
+:root[data-bs-theme="dark"] {
+  --bs-body-bg: #060809;
+  --bs-body-bg-rgb: 6, 8, 9;
+  --bs-body-color: #e4e9ea;
+  --bs-body-color-rgb: 228, 233, 234;
+  --bs-heading-color: #f4f7f7;
+  --bs-emphasis-color: #ffffff;
+  --bs-secondary-color: rgba(160, 172, 175, 0.85);
+  --bs-secondary-bg: #15191b;
+  --bs-tertiary-bg: #0d1011;
+  --bs-border-color: rgba(255, 255, 255, 0.08);
+  --bs-border-color-translucent: rgba(255, 255, 255, 0.08);
+  --bs-primary: #14b8a6;
+  --bs-primary-rgb: 20, 184, 166;
+  --bs-primary-text-emphasis: #5eead4;
+  --bs-primary-bg-subtle: #042f2c;
+  --bs-primary-border-subtle: #0f766e;
+  --bs-link-color: #2dd4bf;
+  --bs-link-color-rgb: 45, 212, 191;
+  --bs-link-hover-color: #5eead4;
+  --bs-link-hover-color-rgb: 94, 234, 212;
+  --bs-focus-ring-color: rgba(45, 212, 191, 0.25);
+  --bs-font-sans-serif: 'DM Sans', Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+/* body transparent rakha — noile pichoner background layer (body::before) dhaka pore jay.
+   Kalo rong ta :root (html) e deya ache. */
+body { margin: 0; min-width: 320px; background: transparent; }
+a { text-decoration: none; transition: color .2s ease; }
+::selection { background: rgba(45, 212, 191, 0.3); color: #fff; }
+
+/* Scrollbar */
+html { scrollbar-color: #2a3134 var(--ft-bg); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--ft-bg); }
+::-webkit-scrollbar-thumb { background: #2a3134; border-radius: 10px; border: 2px solid var(--ft-bg); }
+::-webkit-scrollbar-thumb:hover { background: #3b4448; }
+
+/* ---------------------------------------------------------------------
+   Background (solid na, kintu shanto) — upore halka teal alo +
+   khub halka lab grid, dhire dhire nore. Niche grid mile jay (mask).
+   --------------------------------------------------------------------- */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -10%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 70% 0%, rgba(20, 184, 166, 0.10), transparent 50%),
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 100% 100%, 48px 48px, 48px 48px;
+  mask-image: linear-gradient(to bottom, #000 30%, transparent 90%);
+  animation: bg-drift 30s ease-in-out infinite alternate;
+}
+@keyframes bg-drift {
+  from { transform: translate(0, 0); }
+  to { transform: translate(-3%, 2%); }
+}
+
+/* ---------------------------------------------------------------------
+   App shell: sidebar + topbar
+   --------------------------------------------------------------------- */
+.app-shell { display: flex; min-height: 100vh; }
+
+/* Sidebar scroll korleo ek jaygay thake (sticky) */
+.sidebar {
+  width: 255px;
+  flex: 0 0 255px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  background: rgba(8, 10, 11, 0.92);
+  border-right: 1px solid var(--ft-border);
+  color: var(--ft-text);
+  padding: 1.4rem .85rem;
+  display: flex;
+  flex-direction: column;
+}
+.brand { color: #fff; display: flex; align-items: center; gap: .7rem; font-size: 1.1rem; font-weight: 700; padding: 0 .55rem 1.6rem; }
+.brand:hover { color: #fff; }
+.brand small { display: block; font-size: .65rem; color: var(--ft-muted); font-weight: 400; letter-spacing: .02em; }
+.brand-icon {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  background: var(--ft-teal-soft);
+  color: var(--ft-teal-light);
+  border-radius: 9px;
+  display: inline-grid;
+  place-items: center;
+  font-size: .7rem;
+  font-weight: 700;
+  overflow: hidden;
+}
+.role-label { margin: 0 .55rem .55rem; text-transform: uppercase; color: var(--ft-muted); font-size: .66rem; letter-spacing: .1em; }
+
+/* Menu link — hover e halka background, active hole teal lekha + bam e patla dag */
+.side-link {
+  position: relative;
+  display: block;
+  color: #a3adb0;
+  border-radius: 7px;
+  padding: .55rem .75rem;
+  margin: .06rem 0;
+  font-size: .88rem;
+  transition: background-color .2s ease, color .2s ease;
+}
+.side-link::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  bottom: 25%;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--ft-teal-light);
+  transform: scaleY(0);
+  transition: transform .2s ease;
+}
+.side-link:hover { background: var(--ft-surface-hover); color: #fff; }
+.side-link.active { background: var(--ft-teal-soft); color: var(--ft-teal-light); }
+.side-link.active::before { transform: scaleY(1); }
+.sidebar-bottom { margin-top: auto; border-top: 1px solid var(--ft-border); padding-top: .7rem; }
+
+.main-content { min-width: 0; flex: 1; }
+
+/* Topbar — upore atkano, pichone halka blur */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1010;
+  min-height: 60px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 2rem;
+  background: rgba(6, 8, 9, 0.75);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--ft-border);
+}
+.role-switch { width: 135px; }
+.user-chip {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--ft-teal-soft);
+  color: var(--ft-teal-light);
+  display: grid;
+  place-items: center;
+  font-size: .7rem;
+  font-weight: 700;
+  transition: background-color .2s ease;
+}
+.user-chip:hover { background: rgba(45, 212, 191, 0.22); color: var(--ft-teal-light); }
+
+/* ---------------------------------------------------------------------
+   Live element gula (components/DnaEffects.jsx)
+   --------------------------------------------------------------------- */
+
+/* DNA helix: protiti rung ghore (scaleX 1 -> -1 -> 1), delay er karone pechano dekhay */
+.dna-helix { display: flex; flex-direction: column; justify-content: center; gap: 4px; width: 18px; }
+.dna-rung {
+  position: relative;
+  display: block;
+  height: 1.5px;
+  width: 100%;
+  border-radius: 2px;
+  background: rgba(45, 212, 191, 0.4);
+  animation: helix-spin 3s ease-in-out infinite;
+}
+.dna-rung::before,
+.dna-rung::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.dna-rung::before { left: -2.5px; background: var(--ft-teal-light); }
+.dna-rung::after { right: -2.5px; background: #e6fffb; }
+.dna-helix.helix-large { width: 90px; gap: 14px; opacity: .55; }
+.dna-helix.helix-large .dna-rung { height: 2px; }
+.dna-helix.helix-large .dna-rung::before,
+.dna-helix.helix-large .dna-rung::after { width: 9px; height: 9px; top: -3.5px; }
+.dna-helix.helix-large .dna-rung::before { left: -4.5px; }
+.dna-helix.helix-large .dna-rung::after { right: -4.5px; }
+@keyframes helix-spin {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(-1); }
+}
+
+/* Live clock — choto dot + shomoy */
+.live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  color: var(--ft-muted);
+  font-family: var(--ft-mono);
+  font-size: .72rem;
+  white-space: nowrap;
+}
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ft-teal-light);
+  animation: pulse 2.4s ease-out infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.5); }
+  100% { box-shadow: 0 0 0 6px rgba(45, 212, 191, 0); }
+}
+
+/* Scroll progress bar + back to top button */
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 2px;
+  z-index: 1100;
+  pointer-events: none;
+  background: var(--ft-teal-light);
+  transition: width .1s linear;
+}
+.back-to-top {
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  z-index: 1030;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--ft-border-hover);
+  background: var(--ft-surface-solid);
+  color: var(--ft-text);
+  font-size: 1.05rem;
+  animation: pop-in .25s ease;
+  transition: transform .2s ease, border-color .2s ease, color .2s ease;
+}
+.back-to-top:hover { transform: translateY(-2px); border-color: var(--ft-teal-light); color: var(--ft-teal-light); }
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(.7); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ---------------------------------------------------------------------
+   Page content
+   --------------------------------------------------------------------- */
+.content-wrap { padding: 2rem; max-width: 1500px; }
+
+/* Notun page khulle content halka fade hoye ashe */
+.content-wrap > * { animation: fade-up .4s ease backwards; }
+.content-wrap > *:nth-child(2) { animation-delay: .05s; }
+.content-wrap > *:nth-child(3) { animation-delay: .1s; }
+@keyframes fade-up {
+  from { opacity: 0; translate: 0 8px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+.page-header { margin-bottom: 1.6rem; }
+.page-header h1 { font-size: 1.5rem; margin: 0 0 .25rem; font-weight: 700; letter-spacing: -.01em; }
+.text-secondary { color: var(--ft-muted) !important; }
+
+/* Card — shanto kalo, hover e border ektu ujjol */
+.card {
+  --bs-card-bg: var(--ft-surface);
+  --bs-card-border-color: var(--ft-border);
+  --bs-card-cap-bg: transparent;
+  --bs-card-color: var(--ft-text);
+  border-radius: 10px;
+  transition: border-color .2s ease, transform .2s ease;
+}
+.card:hover { border-color: var(--ft-border-hover); }
+.card-header, .card-footer { border-color: var(--ft-border); }
+
+/* Metric card — boro number, hover e ektu upore */
+.metric-card:hover { transform: translateY(-2px); }
+.metric-card h2 { font-size: 1.75rem; margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.metric-mark { float: right; width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-size: .8rem; font-weight: 700; }
+.metric-mark.primary { background: var(--ft-teal-soft); color: var(--ft-teal-light); }
+.metric-mark.success { background: rgba(52, 211, 153, 0.12); color: #34d399; }
+.metric-mark.warning { background: rgba(251, 191, 36, 0.12); color: #fbbf24; }
+
+/* Table — transparent, hover row e halka alo */
+.table {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--ft-text);
+  --bs-table-border-color: var(--ft-border);
+  --bs-table-hover-bg: var(--ft-surface-hover);
+  --bs-table-hover-color: #fff;
+  --bs-table-striped-bg: rgba(255, 255, 255, 0.02);
+  font-size: .87rem;
+}
+.table thead th { color: var(--ft-muted); font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.table-light { --bs-table-bg: rgba(255, 255, 255, 0.03); --bs-table-color: var(--ft-muted); --bs-table-border-color: var(--ft-border); }
+.status-badge { font-weight: 600; font-size: .7rem; border-radius: 999px; padding: .35em .7em; }
+/* Status badge — gadho rong er bodole halka background + rongin lekha (shanto dekhay) */
+.status-badge.text-bg-success { background-color: rgba(52, 211, 153, 0.12) !important; color: #34d399 !important; }
+.status-badge.text-bg-warning { background-color: rgba(251, 191, 36, 0.12) !important; color: #fbbf24 !important; }
+.status-badge.text-bg-primary { background-color: var(--ft-teal-soft) !important; color: var(--ft-teal-light) !important; }
+.status-badge.text-bg-danger { background-color: rgba(248, 113, 113, 0.12) !important; color: #f87171 !important; }
+.status-badge.text-bg-secondary { background-color: rgba(255, 255, 255, 0.07) !important; color: #b9c2c4 !important; }
+
+/* Button — flat teal, click e ektu chapa (microtransition) */
+.btn { transition: color .2s ease, background-color .2s ease, border-color .2s ease, transform .1s ease; }
+.btn:not(:disabled):active { transform: scale(.98); }
+.btn-primary {
+  --bs-btn-color: #04201d;
+  --bs-btn-bg: var(--ft-teal);
+  --bs-btn-border-color: var(--ft-teal);
+  --bs-btn-hover-color: #04201d;
+  --bs-btn-hover-bg: var(--ft-teal-light);
+  --bs-btn-hover-border-color: var(--ft-teal-light);
+  --bs-btn-active-color: #04201d;
+  --bs-btn-active-bg: #0d9488;
+  --bs-btn-active-border-color: #0d9488;
+  --bs-btn-disabled-color: rgba(4, 32, 29, 0.7);
+  --bs-btn-disabled-bg: #0f766e;
+  --bs-btn-disabled-border-color: #0f766e;
+  --bs-btn-focus-shadow-rgb: 45, 212, 191;
+  font-weight: 600;
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--ft-teal-light);
+  --bs-btn-border-color: rgba(45, 212, 191, 0.4);
+  --bs-btn-hover-color: #04201d;
+  --bs-btn-hover-bg: var(--ft-teal-light);
+  --bs-btn-hover-border-color: var(--ft-teal-light);
+  --bs-btn-active-color: #04201d;
+  --bs-btn-active-bg: var(--ft-teal);
+  --bs-btn-active-border-color: var(--ft-teal);
+  --bs-btn-focus-shadow-rgb: 45, 212, 191;
+}
+/* btn-light dark theme e shada dekhay, tai eke shanto dark button banano */
+.btn-light {
+  --bs-btn-color: var(--ft-text);
+  --bs-btn-bg: rgba(255, 255, 255, 0.05);
+  --bs-btn-border-color: var(--ft-border);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: rgba(255, 255, 255, 0.09);
+  --bs-btn-hover-border-color: var(--ft-border-hover);
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: rgba(255, 255, 255, 0.12);
+  --bs-btn-active-border-color: var(--ft-border-hover);
+}
+
+/* Form input — focus korle teal border */
+.form-control,
+.form-select {
+  background-color: rgba(255, 255, 255, 0.03);
+  border-color: var(--ft-border-hover);
+  color: var(--ft-text);
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.form-control:focus,
+.form-select:focus {
+  background-color: rgba(255, 255, 255, 0.04);
+  border-color: var(--ft-teal);
+  box-shadow: 0 0 0 .2rem rgba(45, 212, 191, 0.15);
+  color: #fff;
+}
+.form-control::placeholder { color: rgba(160, 172, 175, 0.5); }
+.form-label { color: #b9c2c4; font-size: .85rem; }
+.form-check-input:checked { background-color: var(--ft-teal); border-color: var(--ft-teal); }
+.form-check-input:focus { border-color: var(--ft-teal); box-shadow: 0 0 0 .2rem rgba(45, 212, 191, 0.15); }
+
+/* Baki Bootstrap jinish er blue -> teal */
+.progress { --bs-progress-bg: rgba(255, 255, 255, 0.06); --bs-progress-bar-bg: var(--ft-teal); height: .5rem; }
+.nav-pills { --bs-nav-pills-link-active-bg: var(--ft-teal); --bs-nav-pills-link-active-color: #04201d; }
+.nav-tabs { --bs-nav-tabs-border-color: var(--ft-border); --bs-nav-tabs-link-active-color: var(--ft-teal-light); --bs-nav-tabs-link-active-bg: transparent; --bs-nav-tabs-link-active-border-color: var(--ft-border) var(--ft-border) var(--ft-bg); }
+.nav-tabs .nav-link { color: var(--ft-muted); font-size: .88rem; }
+.nav-tabs .nav-link:hover { color: var(--ft-text); }
+.nav-tabs .nav-link.active { color: var(--ft-teal-light); }
+.dropdown-menu { --bs-dropdown-link-active-bg: var(--ft-teal); --bs-dropdown-bg: var(--ft-surface-solid); --bs-dropdown-border-color: var(--ft-border); }
+.list-group { --bs-list-group-active-bg: var(--ft-teal); --bs-list-group-active-border-color: var(--ft-teal); --bs-list-group-bg: transparent; }
+.modal { --bs-modal-bg: var(--ft-surface-solid); --bs-modal-border-color: var(--ft-border-hover); }
+
+/* Kichu page e bg-white / bg-light / text-dark lekha ache — dark theme e egulo thik kora */
+.bg-white, .bg-light { background-color: var(--ft-surface-solid) !important; color: var(--ft-text); }
+.card-header.bg-white, .card-footer.bg-white { background-color: transparent !important; }
+.text-dark:not(.bg-info):not(.bg-warning) { color: var(--ft-text) !important; }
+
+/* ---------------------------------------------------------------------
+   Detail / match / report page er purono class
+   --------------------------------------------------------------------- */
+.detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem 2rem; }
+.detail-grid span { font-size: .78rem; color: var(--ft-muted); }
+.detail-grid b { display: block; margin-top: .2rem; color: #f4f7f7; font-size: .9rem; }
+.person-placeholder { height: 205px; display: grid; place-items: center; background: var(--ft-teal-soft); color: var(--ft-teal-light); font-size: 3rem; font-weight: 700; }
+.bar-row { display: grid; grid-template-columns: 80px 1fr 35px; gap: .7rem; align-items: center; font-size: .83rem; margin: .9rem 0; }
+.eyebrow { font-size: .68rem; color: var(--ft-teal-light); letter-spacing: .12em; font-weight: 600; }
+.match-hero { background: var(--ft-surface-solid); }
+.match-hero .card-body { display: flex; justify-content: space-between; align-items: center; text-align: center; padding: 2rem 8%; }
+.match-hero h3 { margin: .4rem 0 0; }
+.match-score b { display: block; color: var(--ft-teal-light); font-size: 2.2rem; font-variant-numeric: tabular-nums; }
+.match-score span { display: block; color: var(--ft-muted); margin-bottom: .5rem; }
+.profile-avatar { width: 82px; height: 82px; border-radius: 50%; display: grid; place-items: center; margin: auto; background: var(--ft-teal-soft); color: var(--ft-teal-light); font-weight: 700; font-size: 1.4rem; }
+.report-card p { min-height: 2.4em; }
+.report-card h3 { font-size: 1.35rem; }
+.report-card:hover { transform: translateY(-2px); }
+
+/* ---------------------------------------------------------------------
+   Login page
+   --------------------------------------------------------------------- */
+.login-page { min-height: 100vh; display: grid; grid-template-columns: 42% 58%; }
+.login-brand {
+  background: rgba(8, 10, 11, 0.9);
+  border-right: 1px solid var(--ft-border);
+  color: #fff;
+  padding: max(12vh, 5rem) 14%;
+}
+.login-brand h1 { margin: 1rem 0 .1rem; font-size: 2.4rem; font-weight: 700; letter-spacing: -.02em; }
+.login-brand p { color: var(--ft-muted); max-width: 380px; }
+.login-brand .large { width: 56px; height: 56px; font-size: 1rem; }
+.login-brand hr { border-color: var(--ft-border-hover); margin: 2rem 0; }
+.login-brand .dna-helix { margin: 3.5rem 0 0 6px; }
+.login-form-wrap { display: grid; place-items: center; padding: 2rem; }
+.login-card {
+  width: min(420px, 100%);
+  padding: 2rem;
+  background: var(--ft-surface);
+  border: 1px solid var(--ft-border);
+  border-radius: 14px;
+  animation: fade-up .4s ease backwards;
+}
+.login-card h2 { font-size: 1.6rem; margin: .4rem 0 .5rem; }
+
+/* ---------------------------------------------------------------------
+   Scroll effect: card screen e dhukle halka fade + upore uthe ashe.
+   Shudhu je browser e support ache (Chrome / Edge), ar jara motion bondho
+   rakheni tader jonno. Na thakle card shadharon vabe dekhabe.
+   --------------------------------------------------------------------- */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .content-wrap .card {
+      animation: reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 40%;
+    }
+  }
+}
+@keyframes reveal {
+  from { opacity: 0; translate: 0 16px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+/* Je user "reduce motion" on rakhe, tar jonno animation bondho */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* ---------------------------------------------------------------------
+   Choto screen
+   --------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .sidebar { width: 205px; flex-basis: 205px; }
+  .content-wrap { padding: 1.25rem; }
+  .topbar { padding: 0 1.25rem; }
+}
+@media (max-width: 650px) {
+  .app-shell { display: block; }
+  .sidebar { width: 100%; position: static; height: auto; padding: .8rem; }
+  .sidebar nav { display: flex; overflow: auto; }
+  .side-link { white-space: nowrap; }
+  .sidebar-bottom { display: none; }
+  .brand { padding-bottom: .5rem; }
+  .role-label { display: none; }
+  .live-status { display: none; }
+  .login-page { grid-template-columns: 1fr; }
+  .login-brand { padding: 3rem 10%; }
+  .login-brand .dna-helix { display: none; }
+  .detail-grid { grid-template-columns: 1fr; }
+  .match-hero .card-body { padding: 1.5rem; gap: 1rem; }
+  .match-hero h3 { font-size: 1rem; }
+}

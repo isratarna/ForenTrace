@@ -499,7 +499,8 @@ const sampleLabel = sample => `#${sample.id} — ${sampleProvider(sample)} · ${
 function CodeComparison({ first, second }) {
   const length = Math.max(first?.length || 0, second?.length || 0)
   const positions = Array.from({ length }, (_, index) => index)
-  const cell = (char, same) => ({ display: 'inline-block', width: '1.6rem', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, borderRadius: 4, margin: 1, padding: '2px 0', background: same ? '#d1e7dd' : '#f8d7da' })
+  // Dark theme er jonno: mile gele teal glow, na mille lal (UI upgrade)
+  const cell = (char, same) => ({ display: 'inline-block', width: '1.6rem', textAlign: 'center', fontFamily: 'monospace', fontWeight: 600, borderRadius: 4, margin: 1, padding: '2px 0', background: same ? 'rgba(45, 212, 191, 0.2)' : 'rgba(248, 113, 113, 0.16)', color: same ? '#5eead4' : '#fca5a5' })
   return (
     <div className="overflow-auto">
       {[first, second].map((code, row) => (

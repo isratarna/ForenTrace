@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext'
 import { dashboardPath } from '../utils/auth'
+import { DnaHelix } from '../components/DnaEffects' // DNA animation (UI upgrade)
 
 export default function Login() {
   const { user, login } = useAuth()
@@ -63,6 +64,8 @@ export default function Login() {
           Centralized management for missing-person investigations,
           forensic DNA samples, and identification records.
         </p>
+        {/* Boro ghurte thaka DNA helix — login page er decoration (UI upgrade) */}
+        <DnaHelix rungs={10} size="large" />
       </section>
 
       <section className="login-form-wrap">
