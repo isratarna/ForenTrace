@@ -13,8 +13,8 @@ const router = express.Router();
  */
 const chatbotRateLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
-  limit: 20, // Max 20 requests per IP per window
-  max: 20, // Backward compatibility for express-rate-limit v6/v7
+  limit: Number(process.env.CHATBOT_RATE_LIMIT) || 20, // Max 20 requests per IP per window (override via CHATBOT_RATE_LIMIT for testing)
+  max: Number(process.env.CHATBOT_RATE_LIMIT) || 20, // Backward compatibility for express-rate-limit v6/v7
   standardHeaders: 'draft-7', // Standard RateLimit headers
   legacyHeaders: false, // Disable X-RateLimit-* headers
   statusCode: 429,
