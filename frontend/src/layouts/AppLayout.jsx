@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import ChatWidget from '../components/ChatWidget'
 
 const navByRole = {
   Admin: [
@@ -50,7 +51,8 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="app-shell">
+    <>
+      <div className="app-shell">
       <aside className="sidebar">
         <NavLink to="/" className="brand">
           <span className="brand-icon">FT</span>
@@ -86,5 +88,7 @@ export default function AppLayout() {
         </section>
       </main>
     </div>
+    <ChatWidget />
+  </>
   )
 }

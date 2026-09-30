@@ -1,11 +1,31 @@
 // urmee
 
 import express from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { askChatbot } from '../controllers/chatbotController.js';
 
 const router = express.Router();
 
-// Public FAQ route (no login needed). Member 3 will add rate limit + validation here.
-router.post('/ask', askChatbot);
+/**
+ * CB-10: Rate limiter for the public chatbot endpoint.
+ * Limits each IP address to 20 requests per 10-minute window
+ * to protect the application and upstream Gemini API from abuse.
+ */
+const chatbotRateLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  limit: Number(process.env.CHATBOT_RATE_LIMIT) || 20, // Max 20 requests per IP per window (override via CHATBOT_RATE_LIMIT for testing)
+  max: Number(process.env.CHATBOT_RATE_LIMIT) || 20, // Backward compatibility for express-rate-limit v6/v7
+  standardHeaders: 'draft-7', // Standard RateLimit headers
+  legacyHeaders: false, // Disable X-RateLimit-* headers
+  statusCode: 429,
+  handler: (req, res, _next, options) => {
+    return res.status(options.statusCode || 429).json({
+      message: 'Too many questions asked from this IP, please try again after a few minutes.'
+    });
+  }
+});
 
-export default router;
+// Public FAQ route (no login needed). Rate limiter and validation protect against abuse.
+router.post('/ask', chatbotRateLimiter, askChatbot);
+
+export default router;
