@@ -28,6 +28,24 @@ function formatDate(val) {
   return String(val).split('T')[0]
 }
 
+function FormField({ name, label, type = 'text', options, required = false, value, onChange }) {
+  return (
+    <div className="col-md-6">
+      <label className="form-label" htmlFor={`mp-${name}`}>{label}</label>
+      {options ? (
+        <select id={`mp-${name}`} className="form-select" name={name} value={value ?? ''} onChange={onChange} required={required}>
+          <option value="">Select {label}</option>
+          {options.map(option => <option key={option} value={option}>{option}</option>)}
+        </select>
+      ) : (
+        <input id={`mp-${name}`} className="form-control" name={name} type={type}
+          min={type === 'number' ? '0' : undefined} step={type === 'number' ? '0.01' : undefined}
+          value={value ?? ''} onChange={onChange} required={required} />
+      )}
+    </div>
+  )
+}
+
 function PersonForm({ initial = emptyPerson, onSubmit, submitLabel, onCancel }) {
   const [form, setForm] = useState({ ...emptyPerson, ...initial })
   const [error, setError] = useState('')
@@ -40,44 +58,26 @@ function PersonForm({ initial = emptyPerson, onSubmit, submitLabel, onCancel }) 
     try { await onSubmit(form) } catch (requestError) { setError(errorMessage(requestError)); setSaving(false) }
   }
 
-  function FormField({ name, label, type = 'text', options, required = false }) {
-    return (
-      <div className="col-md-6">
-        <label className="form-label" htmlFor={`mp-${name}`}>{label}</label>
-        {options ? (
-          <select id={`mp-${name}`} className="form-select" name={name} value={form[name] ?? ''} onChange={change} required={required}>
-            <option value="">Select {label}</option>
-            {options.map(value => <option key={value} value={value}>{value}</option>)}
-          </select>
-        ) : (
-          <input id={`mp-${name}`} className="form-control" name={name} type={type}
-            min={type === 'number' ? '0' : undefined} step={type === 'number' ? '0.01' : undefined}
-            value={form[name] ?? ''} onChange={change} required={required} />
-        )}
-      </div>
-    )
-  }
-
   return (
     <form className="card" onSubmit={submit} noValidate>
       <div className="card-header bg-white"><strong>Missing person information</strong></div>
       <div className="card-body">
         <div className="row g-3">
-          <FormField name="firstName" label="First Name" required />
-          <FormField name="lastName" label="Last Name" required />
-          <FormField name="gender" label="Gender" options={GENDERS} />
-          <FormField name="dob" label="Date of Birth" type="date" />
-          <FormField name="nationalId" label="National ID" />
-          <FormField name="bloodGroup" label="Blood Group" options={BLOOD_GROUPS} />
-          <FormField name="height" label="Height (cm)" type="number" />
-          <FormField name="weight" label="Weight (kg)" type="number" />
-          <FormField name="eyeColor" label="Eye Color" />
-          <FormField name="hairColor" label="Hair Color" />
-          <FormField name="photo" label="Photo URL" type="url" />
-          <FormField name="missingDate" label="Missing Date" type="date" required />
-          <FormField name="location" label="Last Seen Location" required />
-          <FormField name="city" label="City" required />
-          <FormField name="status" label="Status" options={STATUSES} required />
+          <FormField name="firstName" label="First Name" value={form.firstName} onChange={change} required />
+          <FormField name="lastName" label="Last Name" value={form.lastName} onChange={change} required />
+          <FormField name="gender" label="Gender" options={GENDERS} value={form.gender} onChange={change} />
+          <FormField name="dob" label="Date of Birth" type="date" value={form.dob} onChange={change} />
+          <FormField name="nationalId" label="National ID" value={form.nationalId} onChange={change} />
+          <FormField name="bloodGroup" label="Blood Group" options={BLOOD_GROUPS} value={form.bloodGroup} onChange={change} />
+          <FormField name="height" label="Height (cm)" type="number" value={form.height} onChange={change} />
+          <FormField name="weight" label="Weight (kg)" type="number" value={form.weight} onChange={change} />
+          <FormField name="eyeColor" label="Eye Color" value={form.eyeColor} onChange={change} />
+          <FormField name="hairColor" label="Hair Color" value={form.hairColor} onChange={change} />
+          <FormField name="photo" label="Photo URL" type="url" value={form.photo} onChange={change} />
+          <FormField name="missingDate" label="Missing Date" type="date" value={form.missingDate} onChange={change} required />
+          <FormField name="location" label="Last Seen Location" value={form.location} onChange={change} required />
+          <FormField name="city" label="City" value={form.city} onChange={change} required />
+          <FormField name="status" label="Status" options={STATUSES} value={form.status} onChange={change} required />
           <div className="col-12">
             <label className="form-label" htmlFor="mp-desc">Description</label>
             <textarea id="mp-desc" className="form-control" name="description" rows="4" value={form.description ?? ''} onChange={change} />

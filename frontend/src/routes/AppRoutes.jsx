@@ -71,7 +71,6 @@ export default function AppRoutes() {
 
       <Route path="/dna-labs" element={<DnaLabsPage />} />
       <Route path="/lab-technicians" element={<LabTechniciansPage />} />
-      <Route path="/dna-analytics" element={<DnaAnalyticsDashboard />} />
 
       <Route
         path="/unauthorized"
