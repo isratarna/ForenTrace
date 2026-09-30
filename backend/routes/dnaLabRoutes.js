@@ -1,32 +1,15 @@
-//এই কোডটির মূল কাজ হলো DNA Lab সম্পর্কিত API এন্ডপয়েন্টগুলোর রাউটিং (Routing) এবং অ্যাক্সেস কন্ট্রোল (Security/Permission) পরিচালনা করা।
-//নিরাপত্তা ও অথেন্টিকেশন নির্ধারণ (authGuard & adminGuard)
-
 import express from 'express';
 import * as dnaLabController from '../controllers/dnaLabController.js';
-import * as authMiddleware from '../middleware/authMiddleware.js';
-import * as roleMiddleware from '../middleware/roleMiddleware.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
+import { requireRole } from '../middleware/roleMiddleware.js';
 
 const router = express.Router();
 
-// Fallback resolver for existing Auth & Role middlewares
-const authGuard = authMiddleware.requireAuth ||
-    authMiddleware.isAuthenticated ||
-    authMiddleware.protect ||
-    authMiddleware.verifyToken ||
-    ((req, res, next) => next());
+router.get('/', requireAuth, dnaLabController.getLabs);
+router.get('/:id', requireAuth, dnaLabController.getLabById);
 
-const adminGuard = roleMiddleware.requireAdmin ||
-    roleMiddleware.isAdmin ||
-    roleMiddleware.checkAdmin ||
-    (roleMiddleware.authorizeRoles ? roleMiddleware.authorizeRoles('Admin') : ((req, res, next) => next()));
-
-// Public / Authenticated read routes
-router.get('/', dnaLabController.getLabs);
-router.get('/:id', dnaLabController.getLabById);
-
-// Admin write routes
-router.post('/', authGuard, adminGuard, dnaLabController.createLab);
-router.put('/:id', authGuard, adminGuard, dnaLabController.updateLab);
-router.delete('/:id', authGuard, adminGuard, dnaLabController.deleteLab);
+router.post('/', requireAuth, requireRole('Admin'), dnaLabController.createLab);
+router.put('/:id', requireAuth, requireRole('Admin'), dnaLabController.updateLab);
+router.delete('/:id', requireAuth, requireRole('Admin'), dnaLabController.deleteLab);
 
 export default router;

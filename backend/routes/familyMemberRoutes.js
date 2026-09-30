@@ -14,23 +14,18 @@ import { requireRole } from '../middleware/roleMiddleware.js';
 
 const router = express.Router();
 
-// View all family members (supports ?person_id=1&search=...)
-router.get('/', listFamilyMembers);
+// Family member records are available to Admins and Officers.
+router.get('/', requireAuth, requireRole('Admin', 'Officer'), listFamilyMembers);
 
-// View family members for a specific missing person
-router.get('/person/:personId', getFamilyMembersByPerson);
+router.get('/person/:personId', requireAuth, requireRole('Admin', 'Officer'), getFamilyMembersByPerson);
 
-// View single family member by family_id
-router.get('/:id', getFamilyMember);
+router.get('/:id', requireAuth, requireRole('Admin', 'Officer'), getFamilyMember);
 
-// Add family member
-router.post('/', addFamilyMember);
+router.post('/', requireAuth, requireRole('Admin', 'Officer'), addFamilyMember);
 
-// Edit family member
-router.put('/:id', editFamilyMember);
+router.put('/:id', requireAuth, requireRole('Admin', 'Officer'), editFamilyMember);
 
-// Remove family member
-router.delete('/:id', removeFamilyMember);
+router.delete('/:id', requireAuth, requireRole('Admin', 'Officer'), removeFamilyMember);
 
 // Register DNA sample from family member (Member 1 - Issue 2)
 // Login lagbe, shudhu Admin/Officer; person_id family record theke ashe, status 'Awaiting Analysis'

@@ -12,9 +12,8 @@ import { requireRole } from '../middleware/roleMiddleware.js'; // Apnar middlewa
 const router = express.Router();
 //Express library ar router instance load kora hoyeche jate HTTP routes toiri kora jay.
 
-// Public routes (Sobar jonno open)
-router.get('/', listStations);
-router.get('/:id', getStation);
+router.get('/', requireAuth, listStations);
+router.get('/:id', requireAuth, getStation);
 
 // Protected routes (Shudhu Admin-ra create, update, ebong delete korte parbe)
 router.post('/', requireAuth, requireRole('Admin'), createStation);
