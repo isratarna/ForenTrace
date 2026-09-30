@@ -1,6 +1,6 @@
 // backend/chatbot/chunker.js
 // Cuts the FAQ text into small pieces ("chunks").
-// Rule 1: every "Q:" starts a new chunk, so a question and its answer stay together.
+// Rule 1: every "Q:" that starts a word begins a new chunk, so a question and its answer stay together.
 // Rule 2: if a piece is still too long (> 150 words), cut it into 150-word windows
 //         with 30 words of overlap so no sentence loses its meaning at the border.
 // (Pura PDF er ekta embedding hole shob topic mishe jay — tai ekta Q&A = ekta chunk = ekta meaning)
@@ -24,7 +24,7 @@ export function chunkText(rawText) {
   const clean = rawText.replace(/\s+/g, ' ').trim();
 
   const blocks = clean
-    .split(/(?=Q:)/)             // split right before every "Q:" (lookahead, tai "Q:" chunk er vitore-i thake)
+    .split(/(?=\bQ:)/)           // split right before every "Q:" that starts a word (\b — "FAQ:" er vitorer Q: e ar kata hoy na)
     .map(b => b.trim())
     .filter(b => b.length > 20); // ignore tiny empty pieces
 
