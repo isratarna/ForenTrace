@@ -1,8 +1,7 @@
 // Friendly replies for greetings, thanks, goodbyes and "what can you do".
 // No AI call and no database call needed for these.
 const HELP_TEXT =
-  'I can help you use ForenTrace: missing persons, investigation cases, DNA samples, ' +
-  'DNA matching, labs, user roles and accounts. For example, ask "How do I register a DNA sample?"';
+  'Ask me anything about how ForenTrace works, or try one of the suggested questions in the chat.';
 
 const RULES = [
   {

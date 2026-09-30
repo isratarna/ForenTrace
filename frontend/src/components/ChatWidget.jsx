@@ -5,7 +5,7 @@ import './ChatWidget.css'
 const INITIAL_GREETING = {
   id: 'greeting',
   role: 'assistant',
-  text: "Hello! I'm the ForenTrace Assistant. I can answer questions about ForenTrace, cases, DNA samples, DNA matching, laboratories, and accounts. Ask me anything about using the system.",
+  text: "Hi! Ask me anything about how ForenTrace works, or try a suggestion below.",
   isGreeting: true,
 }
 
@@ -36,6 +36,7 @@ export default function ChatWidget() {
   const [messages, setMessages] = useState([INITIAL_GREETING])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(true)
   const listRef = useRef(null)
   const textareaRef = useRef(null)
 
@@ -56,6 +57,7 @@ export default function ChatWidget() {
   const clearChat = () => {
     setMessages([INITIAL_GREETING])
     setInput('')
+    setShowSuggestions(true)
   }
 
   const sendQuestion = async (rawQuestion) => {
@@ -78,6 +80,7 @@ export default function ChatWidget() {
     const userMsg = { id: `user-${Date.now()}`, role: 'user', text: trimmed }
     setMessages((prev) => [...prev, userMsg])
     setInput('')
+    setShowSuggestions(false)
     setIsLoading(true)
 
     try {
@@ -208,19 +211,21 @@ export default function ChatWidget() {
             )}
           </div>
 
-          <div className="ft-chat-suggestions" aria-label="Suggested questions">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                className="ft-chat-chip"
-                onClick={() => handleSuggestion(s)}
-                disabled={isLoading}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
+          {showSuggestions && (
+            <div className="ft-chat-suggestions" aria-label="Suggested questions">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className="ft-chat-chip"
+                  onClick={() => handleSuggestion(s)}
+                  disabled={isLoading}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
 
           <form className="ft-chat-input-area" onSubmit={handleSubmit}>
             <label htmlFor="ft-chat-input" className="visually-hidden">
@@ -244,6 +249,16 @@ export default function ChatWidget() {
                 {charCount}/{MAX_LEN}
               </span>
               <div className="ft-chat-actions">
+                <button
+                  type="button"
+                  className={`ft-chat-suggest-toggle${showSuggestions ? ' is-active' : ''}`}
+                  onClick={() => setShowSuggestions((v) => !v)}
+                  aria-pressed={showSuggestions}
+                  aria-label={showSuggestions ? 'Hide suggested questions' : 'Show suggested questions'}
+                  title="Suggested questions"
+                >
+                  💡
+                </button>
                 <button
                   type="button"
                   className="ft-chat-clear"
