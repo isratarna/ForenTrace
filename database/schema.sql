@@ -282,3 +282,50 @@ BEGIN
     END IF;
 END //
 DELIMITER ;
+
+-- Stored Procedure: duita DNA sample er profile code compare (Member 1 - Extra)
+-- Raw SQL + test: database/sql/compare_dna_samples_procedure.sql
+-- Backend: dnaMatchModel.compareProfileCodes() → CALL compare_dna_samples(...)
+DROP PROCEDURE IF EXISTS compare_dna_samples;
+DELIMITER //
+CREATE PROCEDURE compare_dna_samples(
+    IN  p_unknown_sample_id INT,
+    IN  p_matched_sample_id INT,
+    OUT p_matching_positions INT,
+    OUT p_code_length INT,
+    OUT p_similarity DECIMAL(5,2),
+    OUT p_confidence VARCHAR(10)
+)
+BEGIN
+    DECLARE v_unknown_code VARCHAR(100);
+    DECLARE v_matched_code VARCHAR(100);
+    DECLARE v_pos INT DEFAULT 1;
+    DECLARE v_matching INT DEFAULT 0;
+
+    SELECT dna_profile_code INTO v_unknown_code FROM dna_samples WHERE sample_id = p_unknown_sample_id;
+    SELECT dna_profile_code INTO v_matched_code FROM dna_samples WHERE sample_id = p_matched_sample_id;
+
+    -- Profile code na thakle compare kora jabe na
+    IF v_unknown_code IS NULL OR v_matched_code IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Both samples must exist and have a DNA profile code.';
+    END IF;
+
+    -- Position-by-position character compare
+    SET p_code_length = GREATEST(CHAR_LENGTH(v_unknown_code), CHAR_LENGTH(v_matched_code));
+    WHILE v_pos <= p_code_length DO
+        IF SUBSTRING(v_unknown_code, v_pos, 1) = SUBSTRING(v_matched_code, v_pos, 1) THEN
+            SET v_matching = v_matching + 1;
+        END IF;
+        SET v_pos = v_pos + 1;
+    END WHILE;
+
+    SET p_matching_positions = v_matching;
+    SET p_similarity = ROUND(v_matching / p_code_length * 100, 2);
+    SET p_confidence = CASE
+        WHEN p_similarity >= 90 THEN 'High'
+        WHEN p_similarity >= 80 THEN 'Medium'
+        ELSE 'Low'
+    END;
+END //
+DELIMITER ;

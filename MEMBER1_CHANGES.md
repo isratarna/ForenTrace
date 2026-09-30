@@ -20,6 +20,7 @@ This file records every change made for Member 1, phase by phase. Each phase mat
 | 5 | Issue 5: SQL Trigger (automatic identification update) | ✅ Done |
 | 6 | Issue 6: SQL UNION Report | ✅ Done |
 | 7 | Issue 7: Connect the lab frontend to the real backend | ✅ Done |
+| Extra | Stored procedure `compare_dna_samples` | ✅ Done |
 
 ---
 
@@ -6545,6 +6546,7 @@ The test users were removed afterwards.
 | `database/sql/dna_matches.sql` | Table, recursive-CTE comparison, computed/manual insert, scoped views, filters, review, delete |
 | `database/sql/trigger.sql` | Both identification triggers + self-restoring tests |
 | `database/sql/union_report.sql` | UNION report, officer/technician versions, GROUP BY summary, demo |
+| `database/sql/compare_dna_samples_procedure.sql` | Extra: comparison stored procedure (IN/OUT params, WHILE loop, SIGNAL) + tests |
 
 ## Advanced SQL (Member 1)
 
@@ -6563,3 +6565,442 @@ The test users were removed afterwards.
 - **Member 3:**
   - All DNA routes already use `requireAuth` + `requireRole`.
   - The DNA/lab mock data is gone from `DataContext`. The stations/officers/labs/technicians mock data is left for your cleanup (Issue 7).
+
+---
+
+# Extra — Stored Procedure `compare_dna_samples`
+
+## Goal
+
+Move the Phase 4 DNA comparison into a **stored procedure** with **IN and OUT parameters**, so the database calculates the similarity itself. The backend only runs `CALL compare_dna_samples(...)`.
+
+(Stored procedures are Member 2's assigned SQL feature, `create_case`. This is an extra procedure in Member 1's DNA module. It adds OUT parameters, local variables, a `WHILE` loop and `SIGNAL` error handling, which `create_case` doesn't use.)
+
+## The procedure
+
+```sql
+CALL compare_dna_samples(1, 2, @matching_positions, @code_length, @similarity, @confidence);
+SELECT @matching_positions, @code_length, @similarity, @confidence;   -- 10, 11, 90.91, 'High'
+```
+
+| Parameter | Direction | Meaning |
+|---|---|---|
+| `p_unknown_sample_id` | IN | Unknown/evidence sample |
+| `p_matched_sample_id` | IN | Reference sample |
+| `p_matching_positions` | OUT | Number of positions with the same character |
+| `p_code_length` | OUT | Length of the longer profile code |
+| `p_similarity` | OUT | `ROUND(matching / length * 100, 2)` |
+| `p_confidence` | OUT | ≥ 90 High, ≥ 80 Medium, otherwise Low |
+
+**How it works:**
+
+1. `DECLARE` local variables (the two codes, a loop position, a match counter).
+2. `SELECT ... INTO` loads both samples' `dna_profile_code`.
+3. If either code is NULL (the sample doesn't exist or isn't analyzed yet), it stops with `SIGNAL SQLSTATE '45000'` and the message *"Both samples must exist and have a DNA profile code."*
+4. A `WHILE v_pos <= p_code_length` loop compares `SUBSTRING(code, v_pos, 1)` of both codes and counts the matches.
+5. It sets the OUT parameters. The confidence uses a `CASE`.
+
+It uses the **same formula and thresholds** as Phase 4. The recursive-CTE query in `dna_matches.sql` (query 1) stays as the standalone SELECT version, and it was checked to give identical results.
+
+## Files changed
+
+| File | Type | What changed |
+|---|---|---|
+| `database/sql/compare_dna_samples_procedure.sql` | New | The procedure + tests (seed pair, the spec's ABC example with temporary samples, the error case) |
+| `database/schema.sql` | Modified | Creates the procedure on a fresh setup |
+| `database/sql/dna_matches.sql` | Modified | Note on query 1: the backend now uses the procedure |
+| `backend/models/dnaMatchModel.js` | Modified | `compareProfileCodes` now **CALLs the procedure** instead of running the inline CTE |
+| `backend/controllers/dnaMatchController.js` | Modified | Uses the procedure's confidence for computed matches. `validatePair` also returns the sample rows so the preview can show the profile codes |
+
+The API response shape didn't change, so **no frontend changes** were needed. The New DNA Comparison page works as before.
+
+## Backend: why one connection
+
+MySQL returns OUT parameters in **session variables** (`@similarity`, ...). Those exist only on the connection that ran the `CALL`. If the model used `pool.execute` twice, the `SELECT @similarity` could run on a different pooled connection and get NULL. So `compareProfileCodes`:
+
+1. takes one connection with `pool.getConnection()`;
+2. runs `CALL compare_dna_samples(?, ?, @matching_positions, @code_length, @similarity, @confidence)`;
+3. runs `SELECT @matching_positions, @code_length, @similarity, @confidence` **on the same connection**;
+4. calls `connection.release()` in `finally`, even if an error happens.
+
+Member 2's `create_case` model code uses the same approach (one connection for `CALL` + `LAST_INSERT_ID()`).
+
+---
+
+## `database/sql/compare_dna_samples_procedure.sql` (new)
+
+```sql
+-- =========================================================
+-- ForenTrace: Stored Procedure — compare_dna_samples (Member 1 - Extra)
+-- File: database/sql/compare_dna_samples_procedure.sql
+--
+-- Kaj: duita DNA sample er stored profile code position-by-position compare kore
+--      OUT parameter e result ferot dey:
+--        p_matching_positions → koto position e character mile
+--        p_code_length        → boro code er length
+--        p_similarity         → (mile jawa position / length) * 100, 2 decimal
+--        p_confidence         → >= 90 'High', >= 80 'Medium', noile 'Low'
+--
+-- Example: 'ABC12345' vs 'ABC12346' → 7 / 8 → 87.50 → 'Medium'
+--
+-- Backend: dnaMatchModel.compareProfileCodes() ei procedure CALL kore
+--          (POST /api/dna-matches/compare ar computed match create — Issue 4)
+-- dna_matches.sql er query 1 (recursive CTE) same formula er standalone query version.
+-- =========================================================
+
+USE forentrace_db;
+
+DROP PROCEDURE IF EXISTS compare_dna_samples;
+
+DELIMITER //
+
+CREATE PROCEDURE compare_dna_samples(
+    IN  p_unknown_sample_id INT,         -- unknown / evidence sample
+    IN  p_matched_sample_id INT,         -- reference sample
+    OUT p_matching_positions INT,        -- koto position mile
+    OUT p_code_length INT,               -- boro code er length
+    OUT p_similarity DECIMAL(5,2),       -- similarity percentage
+    OUT p_confidence VARCHAR(10)         -- High / Medium / Low
+)
+BEGIN
+    -- Local variable declare (procedure er vitore kaj korar jonno)
+    DECLARE v_unknown_code VARCHAR(100);
+    DECLARE v_matched_code VARCHAR(100);
+    DECLARE v_pos INT DEFAULT 1;          -- loop er current position
+    DECLARE v_matching INT DEFAULT 0;     -- mile jawa position count
+
+    -- 1. Duita sample er profile code variable e ana
+    SELECT dna_profile_code INTO v_unknown_code
+    FROM dna_samples
+    WHERE sample_id = p_unknown_sample_id;
+
+    SELECT dna_profile_code INTO v_matched_code
+    FROM dna_samples
+    WHERE sample_id = p_matched_sample_id;
+
+    -- 2. Code na thakle (sample nai ba analysis hoyni) error throw — compare kora jabe na
+    IF v_unknown_code IS NULL OR v_matched_code IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Both samples must exist and have a DNA profile code.';
+    END IF;
+
+    -- 3. Boro code er length porjonto loop
+    SET p_code_length = GREATEST(CHAR_LENGTH(v_unknown_code), CHAR_LENGTH(v_matched_code));
+
+    WHILE v_pos <= p_code_length DO
+        -- Ei position e duitar character same hole count barao
+        -- (choto code er baire gele SUBSTRING '' dey, tai mile na)
+        IF SUBSTRING(v_unknown_code, v_pos, 1) = SUBSTRING(v_matched_code, v_pos, 1) THEN
+            SET v_matching = v_matching + 1;
+        END IF;
+        SET v_pos = v_pos + 1;
+    END WHILE;
+
+    -- 4. OUT parameter e result set kora
+    SET p_matching_positions = v_matching;
+    SET p_similarity = ROUND(v_matching / p_code_length * 100, 2);
+    SET p_confidence = CASE
+        WHEN p_similarity >= 90 THEN 'High'
+        WHEN p_similarity >= 80 THEN 'Medium'
+        ELSE 'Low'
+    END;
+END //
+
+DELIMITER ;
+
+
+-- =========================================================
+-- TEST (seed data use kore — shesh e test data delete)
+-- =========================================================
+
+-- Test 1: seed sample 1 (John Doe evidence DNA7F2A91C4) vs sample 2 (father DNA7F2A91C9)
+-- Expected: 10 / 11 → 90.91 → High
+CALL compare_dna_samples(1, 2, @matching_positions, @code_length, @similarity, @confidence);
+SELECT @matching_positions AS matching_positions, @code_length AS code_length,
+       @similarity AS similarity_percentage, @confidence AS confidence_level;
+
+
+-- Test 2: spec er example — 'ABC12345' vs 'ABC12346' (duita temporary analyzed sample banie)
+INSERT INTO dna_samples (person_id, lab_id, sample_type, collection_date, dna_profile_code, status)
+VALUES (1, 1, 'Hair Strand', '2026-03-01', 'ABC12345', 'Analyzed');
+SET @test_sample_a = LAST_INSERT_ID();
+
+INSERT INTO dna_samples (person_id, lab_id, sample_type, collection_date, dna_profile_code, status)
+VALUES (1, 1, 'Hair Strand', '2026-03-01', 'ABC12346', 'Analyzed');
+SET @test_sample_b = LAST_INSERT_ID();
+
+-- Expected: 7 / 8 → 87.50 → Medium
+CALL compare_dna_samples(@test_sample_a, @test_sample_b, @matching_positions, @code_length, @similarity, @confidence);
+SELECT @matching_positions AS matching_positions, @code_length AS code_length,
+       @similarity AS similarity_percentage, @confidence AS confidence_level;
+
+-- Test sample delete (seed data jeno thik thake)
+DELETE FROM dna_samples WHERE sample_id IN (@test_sample_a, @test_sample_b);
+
+
+-- Test 3 (error): sample 3 er ekhono profile code nai (Awaiting Analysis) → SIGNAL error ashbe:
+--   "Both samples must exist and have a DNA profile code."
+-- Workbench e alada kore run kore dekha jay (error script thamiye dey, tai comment kora):
+-- CALL compare_dna_samples(1, 3, @matching_positions, @code_length, @similarity, @confidence);
+```
+
+## `database/schema.sql` (modified)
+
+```diff
+@@ -281,4 +281,51 @@ BEGIN
+           AND status <> 'Identified';
+     END IF;
+ END //
++DELIMITER ;
++
++-- Stored Procedure: duita DNA sample er profile code compare (Member 1 - Extra)
++-- Raw SQL + test: database/sql/compare_dna_samples_procedure.sql
++-- Backend: dnaMatchModel.compareProfileCodes() → CALL compare_dna_samples(...)
++DROP PROCEDURE IF EXISTS compare_dna_samples;
++DELIMITER //
++CREATE PROCEDURE compare_dna_samples(
++    IN  p_unknown_sample_id INT,
++    IN  p_matched_sample_id INT,
++    OUT p_matching_positions INT,
++    OUT p_code_length INT,
++    OUT p_similarity DECIMAL(5,2),
++    OUT p_confidence VARCHAR(10)
++)
++BEGIN
++    DECLARE v_unknown_code VARCHAR(100);
++    DECLARE v_matched_code VARCHAR(100);
++    DECLARE v_pos INT DEFAULT 1;
++    DECLARE v_matching INT DEFAULT 0;
++
++    SELECT dna_profile_code INTO v_unknown_code FROM dna_samples WHERE sample_id = p_unknown_sample_id;
++    SELECT dna_profile_code INTO v_matched_code FROM dna_samples WHERE sample_id = p_matched_sample_id;
++
++    -- Profile code na thakle compare kora jabe na
++    IF v_unknown_code IS NULL OR v_matched_code IS NULL THEN
++        SIGNAL SQLSTATE '45000'
++            SET MESSAGE_TEXT = 'Both samples must exist and have a DNA profile code.';
++    END IF;
++
++    -- Position-by-position character compare
++    SET p_code_length = GREATEST(CHAR_LENGTH(v_unknown_code), CHAR_LENGTH(v_matched_code));
++    WHILE v_pos <= p_code_length DO
++        IF SUBSTRING(v_unknown_code, v_pos, 1) = SUBSTRING(v_matched_code, v_pos, 1) THEN
++            SET v_matching = v_matching + 1;
++        END IF;
++        SET v_pos = v_pos + 1;
++    END WHILE;
++
++    SET p_matching_positions = v_matching;
++    SET p_similarity = ROUND(v_matching / p_code_length * 100, 2);
++    SET p_confidence = CASE
++        WHEN p_similarity >= 90 THEN 'High'
++        WHEN p_similarity >= 80 THEN 'Medium'
++        ELSE 'Low'
++    END;
++END //
+ DELIMITER ;
+\ No newline at end of file
+```
+
+## `database/sql/dna_matches.sql` (modified)
+
+```diff
+@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS dna_matches (
+ 
+ 
+ -- 1. Compare two samples (Option 1: string similarity in SQL)
++-- Note: backend ekhon same formula stored procedure diye chalay → compare_dna_samples_procedure.sql
++--       (ei query ta standalone SELECT version — procedure er result er sathe hubohu mile)
+ -- WITH RECURSIVE diye 1..N position er ekta list banano hoy (N = boro code er length),
+ -- tarpor proti position e SUBSTRING diye character mile kina check kore SUM kora hoy.
+ -- Unknown sample = 1 (John Doe er toothbrush evidence), Matched sample = 2 (father er reference)
+```
+
+## `backend/models/dnaMatchModel.js` (modified)
+
+```diff
+@@ -124,42 +124,34 @@ export async function findMatchById(id, user = null) {
+   return rows[0] || null
+ }
+ 
+-// Option 1: duita sample er DNA profile code position-by-position compare (recursive CTE — dna_matches.sql query 1)
+-// similarity = mile jawa position / boro code er length * 100
++// Option 1: duita sample er DNA profile code position-by-position compare
++// Stored procedure compare_dna_samples (database/sql/compare_dna_samples_procedure.sql) CALL kora hoy
++// similarity = mile jawa position / boro code er length * 100, confidence o procedure-i ber kore
+ export async function compareProfileCodes(unknownSampleId, matchedSampleId) {
+-  const [rows] = await pool.execute(
+-    `
+-    WITH RECURSIVE
+-    codes AS (
++  // OUT parameter gulo MySQL session variable (@...) e ashe — egulo shudhu OI connection e thake,
++  // tai CALL ar SELECT ekoi connection e korte hobe (pool theke alada connection nile value harabe)
++  const connection = await pool.getConnection()
++  try {
++    await connection.query(
++      'CALL compare_dna_samples(?, ?, @matching_positions, @code_length, @similarity, @confidence)',
++      [unknownSampleId, matchedSampleId]
++    )
++
++    // OUT parameter er value read kora
++    const [rows] = await connection.query(
++      `
+       SELECT
+-        u.dna_profile_code AS unknown_code,
+-        m.dna_profile_code AS matched_code,
+-        GREATEST(CHAR_LENGTH(u.dna_profile_code), CHAR_LENGTH(m.dna_profile_code)) AS max_length
+-      FROM dna_samples u
+-      INNER JOIN dna_samples m ON m.sample_id = ?
+-      WHERE u.sample_id = ?
+-    ),
+-    positions AS (
+-      SELECT 1 AS pos
+-      UNION ALL
+-      SELECT p.pos + 1
+-      FROM positions p
+-      INNER JOIN codes c ON p.pos < c.max_length
++        @matching_positions AS matching_positions,
++        @code_length AS max_length,
++        @similarity AS similarity_percentage,
++        @confidence AS confidence_level
++      `
+     )
+-    SELECT
+-      c.unknown_code,
+-      c.matched_code,
+-      c.max_length,
+-      SUM(SUBSTRING(c.unknown_code, p.pos, 1) = SUBSTRING(c.matched_code, p.pos, 1)) AS matching_positions,
+-      ROUND(SUM(SUBSTRING(c.unknown_code, p.pos, 1) = SUBSTRING(c.matched_code, p.pos, 1)) / c.max_length * 100, 2) AS similarity_percentage
+-    FROM codes c
+-    CROSS JOIN positions p
+-    GROUP BY c.unknown_code, c.matched_code, c.max_length
+-    `,
+-    [matchedSampleId, unknownSampleId]
+-  )
+ 
+-  return rows[0] || null
++    return rows[0] || null
++  } finally {
++    connection.release() // connection pool e ferot
++  }
+ }
+ 
+ // Ei duita sample age theke (je kono direction e) compare kora hoyeche kina
+```
+
+## `backend/controllers/dnaMatchController.js` (modified)
+
+| Change | Why |
+|---|---|
+| `validatePair` returns `unknown` / `matched` rows too | The procedure returns numbers only, so the preview takes the profile codes from the samples already loaded for validation |
+| `compareSamples` uses `result.confidence_level` | The confidence now comes from the procedure's OUT parameter |
+| `createMatch` computed branch uses `result.confidence_level` | Same reason |
+| `confidenceFor()` kept only for **Manual** (Option 2) | A manually typed similarity doesn't go through the procedure. Same 90/80 thresholds |
+
+```diff
+@@ -14,7 +14,8 @@ export const MATCH_STATUSES = ['Pending Review', 'Confirmed', 'Rejected']
+ const REVIEW_STATUSES = ['Confirmed', 'Rejected'] // review e ei duita te change kora jay
+ const CONFIDENCE_LEVELS = ['High', 'Medium', 'Low']
+ 
+-// Similarity theke confidence level (dna_matches.sql er CASE er sathe same threshold)
++// Similarity theke confidence level — shudhu Manual (Option 2) similarity er jonno
++// (Computed hole confidence stored procedure compare_dna_samples nijei dey — same threshold)
+ function confidenceFor(similarity) {
+   if (similarity >= 90) return 'High'
+   if (similarity >= 80) return 'Medium'
+@@ -137,7 +138,8 @@ async function validatePair(body, user) {
+     return { error: { status: 400, message: 'Both samples must be analyzed with a DNA profile code before comparison.' } }
+   }
+ 
+-  return { unknownSampleId, matchedSampleId }
++  // Sample row o ferot dei — compare preview te profile code dekhanor jonno
++  return { unknownSampleId, matchedSampleId, unknown, matched }
+ }
+ 
+ // GET /api/dna-matches — role onujayi scoped match list
+@@ -209,12 +211,12 @@ export async function compareSamples(req, res) {
+       comparison: {
+         unknownSampleId: pair.unknownSampleId,
+         matchedSampleId: pair.matchedSampleId,
+-        unknownProfileCode: result.unknown_code,
+-        matchedProfileCode: result.matched_code,
+-        codeLength: Number(result.max_length),
+-        matchingPositions: Number(result.matching_positions),
++        unknownProfileCode: pair.unknown.dna_profile_code,
++        matchedProfileCode: pair.matched.dna_profile_code,
++        codeLength: Number(result.max_length), // procedure er OUT p_code_length
++        matchingPositions: Number(result.matching_positions), // procedure er OUT p_matching_positions
+         similarityPercentage: similarity,
+-        confidenceLevel: confidenceFor(similarity),
++        confidenceLevel: result.confidence_level, // procedure er OUT p_confidence
+         existingMatchId: existing?.match_id ?? null,
+       },
+     })
+@@ -246,6 +248,7 @@ export async function createMatch(req, res) {
+     const isManual = manualField.provided && manualField.value !== null && manualField.value !== ''
+ 
+     let similarity
++    let confidenceLevel
+     if (isManual) {
+       // Manual similarity shudhu Admin/Officer dite parbe — technician ke compute use korte hobe
+       if (user.role === 'Lab Technician') {
+@@ -257,16 +260,19 @@ export async function createMatch(req, res) {
+         return res.status(400).json({ success: false, message: 'Similarity percentage must be a number between 0 and 100.' })
+       }
+       similarity = Math.round(similarity * 100) / 100 // DECIMAL(5,2) er jonno 2 decimal
++      confidenceLevel = confidenceFor(similarity)
+     } else {
++      // Computed: stored procedure CALL — similarity ar confidence duitai procedure theke
+       const result = await compareProfileCodes(pair.unknownSampleId, pair.matchedSampleId)
+       similarity = Number(result.similarity_percentage)
++      confidenceLevel = result.confidence_level
+     }
+ 
+     const match = await dbCreateMatch({
+       unknownSampleId: pair.unknownSampleId,
+       matchedSampleId: pair.matchedSampleId,
+       similarityPercentage: similarity,
+-      confidenceLevel: confidenceFor(similarity),
++      confidenceLevel,
+       matchMethod: isManual ? 'Manual' : 'Computed',
+     })
+ 
+```
+
+---
+
+## Testing
+
+**SQL (local MySQL 8.0):**
+
+| Test | Result |
+|---|---|
+| `CALL compare_dna_samples(1, 2, ...)` (seed) | 10 / 11 → **90.91 High** |
+| Spec example `ABC12345` vs `ABC12346` (2 temporary samples, deleted afterwards) | 7 / 8 → **87.50 Medium** |
+| Sample 3 (no profile code) / sample 999 (doesn't exist) | `ER_SIGNAL_EXCEPTION`: "Both samples must exist and have a DNA profile code." |
+| **Procedure vs Phase 4 recursive CTE, every ordered pair of analyzed samples** | **12 pairs, 0 mismatches** |
+| Re-run `schema.sql` | `information_schema.ROUTINES` lists `compare_dna_samples` + `create_case` |
+
+**API (backend on a test port):**
+
+| Test | Result |
+|---|---|
+| Admin / Technician compare 1 vs 2 | `DNA7F2A91C4 vs DNA7F2A91C9 → 10/11 = 90.91% High`, existing match 1 (same as before) |
+| Compare 6 vs 1 | 3/11 = 27.27% Low |
+| Compare with an unanalyzed sample | 400 (validation runs before the procedure) |
+| Create a computed match 6 vs 1 | 201 **Computed 27.27% Low** (from the procedure) |
+| Create a manual match 81.456 | 201 **Manual 81.46% Medium** (not affected) |
+| **10 parallel compare requests** with different pairs | All correct. Each request's session variables stay on its own connection |
+
+Test matches and users were removed afterwards (matches back to #1 Pending Review, #2 Rejected).
+
+## Final summary update
+
+With this extra, Member 1's advanced SQL covers:
+
+| Feature | File | Where it runs |
+|---|---|---|
+| **Trigger** (assigned) | `trigger.sql` | Confirmed match → `Identified` |
+| **UNION** (assigned) | `union_report.sql` | DNA Sample Report |
+| **Stored procedure** (extra) | `compare_dna_samples_procedure.sql` | `POST /api/dna-matches/compare` + computed match create |
+| Recursive CTE (standalone version) | `dna_matches.sql` query 1 | Reference / verification query |

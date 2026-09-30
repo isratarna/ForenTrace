@@ -14,7 +14,8 @@ export const MATCH_STATUSES = ['Pending Review', 'Confirmed', 'Rejected']
 const REVIEW_STATUSES = ['Confirmed', 'Rejected'] // review e ei duita te change kora jay
 const CONFIDENCE_LEVELS = ['High', 'Medium', 'Low']
 
-// Similarity theke confidence level (dna_matches.sql er CASE er sathe same threshold)
+// Similarity theke confidence level — shudhu Manual (Option 2) similarity er jonno
+// (Computed hole confidence stored procedure compare_dna_samples nijei dey — same threshold)
 function confidenceFor(similarity) {
   if (similarity >= 90) return 'High'
   if (similarity >= 80) return 'Medium'
@@ -137,7 +138,8 @@ async function validatePair(body, user) {
     return { error: { status: 400, message: 'Both samples must be analyzed with a DNA profile code before comparison.' } }
   }
 
-  return { unknownSampleId, matchedSampleId }
+  // Sample row o ferot dei — compare preview te profile code dekhanor jonno
+  return { unknownSampleId, matchedSampleId, unknown, matched }
 }
 
 // GET /api/dna-matches — role onujayi scoped match list
@@ -209,12 +211,12 @@ export async function compareSamples(req, res) {
       comparison: {
         unknownSampleId: pair.unknownSampleId,
         matchedSampleId: pair.matchedSampleId,
-        unknownProfileCode: result.unknown_code,
-        matchedProfileCode: result.matched_code,
-        codeLength: Number(result.max_length),
-        matchingPositions: Number(result.matching_positions),
+        unknownProfileCode: pair.unknown.dna_profile_code,
+        matchedProfileCode: pair.matched.dna_profile_code,
+        codeLength: Number(result.max_length), // procedure er OUT p_code_length
+        matchingPositions: Number(result.matching_positions), // procedure er OUT p_matching_positions
         similarityPercentage: similarity,
-        confidenceLevel: confidenceFor(similarity),
+        confidenceLevel: result.confidence_level, // procedure er OUT p_confidence
         existingMatchId: existing?.match_id ?? null,
       },
     })
@@ -246,6 +248,7 @@ export async function createMatch(req, res) {
     const isManual = manualField.provided && manualField.value !== null && manualField.value !== ''
 
     let similarity
+    let confidenceLevel
     if (isManual) {
       // Manual similarity shudhu Admin/Officer dite parbe — technician ke compute use korte hobe
       if (user.role === 'Lab Technician') {
@@ -257,16 +260,19 @@ export async function createMatch(req, res) {
         return res.status(400).json({ success: false, message: 'Similarity percentage must be a number between 0 and 100.' })
       }
       similarity = Math.round(similarity * 100) / 100 // DECIMAL(5,2) er jonno 2 decimal
+      confidenceLevel = confidenceFor(similarity)
     } else {
+      // Computed: stored procedure CALL — similarity ar confidence duitai procedure theke
       const result = await compareProfileCodes(pair.unknownSampleId, pair.matchedSampleId)
       similarity = Number(result.similarity_percentage)
+      confidenceLevel = result.confidence_level
     }
 
     const match = await dbCreateMatch({
       unknownSampleId: pair.unknownSampleId,
       matchedSampleId: pair.matchedSampleId,
       similarityPercentage: similarity,
-      confidenceLevel: confidenceFor(similarity),
+      confidenceLevel,
       matchMethod: isManual ? 'Manual' : 'Computed',
     })
 

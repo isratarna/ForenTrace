@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS dna_matches (
 
 
 -- 1. Compare two samples (Option 1: string similarity in SQL)
+-- Note: backend ekhon same formula stored procedure diye chalay → compare_dna_samples_procedure.sql
+--       (ei query ta standalone SELECT version — procedure er result er sathe hubohu mile)
 -- WITH RECURSIVE diye 1..N position er ekta list banano hoy (N = boro code er length),
 -- tarpor proti position e SUBSTRING diye character mile kina check kore SUM kora hoy.
 -- Unknown sample = 1 (John Doe er toothbrush evidence), Matched sample = 2 (father er reference)

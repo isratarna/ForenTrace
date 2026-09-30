@@ -124,42 +124,34 @@ export async function findMatchById(id, user = null) {
   return rows[0] || null
 }
 
-// Option 1: duita sample er DNA profile code position-by-position compare (recursive CTE — dna_matches.sql query 1)
-// similarity = mile jawa position / boro code er length * 100
+// Option 1: duita sample er DNA profile code position-by-position compare
+// Stored procedure compare_dna_samples (database/sql/compare_dna_samples_procedure.sql) CALL kora hoy
+// similarity = mile jawa position / boro code er length * 100, confidence o procedure-i ber kore
 export async function compareProfileCodes(unknownSampleId, matchedSampleId) {
-  const [rows] = await pool.execute(
-    `
-    WITH RECURSIVE
-    codes AS (
-      SELECT
-        u.dna_profile_code AS unknown_code,
-        m.dna_profile_code AS matched_code,
-        GREATEST(CHAR_LENGTH(u.dna_profile_code), CHAR_LENGTH(m.dna_profile_code)) AS max_length
-      FROM dna_samples u
-      INNER JOIN dna_samples m ON m.sample_id = ?
-      WHERE u.sample_id = ?
-    ),
-    positions AS (
-      SELECT 1 AS pos
-      UNION ALL
-      SELECT p.pos + 1
-      FROM positions p
-      INNER JOIN codes c ON p.pos < c.max_length
+  // OUT parameter gulo MySQL session variable (@...) e ashe — egulo shudhu OI connection e thake,
+  // tai CALL ar SELECT ekoi connection e korte hobe (pool theke alada connection nile value harabe)
+  const connection = await pool.getConnection()
+  try {
+    await connection.query(
+      'CALL compare_dna_samples(?, ?, @matching_positions, @code_length, @similarity, @confidence)',
+      [unknownSampleId, matchedSampleId]
     )
-    SELECT
-      c.unknown_code,
-      c.matched_code,
-      c.max_length,
-      SUM(SUBSTRING(c.unknown_code, p.pos, 1) = SUBSTRING(c.matched_code, p.pos, 1)) AS matching_positions,
-      ROUND(SUM(SUBSTRING(c.unknown_code, p.pos, 1) = SUBSTRING(c.matched_code, p.pos, 1)) / c.max_length * 100, 2) AS similarity_percentage
-    FROM codes c
-    CROSS JOIN positions p
-    GROUP BY c.unknown_code, c.matched_code, c.max_length
-    `,
-    [matchedSampleId, unknownSampleId]
-  )
 
-  return rows[0] || null
+    // OUT parameter er value read kora
+    const [rows] = await connection.query(
+      `
+      SELECT
+        @matching_positions AS matching_positions,
+        @code_length AS max_length,
+        @similarity AS similarity_percentage,
+        @confidence AS confidence_level
+      `
+    )
+
+    return rows[0] || null
+  } finally {
+    connection.release() // connection pool e ferot
+  }
 }
 
 // Ei duita sample age theke (je kono direction e) compare kora hoyeche kina
