@@ -1,0 +1,36 @@
+DRAFT FAQ ENTRIES FOR THE NEW CHATBOT FEATURES (step 8) — NOT IN THE FAQ YET
+==========================================================================
+
+When to add them (step 11):
+- Draft 1 (Bangla)     → only after Member 2's Bangla feature is merged and working.
+- Draft 2 (follow-up)  → only after Member 2's follow-up feature is merged and working.
+- Draft 3 (voice)      → only if Member 3 ships the microphone button. Check the exact button and
+                         switch names in the merged widget first and change the text to match.
+
+How to add: paste the Q/A lines (without the "Draft" headings) at the END of forentrace_faq.docx and
+forentrace_faq_source.txt, export the PDF, run node chatbot/ingest.js, then switch on their test
+questions in data/eval_questions.json (remove "status": "wait") and re-run steps 1, 2, 3 and 5.
+
+Style used (same as the FAQ): Q line with synonyms in brackets, 2–3 short sentences, names the
+roles, exact menu names, no off-topic words (they would pull unrelated questions above the threshold).
+The wording below was checked offline against every test file before saving (see Phase 8 in
+MEMBER1_BANGLA_FOLLOWUP_CHANGES.md): the Bangla entry names ForenTrace topics on purpose, and the
+follow-up entry avoids the word "assistant", so neither one pulls other questions away.
+
+
+Draft 1 — Bangla
+----------------
+Q: Can I ask ForenTrace questions in Bangla (Bengali)?
+A: Yes. Any user (Admin, Officer or Lab Technician) can ask about missing persons, cases, DNA samples and DNA matches in Bangla, and the reply comes in Bangla. Menu and button names such as DNA Samples or Register DNA Sample stay exactly as they appear on the screen.
+
+
+Draft 2 — Follow-up questions
+-----------------------------
+Q: Can I ask a follow-up question (a short next question about the same topic)?
+A: Yes. Any user (Admin, Officer or Lab Technician) can ask a short follow-up such as "Who can do that?" or "Where do I find it?" right after an answer, and the previous question is used to understand it. For a new topic, type a full question, for example "How do I register a DNA sample?".
+
+
+Draft 3 — Voice (ONLY if Member 3 ships the microphone button)
+---------------------------------------------------------------
+Q: Can I ask a question by voice (speak, microphone)?
+A: Yes, in Google Chrome or Microsoft Edge. Any user (Admin, Officer or Lab Technician) can click the microphone button in the assistant, set the EN / বাং switch, and speak the question. Other browsers do not support voice input, so type the question there.
