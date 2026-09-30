@@ -1,5 +1,43 @@
 import db from '../config/db.js';
 
+export async function createTechnicianAccountInTransaction(conn, {
+    roleId,
+    labId,
+    username,
+    passwordHash,
+    email,
+    firstName,
+    lastName,
+    designation,
+    phone,
+}) {
+    const [userResult] = await conn.execute(
+        `INSERT INTO users
+          (role_id, officer_id, technician_id, username, password_hash, email, account_status)
+         VALUES (?, NULL, NULL, ?, ?, ?, 'pending_approval')`,
+        [roleId, username, passwordHash, email]
+    );
+    const userId = userResult.insertId;
+
+    const [technicianResult] = await conn.execute(
+        `INSERT INTO lab_technicians
+          (lab_id, user_id, first_name, last_name, designation, phone, email)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [labId, userId, firstName, lastName, designation, phone, email]
+    );
+    const technicianId = technicianResult.insertId;
+
+    const [linkResult] = await conn.execute(
+        'UPDATE users SET technician_id = ? WHERE user_id = ?',
+        [technicianId, userId]
+    );
+    if (linkResult.affectedRows !== 1) {
+        throw new Error('Technician profile could not be linked to its user account.');
+    }
+
+    return { userId, technicianId };
+}
+
 // Get all technicians with lab information
 export const getAllTechnicians = async () => {
     const [rows] = await db.query(`
