@@ -397,3 +397,70 @@ export async function updateSampleAnalysis(id, labId, technicianId, {
   if (!result.affectedRows) return null
   return findSampleById(id)
 }
+
+// ---------- SQL UNION Report — DNA Sample Overview (Member 1 - Issue 6) ----------
+// Query ta database/sql/union_report.sql er 1 number (role scope duita part-ei 2/3 number er moto jog hoy)
+
+// Duita part er common column (UNION er jonno duita SELECT e column same hote hobe)
+const overviewColumns = `
+    s.sample_id,
+    CONCAT(mp.first_name, ' ', mp.last_name) AS person_name,
+    CASE WHEN s.family_id IS NULL THEN 'Missing Person / Evidence' ELSE 'Family Reference' END AS source,
+    s.sample_type,
+    dl.lab_name,
+    s.dna_profile_code`
+
+// Sample ta kono 'Confirmed' match e ache kina (unknown ba matched hishebe)
+const confirmedMatchCondition = `
+    SELECT 1 FROM dna_matches m
+    WHERE m.match_status = 'Confirmed'
+      AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id)`
+
+// Ei sample er koto gula match 'Pending Review' e ache
+const pendingReviewCount = `
+    (SELECT COUNT(*) FROM dna_matches m
+     WHERE m.match_status = 'Pending Review'
+       AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id)) AS pending_review_matches`
+
+const overviewJoins = `
+  FROM dna_samples s
+  INNER JOIN missing_persons mp ON mp.person_id = s.person_id
+  LEFT JOIN dna_labs dl ON dl.lab_id = s.lab_id
+  LEFT JOIN case_files cf ON cf.person_id = s.person_id`
+
+// UNION report: Part 1 'Matched' + Part 2 'Awaiting Match'
+// Role scope (scopeCondition) DUITA part er WHERE e-i jog hoy, tai params o duibar
+export async function findSampleOverviewReport(user = null) {
+  const scope = scopeCondition(user)
+
+  const [rows] = await pool.execute(
+    `
+    SELECT
+      ${overviewColumns},
+      'Matched' AS report_status,
+      (SELECT MIN(m.match_id) FROM dna_matches m
+       WHERE m.match_status = 'Confirmed'
+         AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id)) AS confirmed_match_id,
+      ${pendingReviewCount}
+    ${overviewJoins}
+    WHERE EXISTS (${confirmedMatchCondition})${scope.sql}
+
+    UNION
+
+    SELECT
+      ${overviewColumns},
+      'Awaiting Match' AS report_status,
+      NULL AS confirmed_match_id,
+      ${pendingReviewCount}
+    ${overviewJoins}
+    WHERE s.status = 'Analyzed'
+      AND s.dna_profile_code IS NOT NULL
+      AND NOT EXISTS (${confirmedMatchCondition})${scope.sql}
+
+    ORDER BY report_status DESC, sample_id ASC
+    `,
+    [...scope.params, ...scope.params]
+  )
+
+  return rows
+}

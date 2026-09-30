@@ -18,7 +18,7 @@ This file records every change made for Member 1, phase by phase. Each phase mat
 | 3 | Issue 3: Laboratory DNA Analysis Workflow | ✅ Done |
 | 4 | Issue 4: DNA Matching Workflow | ✅ Done |
 | 5 | Issue 5: SQL Trigger (automatic identification update) | ✅ Done |
-| 6 | Issue 6: SQL UNION Report | ⏳ Pending |
+| 6 | Issue 6: SQL UNION Report | ✅ Done |
 | 7 | Issue 7: Connect the lab frontend to the real backend | ⏳ Pending |
 
 ---
@@ -5529,4 +5529,627 @@ After both runs the seed data was unchanged: 6 samples, match 1 Pending Review /
 
 ---
 
-<!-- Phase 6 onwards will be added below as each phase is completed. -->
+# Phase 6 — Issue 6: SQL UNION Report
+
+## Goal
+
+A combined **DNA sample overview report** that joins two different result sets with SQL `UNION`:
+
+| Part | `report_status` | Which samples |
+|---|---|---|
+| **1** | `Matched` | Samples that appear in at least one **Confirmed** DNA match, as either the unknown or the matched sample |
+| **2** | `Awaiting Match` | Samples that are **Analyzed** and have a DNA profile code, but are **not** in any Confirmed match yet. These are ready to compare or waiting for review |
+
+Example output (same shape as the spec):
+
+| Sample ID | Status |
+|---|---|
+| 1 | Matched |
+| 5 | Awaiting Match |
+
+## How the UNION works
+
+- **Same columns in both SELECTs:** `sample_id, person_name, source, sample_type, lab_name, dna_profile_code, report_status, confirmed_match_id, pending_review_matches`. UNION requires the same number and order of columns.
+- **`report_status` is a fixed text value** in each part (`'Matched' AS report_status` / `'Awaiting Match' AS report_status`). It labels which part each row came from.
+- **Part 1** uses `WHERE EXISTS (confirmed match)`. **Part 2** uses `WHERE status = 'Analyzed' AND dna_profile_code IS NOT NULL AND NOT EXISTS (confirmed match)`. So the two parts never overlap. `UNION` (not `UNION ALL`) is used as the spec asks, and it would remove duplicates anyway.
+- **One `ORDER BY` for the whole UNION:** `report_status DESC, sample_id ASC`, so Matched rows come first.
+- **Extra columns:** `confirmed_match_id` (the smallest Confirmed match id for that sample, or NULL in Part 2) and `pending_review_matches` (how many matches are still waiting for review).
+- **Not included:** samples that aren't analyzed yet (Awaiting Analysis / In Analysis / Rejected) can't be matched, so they are in neither part.
+
+## Role scope
+
+The report uses the **same access rules as the DNA sample list** (Phase 1). The scope condition is added to **both** UNION parts, so the parameters are passed twice:
+
+| Role | Rows |
+|---|---|
+| Admin | All samples |
+| Officer | Samples of missing persons in their assigned cases (`cf.officer_id = ?`) |
+| Lab Technician | Samples in their lab (`s.lab_id IN (technician's lab)`) |
+
+## Files changed
+
+| File | Type | What changed |
+|---|---|---|
+| `database/sql/union_report.sql` | New | Admin UNION report, officer and technician versions, a `GROUP BY` summary over the UNION, and a demo that confirms a match temporarily and then restores it |
+| `backend/models/dnaSampleModel.js` | Modified | Added `findSampleOverviewReport(user)`, which reuses `scopeCondition` for both parts |
+| `backend/controllers/dnaSampleController.js` | Modified | Added `getSampleOverviewReport`: shapes the rows and adds a summary |
+| `backend/routes/dnaSampleRoutes.js` | Modified | Added `GET /api/dna-samples/report/overview` (all 3 roles, before `/:id`) |
+| `frontend/src/services/dnaService.js` | Modified | Added `getSampleOverviewReport()` |
+| `frontend/src/pages/DnaSampleReport.jsx` | New | Report page |
+| `frontend/src/routes/AppRoutes.jsx` | Modified | Added the `/reports/dna-samples` route |
+| `frontend/src/layouts/AppLayout.jsx` | Modified | "DNA Sample Report" sidebar link for Admin, Officer and Lab Technician |
+
+## API endpoint
+
+| Method | Endpoint | Roles | Response |
+|---|---|---|---|
+| GET | `/api/dna-samples/report/overview` | Admin, Officer, Lab Technician | `{ summary: { matched, awaitingMatch, total }, report: [{ sampleId, personName, source, sampleType, labName, dnaProfileCode, reportStatus, confirmedMatchId, pendingReviewMatches }] }` |
+
+---
+
+## 6.1 `database/sql/union_report.sql` (new)
+
+| Query | What it does |
+|---|---|
+| 1 | **The main UNION report** (Admin): Part 1 `Matched` UNION Part 2 `Awaiting Match`, with all columns and one `ORDER BY` |
+| 2 | Officer version: the same two parts, each with `AND cf.officer_id = 1` |
+| 3 | Technician version: the same two parts, each with the technician's lab subquery |
+| 4 | **Summary**: the UNION used as a derived table (`FROM (... UNION ...) AS sample_overview`) with `GROUP BY report_status` + `COUNT(*)` |
+| 5 (demo) | The seed data has no Confirmed match yet (match 1 is Pending Review, kept for the Phase 5 demo), so Part 1 is empty. The demo saves the current values, **confirms match 1**, re-runs the report (samples 1 and 2 move to `Matched`), then restores everything. Confirming also runs the Phase 5 trigger, and the restore resets that too |
+
+```sql
+-- =========================================================
+-- ForenTrace: SQL UNION Report — DNA Sample Overview (Member 1 - Issue 6)
+-- File: database/sql/union_report.sql
+--
+-- Duita alada result set UNION diye ek report e jora hoy:
+--   Part 1 — 'Matched'        : je sample kono 'Confirmed' DNA match e ache (unknown ba matched hishebe)
+--   Part 2 — 'Awaiting Match' : Analyzed + DNA profile code ache, kintu ekhono kono Confirmed match nai
+--                               (matching er jonno ready / review er opekkhay)
+--
+-- Output example:
+--   | sample_id | report_status  |
+--   | 1         | Matched        |
+--   | 5         | Awaiting Match |
+--
+-- UNION er rule: duita SELECT er column shongkhya ar order same hote hobe.
+-- Duita part eke oporer theke alada (EXISTS vs NOT EXISTS), tai kono duplicate thake na —
+-- tobuo spec onujayi UNION (duplicate remove kore) use kora hoyeche.
+-- =========================================================
+
+USE forentrace_db;
+
+-- 1. DNA Sample Overview Report (Admin — shob sample)
+-- Part 1: Matched samples
+SELECT
+    s.sample_id,
+    CONCAT(mp.first_name, ' ', mp.last_name) AS person_name,
+    CASE WHEN s.family_id IS NULL THEN 'Missing Person / Evidence' ELSE 'Family Reference' END AS source,
+    s.sample_type,
+    dl.lab_name,
+    s.dna_profile_code,
+    'Matched' AS report_status,
+    -- Kon confirmed match e ache (ekadhik thakle prothom ta)
+    (SELECT MIN(m.match_id)
+     FROM dna_matches m
+     WHERE m.match_status = 'Confirmed'
+       AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id)) AS confirmed_match_id,
+    -- Review er opekkhay koto gula match ache
+    (SELECT COUNT(*)
+     FROM dna_matches m
+     WHERE m.match_status = 'Pending Review'
+       AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id)) AS pending_review_matches
+FROM dna_samples s
+INNER JOIN missing_persons mp ON mp.person_id = s.person_id
+LEFT JOIN dna_labs dl ON dl.lab_id = s.lab_id
+LEFT JOIN case_files cf ON cf.person_id = s.person_id
+WHERE EXISTS (
+    -- Ei sample kono Confirmed match e ache
+    SELECT 1
+    FROM dna_matches m
+    WHERE m.match_status = 'Confirmed'
+      AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id)
+)
+
+UNION
+
+-- Part 2: Awaiting Match samples
+SELECT
+    s.sample_id,
+    CONCAT(mp.first_name, ' ', mp.last_name) AS person_name,
+    CASE WHEN s.family_id IS NULL THEN 'Missing Person / Evidence' ELSE 'Family Reference' END AS source,
+    s.sample_type,
+    dl.lab_name,
+    s.dna_profile_code,
+    'Awaiting Match' AS report_status,
+    NULL AS confirmed_match_id,                -- confirmed match nai
+    (SELECT COUNT(*)
+     FROM dna_matches m
+     WHERE m.match_status = 'Pending Review'
+       AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id)) AS pending_review_matches
+FROM dna_samples s
+INNER JOIN missing_persons mp ON mp.person_id = s.person_id
+LEFT JOIN dna_labs dl ON dl.lab_id = s.lab_id
+LEFT JOIN case_files cf ON cf.person_id = s.person_id
+WHERE s.status = 'Analyzed'                   -- analysis shesh, profile code ache
+  AND s.dna_profile_code IS NOT NULL
+  AND NOT EXISTS (
+    -- Kono Confirmed match e nai
+    SELECT 1
+    FROM dna_matches m
+    WHERE m.match_status = 'Confirmed'
+      AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id)
+)
+
+-- UNION er por puro result er ORDER BY: Matched age, tarpor Awaiting Match, proti group e sample_id
+ORDER BY report_status DESC, sample_id ASC;
+
+
+-- 2. Officer version: duita part-e ekoi scope condition (officer_id = 1 er assigned case)
+-- Backend e role onujayi ei condition duita SELECT er WHERE e-i jog hoy
+SELECT s.sample_id, 'Matched' AS report_status
+FROM dna_samples s
+LEFT JOIN case_files cf ON cf.person_id = s.person_id
+WHERE EXISTS (SELECT 1 FROM dna_matches m WHERE m.match_status = 'Confirmed' AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id))
+  AND cf.officer_id = 1
+UNION
+SELECT s.sample_id, 'Awaiting Match' AS report_status
+FROM dna_samples s
+LEFT JOIN case_files cf ON cf.person_id = s.person_id
+WHERE s.status = 'Analyzed' AND s.dna_profile_code IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM dna_matches m WHERE m.match_status = 'Confirmed' AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id))
+  AND cf.officer_id = 1
+ORDER BY report_status DESC, sample_id ASC;
+
+
+-- 3. Lab Technician version: duita part-e technician er lab (user_id = 2 ba technician_id = 1)
+SELECT s.sample_id, 'Matched' AS report_status
+FROM dna_samples s
+WHERE EXISTS (SELECT 1 FROM dna_matches m WHERE m.match_status = 'Confirmed' AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id))
+  AND s.lab_id IN (SELECT lt.lab_id FROM lab_technicians lt WHERE lt.user_id = 2 OR lt.technician_id = 1)
+UNION
+SELECT s.sample_id, 'Awaiting Match' AS report_status
+FROM dna_samples s
+WHERE s.status = 'Analyzed' AND s.dna_profile_code IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM dna_matches m WHERE m.match_status = 'Confirmed' AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id))
+  AND s.lab_id IN (SELECT lt.lab_id FROM lab_technicians lt WHERE lt.user_id = 2 OR lt.technician_id = 1)
+ORDER BY report_status DESC, sample_id ASC;
+
+
+-- 4. Summary: UNION result ke derived table banie GROUP BY diye count
+SELECT report_status, COUNT(*) AS total_samples
+FROM (
+    SELECT s.sample_id, 'Matched' AS report_status
+    FROM dna_samples s
+    WHERE EXISTS (SELECT 1 FROM dna_matches m WHERE m.match_status = 'Confirmed' AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id))
+    UNION
+    SELECT s.sample_id, 'Awaiting Match' AS report_status
+    FROM dna_samples s
+    WHERE s.status = 'Analyzed' AND s.dna_profile_code IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM dna_matches m WHERE m.match_status = 'Confirmed' AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id))
+) AS sample_overview
+GROUP BY report_status
+ORDER BY report_status DESC;
+
+
+-- =========================================================
+-- DEMO: seed e ekhono kono Confirmed match nai (match 1 'Pending Review'),
+-- tai Part 1 faka ashe. Match 1 temporary Confirm kore report abar dekhi, tarpor restore.
+-- (Confirm korle Issue 5 er trigger John Doe ke 'Identified' kore — restore e sheta o ferot)
+-- =========================================================
+SET @old_match_status = (SELECT match_status FROM dna_matches WHERE match_id = 1);
+SET @old_person_status = (SELECT status FROM missing_persons WHERE person_id = 1);
+
+UPDATE dna_matches SET match_status = 'Confirmed' WHERE match_id = 1;
+
+-- 5. Confirm er por: sample 1 ar 2 'Matched' e chole ashe, baki analyzed sample 'Awaiting Match'
+SELECT s.sample_id, 'Matched' AS report_status
+FROM dna_samples s
+WHERE EXISTS (SELECT 1 FROM dna_matches m WHERE m.match_status = 'Confirmed' AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id))
+UNION
+SELECT s.sample_id, 'Awaiting Match' AS report_status
+FROM dna_samples s
+WHERE s.status = 'Analyzed' AND s.dna_profile_code IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM dna_matches m WHERE m.match_status = 'Confirmed' AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id))
+ORDER BY report_status DESC, sample_id ASC;
+
+-- Restore (seed data ager moto)
+UPDATE dna_matches SET match_status = @old_match_status WHERE match_id = 1;
+UPDATE missing_persons SET status = @old_person_status WHERE person_id = 1;
+```
+
+## 6.2 `backend/models/dnaSampleModel.js` (modified: Phase 6 part)
+
+| Part | What it does |
+|---|---|
+| `overviewColumns` | The shared column list. Both SELECTs must have the same columns |
+| `confirmedMatchCondition` | The "sample is in a Confirmed match" subquery, used with `EXISTS` in Part 1 and `NOT EXISTS` in Part 2 |
+| `pendingReviewCount` | Subquery counting the sample's Pending Review matches |
+| `overviewJoins` | `dna_samples` + `missing_persons` + `dna_labs` + `case_files` (`cf` is needed for the officer scope) |
+| `findSampleOverviewReport(user)` | Builds `SELECT ... 'Matched' ... UNION SELECT ... 'Awaiting Match' ... ORDER BY`. It adds `scope.sql` to **both** WHERE clauses and passes `[...scope.params, ...scope.params]` |
+
+This is the same SQL as `union_report.sql` query 1. The shared pieces are written once as JavaScript strings, and the role scope is added the same way as queries 2 and 3.
+
+```js
+// ---------- SQL UNION Report — DNA Sample Overview (Member 1 - Issue 6) ----------
+// Query ta database/sql/union_report.sql er 1 number (role scope duita part-ei 2/3 number er moto jog hoy)
+
+// Duita part er common column (UNION er jonno duita SELECT e column same hote hobe)
+const overviewColumns = `
+    s.sample_id,
+    CONCAT(mp.first_name, ' ', mp.last_name) AS person_name,
+    CASE WHEN s.family_id IS NULL THEN 'Missing Person / Evidence' ELSE 'Family Reference' END AS source,
+    s.sample_type,
+    dl.lab_name,
+    s.dna_profile_code`
+
+// Sample ta kono 'Confirmed' match e ache kina (unknown ba matched hishebe)
+const confirmedMatchCondition = `
+    SELECT 1 FROM dna_matches m
+    WHERE m.match_status = 'Confirmed'
+      AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id)`
+
+// Ei sample er koto gula match 'Pending Review' e ache
+const pendingReviewCount = `
+    (SELECT COUNT(*) FROM dna_matches m
+     WHERE m.match_status = 'Pending Review'
+       AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id)) AS pending_review_matches`
+
+const overviewJoins = `
+  FROM dna_samples s
+  INNER JOIN missing_persons mp ON mp.person_id = s.person_id
+  LEFT JOIN dna_labs dl ON dl.lab_id = s.lab_id
+  LEFT JOIN case_files cf ON cf.person_id = s.person_id`
+
+// UNION report: Part 1 'Matched' + Part 2 'Awaiting Match'
+// Role scope (scopeCondition) DUITA part er WHERE e-i jog hoy, tai params o duibar
+export async function findSampleOverviewReport(user = null) {
+  const scope = scopeCondition(user)
+
+  const [rows] = await pool.execute(
+    `
+    SELECT
+      ${overviewColumns},
+      'Matched' AS report_status,
+      (SELECT MIN(m.match_id) FROM dna_matches m
+       WHERE m.match_status = 'Confirmed'
+         AND (m.unknown_sample_id = s.sample_id OR m.matched_sample_id = s.sample_id)) AS confirmed_match_id,
+      ${pendingReviewCount}
+    ${overviewJoins}
+    WHERE EXISTS (${confirmedMatchCondition})${scope.sql}
+
+    UNION
+
+    SELECT
+      ${overviewColumns},
+      'Awaiting Match' AS report_status,
+      NULL AS confirmed_match_id,
+      ${pendingReviewCount}
+    ${overviewJoins}
+    WHERE s.status = 'Analyzed'
+      AND s.dna_profile_code IS NOT NULL
+      AND NOT EXISTS (${confirmedMatchCondition})${scope.sql}
+
+    ORDER BY report_status DESC, sample_id ASC
+    `,
+    [...scope.params, ...scope.params]
+  )
+
+  return rows
+}
+```
+
+## 6.3 `backend/controllers/dnaSampleController.js` (modified: Phase 6 part)
+
+`getSampleOverviewReport` converts each row to camelCase, turns `pending_review_matches` (a `COUNT()` string) into a number, and counts the `Matched` / `Awaiting Match` rows for the summary.
+
+```js
+// ---------- SQL UNION Report — DNA Sample Overview (Member 1 - Issue 6) ----------
+
+// GET /api/dna-samples/report/overview — Matched + Awaiting Match sample (UNION), role onujayi scoped
+export async function getSampleOverviewReport(req, res) {
+  try {
+    const rows = await findSampleOverviewReport(req.session.user)
+
+    const report = rows.map(row => ({
+      sampleId: row.sample_id,
+      personName: row.person_name,
+      source: row.source,
+      sampleType: row.sample_type,
+      labName: row.lab_name || null,
+      dnaProfileCode: row.dna_profile_code,
+      reportStatus: row.report_status, // 'Matched' ba 'Awaiting Match'
+      confirmedMatchId: row.confirmed_match_id ?? null,
+      pendingReviewMatches: Number(row.pending_review_matches), // COUNT() string/bigint ashe
+    }))
+
+    // Report card er jonno duita group er count
+    const matched = report.filter(item => item.reportStatus === 'Matched').length
+
+    return res.status(200).json({
+      success: true,
+      summary: {
+        matched,
+        awaitingMatch: report.length - matched,
+        total: report.length,
+      },
+      report,
+    })
+  } catch (error) {
+    console.error('DNA sample overview report error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+```
+
+## 6.4 `backend/routes/dnaSampleRoutes.js` (modified)
+
+```diff
+@@ -9,6 +9,7 @@ import {
+   getFamilyDna,
+   updateAnalysis,
+   getLabSummary,
++  getSampleOverviewReport,
+ } from '../controllers/dnaSampleController.js'
+ import { requireAuth } from '../middleware/authMiddleware.js'
+ import { requireRole } from '../middleware/roleMiddleware.js'
+@@ -23,6 +24,9 @@ router.get('/family/:personId', requireAuth, requireRole('Admin', 'Officer'), ge
+ // Technician er nijer lab er workload summary (Issue 3) — eta o '/:id' er AGE
+ router.get('/lab/summary', requireAuth, requireRole('Lab Technician'), getLabSummary)
+ 
++// UNION report: Matched + Awaiting Match sample (Issue 6) — tinjonei, role onujayi scoped — '/:id' er AGE
++router.get('/report/overview', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), getSampleOverviewReport)
++
+ // Admin, Officer, Lab Technician — tinjonei sample dekhte parbe (controller role onujayi data filter kore)
+ router.get('/',requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), listSamples)
+ router.get('/:id', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), getSample)
+```
+
+---
+
+## 6.5 `frontend/src/services/dnaService.js` (modified)
+
+```diff
+@@ -56,6 +56,16 @@ export async function getLabSummary() {
+   return response.data.summary
+ }
+ 
++// UNION report: Matched + Awaiting Match sample (Issue 6)
++// Response: { summary: { matched, awaitingMatch, total }, report: [...] }
++export async function getSampleOverviewReport() {
++  const response = await api.get('/dna-samples/report/overview')
++  return {
++    summary: response.data.summary,
++    report: response.data.report ?? [],
++  }
++}
++
+ // Missing person er family member + tader reference DNA sample (Issue 2)
+ // Response: { summary: {...}, familyMembers: [{ familyId, name, relationship, phone, samples: [...] }] }
+ export async function getFamilyDnaByPerson(personId) {
+@@ -139,6 +149,7 @@ export default {
+   getFamilyDnaByPerson,
+   updateSampleAnalysis,
+   getLabSummary,
++  getSampleOverviewReport,
+   getLabs,
+   getTechnicians,
+   getMatches,
+```
+
+## 6.6 `frontend/src/pages/DnaSampleReport.jsx` (new)
+
+| Part | What it does |
+|---|---|
+| Summary cards | **Matched** / **Awaiting Match** / **Total in Report** (rows returned by the UNION) |
+| Status filter | All / Matched / Awaiting Match (client side) |
+| Table | Sample ID (links to the sample) · status badge · missing person · source · type · lab · profile code · **Match Details**: a link to the confirmed match for Matched rows, otherwise "N pending review" or "Not compared yet" |
+| Role note | The backend already scopes the data. A technician with no analyzed samples sees a lab-specific empty message |
+
+```jsx
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { MetricCard, PageHeader, StatusBadge } from '../components/Ui'
+import { useAuth } from '../context/AuthContext'
+import { getSampleOverviewReport } from '../services/dnaService'
+
+const REPORT_STATUSES = ['Matched', 'Awaiting Match']
+
+// DNA Sample Overview Report (Member 1 - Issue 6)
+// Backend e SQL UNION: Part 1 'Matched' (Confirmed match e ache) + Part 2 'Awaiting Match' (analyzed, confirmed match nai)
+export default function DnaSampleReport() {
+  const { role } = useAuth()
+  const [data, setData] = useState({ summary: null, report: [] })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+
+  useEffect(() => {
+    let active = true
+    getSampleOverviewReport()
+      .then(result => { if (active) setData(result) })
+      .catch(requestError => { if (active) setError(requestError.response?.data?.message || 'Failed to load the DNA sample report.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  // Report status diye client side filter
+  const rows = useMemo(
+    () => data.report.filter(item => !statusFilter || item.reportStatus === statusFilter),
+    [data.report, statusFilter]
+  )
+
+  const isTechnician = role === 'Lab Technician' // technician investigation (person) page e link pabe na
+
+  return (
+    <>
+      <PageHeader
+        title="DNA Sample Overview Report"
+        subtitle="Combined report (SQL UNION) of samples with confirmed matches and analyzed samples still waiting for a match."
+      />
+
+      {loading && <div className="card"><div className="card-body text-center text-secondary py-4">Loading report...</div></div>}
+      {error && <div className="alert alert-danger">{error}</div>}
+
+      {!loading && !error && data.summary && (
+        <>
+          {/* UNION er duita part er count */}
+          <div className="row g-3 mb-4">
+            <div className="col-sm-4"><MetricCard label="Matched" value={data.summary.matched} hint="Samples in a confirmed DNA match" tone="success"/></div>
+            <div className="col-sm-4"><MetricCard label="Awaiting Match" value={data.summary.awaitingMatch} hint="Analyzed, no confirmed match yet" tone="warning"/></div>
+            <div className="col-sm-4"><MetricCard label="Total in Report" value={data.summary.total} hint="Rows returned by the UNION"/></div>
+          </div>
+
+          <div className="card mb-3">
+            <div className="card-body d-flex flex-wrap align-items-end gap-3">
+              <div>
+                <label className="form-label" htmlFor="report-status">Report status</label>
+                <select id="report-status" className="form-select" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
+                  <option value="">All statuses</option>
+                  {REPORT_STATUSES.map(status => <option key={status}>{status}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="table-responsive">
+              <table className="table table-hover align-middle mb-0">
+                <thead><tr><th>Sample ID</th><th>Status</th><th>Missing Person</th><th>Source</th><th>Sample Type</th><th>Lab</th><th>DNA Profile</th><th>Match Details</th></tr></thead>
+                <tbody>
+                  {rows.map(item => (
+                    <tr key={item.sampleId}>
+                      <td className="fw-semibold"><Link to={`/dna-samples/${item.sampleId}`}>#{item.sampleId}</Link></td>
+                      <td><StatusBadge value={item.reportStatus}/></td>
+                      <td>{item.personName}</td>
+                      <td>{item.source}</td>
+                      <td>{item.sampleType}</td>
+                      <td>{item.labName || '—'}</td>
+                      <td className="font-monospace">{item.dnaProfileCode}</td>
+                      <td>
+                        {/* Matched hole confirmed match er link, noile koto gula review er opekkhay */}
+                        {item.confirmedMatchId
+                          ? <Link to={`/dna-matches/${item.confirmedMatchId}`}>Confirmed match #{item.confirmedMatchId}</Link>
+                          : item.pendingReviewMatches
+                            ? <span className="text-secondary">{item.pendingReviewMatches} pending review</span>
+                            : <span className="text-secondary">Not compared yet</span>}
+                      </td>
+                    </tr>
+                  ))}
+                  {!rows.length && <tr><td colSpan="8" className="text-center text-secondary py-4">{isTechnician ? 'No analyzed samples in your laboratory yet.' : 'No samples match this report filter.'}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+```
+
+## 6.7 `frontend/src/routes/AppRoutes.jsx` and `frontend/src/layouts/AppLayout.jsx` (modified)
+
+```diff
+@@ -18,6 +18,7 @@ import {
+ } from '../pages/MissingPersons'
+ import { CaseDetails, CaseForm, Cases } from '../pages/Cases'
+ import IntersectionReport from '../pages/IntersectionReport'
++import DnaSampleReport from '../pages/DnaSampleReport' // UNION report (Member 1 - Issue 6)
+ 
+ import {
+   DNAAnalysis,
+@@ -314,6 +315,16 @@ export default function AppRoutes() {
+           }
+         />
+ 
++        {/* DNA Sample Overview — SQL UNION report (Issue 6) — backend role onujayi scoped */}
++        <Route
++          path="reports/dna-samples"
++          element={
++            <ProtectedRoute allowedRoles={['Admin', 'Officer', 'Lab Technician']}>
++              <DnaSampleReport />
++            </ProtectedRoute>
++          }
++        />
++
+         <Route
+           path="reports/labs-intersection"
+           element={
+```
+
+```diff
+@@ -16,7 +16,8 @@ const navByRole = {
+     ['DNA Analytics', '/dna-analytics'],
+     ['Users & Accounts', '/admin/users'],
+     ['Reports', '/reports'],
+-    ['Labs Intersection', '/reports/labs-intersection']
++    ['Labs Intersection', '/reports/labs-intersection'],
++    ['DNA Sample Report', '/reports/dna-samples'] // UNION report (Member 1 - Issue 6)
+   ],
+   Officer: [
+     ['Dashboard', '/officer/dashboard'],
+@@ -26,14 +27,16 @@ const navByRole = {
+     ['DNA Samples', '/dna-samples'],
+     ['DNA Matches', '/dna-matches'],
+     ['Reports', '/reports'],
+-    ['Labs Intersection', '/reports/labs-intersection']
++    ['Labs Intersection', '/reports/labs-intersection'],
++    ['DNA Sample Report', '/reports/dna-samples'] // UNION report (Member 1 - Issue 6)
+   ],
+   'Lab Technician': [
+     ['Dashboard', '/lab/dashboard'],
+     ['DNA Samples', '/dna-samples'],
+     ['DNA Matches', '/dna-matches'],
+     ['Reports', '/reports'],
+-    ['Labs Intersection', '/reports/labs-intersection']
++    ['Labs Intersection', '/reports/labs-intersection'],
++    ['DNA Sample Report', '/reports/dna-samples'] // UNION report (Member 1 - Issue 6)
+   ],
+ }
+ 
+```
+
+---
+
+## Phase 6 testing
+
+**SQL (`union_report.sql` on local MySQL 8.0, 0 errors):**
+
+| Query | Result |
+|---|---|
+| 1 Admin report (seed data, no Confirmed match) | Samples 1, 2, 5, 6 → **Awaiting Match**. Samples 1 and 2 show `pending_review_matches = 1` (match 1) |
+| 2 Officer 1 | 1, 2 |
+| 3 Technician (lab 1) | 1, 2 |
+| 4 Summary over the UNION | Awaiting Match = 4 |
+| 5 Demo after confirming match 1 | **1, 2 → Matched**. 5, 6 → Awaiting Match |
+| After the file runs | Match 1 back to Pending Review, John Doe back to Under Investigation |
+
+**API (`GET /api/dna-samples/report/overview`, backend on a test port):**
+
+| User | Before confirm | After Officer confirms match 1 |
+|---|---|---|
+| No login | 401 | — |
+| Admin | {matched 0, awaiting 4}: #1, #2, #5, #6 | {matched **2**, awaiting 2}: **#1, #2 Matched (m1)**, #5, #6 Awaiting |
+| Officer 1 (John Doe's case) | {0, 2}: #1, #2 | {**2**, 0}: #1, #2 Matched |
+| Officer 2 (Jane Smith's case) | {0, 1}: #5 | {0, 1}: #5 |
+| Technician 1 (lab 1) | {0, 2}: #1, #2 | {**2**, 0}: #1, #2 Matched |
+| Technician 4 (lab 3) | {0, 1}: #6 | {0, 1}: #6 |
+
+`GET /api/dna-samples/2` still worked, so the new `/report/overview` route placed before `/:id` doesn't break it. The seed data was restored and the test users removed afterwards.
+
+**Frontend:** `oxlint` found no issues and `vite build` succeeded. The pages were not clicked through in a browser.
+
+## Demo steps
+
+1. Log in (any role) → sidebar **DNA Sample Report**: every analyzed sample shows as **Awaiting Match**.
+2. As Admin or Officer 1: **DNA Matches → Match #1 → Confirm Match**.
+3. Open **DNA Sample Report** again: samples #1 and #2 are now **Matched** and link to match #1. Because of Phase 5's trigger, John Doe is also **Identified**.
+
+## Known gaps after Phase 6
+
+- The Officer and Lab Technician dashboards (`Dashboards.jsx`) still show mock DNA counts from `DataContext` (Phase 7).
+
+---
+
+<!-- Phase 7 onwards will be added below as each phase is completed. -->

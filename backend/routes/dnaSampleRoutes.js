@@ -9,6 +9,7 @@ import {
   getFamilyDna,
   updateAnalysis,
   getLabSummary,
+  getSampleOverviewReport,
 } from '../controllers/dnaSampleController.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
 import { requireRole } from '../middleware/roleMiddleware.js'
@@ -22,6 +23,9 @@ router.get('/family/:personId', requireAuth, requireRole('Admin', 'Officer'), ge
 
 // Technician er nijer lab er workload summary (Issue 3) — eta o '/:id' er AGE
 router.get('/lab/summary', requireAuth, requireRole('Lab Technician'), getLabSummary)
+
+// UNION report: Matched + Awaiting Match sample (Issue 6) — tinjonei, role onujayi scoped — '/:id' er AGE
+router.get('/report/overview', requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), getSampleOverviewReport)
 
 // Admin, Officer, Lab Technician — tinjonei sample dekhte parbe (controller role onujayi data filter kore)
 router.get('/',requireAuth, requireRole('Admin', 'Officer', 'Lab Technician'), listSamples)

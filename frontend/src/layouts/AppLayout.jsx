@@ -16,7 +16,8 @@ const navByRole = {
     ['DNA Analytics', '/dna-analytics'],
     ['Users & Accounts', '/admin/users'],
     ['Reports', '/reports'],
-    ['Labs Intersection', '/reports/labs-intersection']
+    ['Labs Intersection', '/reports/labs-intersection'],
+    ['DNA Sample Report', '/reports/dna-samples'] // UNION report (Member 1 - Issue 6)
   ],
   Officer: [
     ['Dashboard', '/officer/dashboard'],
@@ -26,14 +27,16 @@ const navByRole = {
     ['DNA Samples', '/dna-samples'],
     ['DNA Matches', '/dna-matches'],
     ['Reports', '/reports'],
-    ['Labs Intersection', '/reports/labs-intersection']
+    ['Labs Intersection', '/reports/labs-intersection'],
+    ['DNA Sample Report', '/reports/dna-samples'] // UNION report (Member 1 - Issue 6)
   ],
   'Lab Technician': [
     ['Dashboard', '/lab/dashboard'],
     ['DNA Samples', '/dna-samples'],
     ['DNA Matches', '/dna-matches'],
     ['Reports', '/reports'],
-    ['Labs Intersection', '/reports/labs-intersection']
+    ['Labs Intersection', '/reports/labs-intersection'],
+    ['DNA Sample Report', '/reports/dna-samples'] // UNION report (Member 1 - Issue 6)
   ],
 }
 

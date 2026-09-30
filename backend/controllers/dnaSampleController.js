@@ -16,6 +16,7 @@ import {
   findTechnicianForUser,
   findLabSampleSummary,
   updateSampleAnalysis as dbUpdateSampleAnalysis,
+  findSampleOverviewReport,
 } from '../models/dnaSampleModel.js'
 
 // Sample er allowed status gulo (filter validate korar jonno)
@@ -615,6 +616,43 @@ export async function getLabSummary(req, res) {
     })
   } catch (error) {
     console.error('Get lab summary error:', error)
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  }
+}
+
+// ---------- SQL UNION Report — DNA Sample Overview (Member 1 - Issue 6) ----------
+
+// GET /api/dna-samples/report/overview — Matched + Awaiting Match sample (UNION), role onujayi scoped
+export async function getSampleOverviewReport(req, res) {
+  try {
+    const rows = await findSampleOverviewReport(req.session.user)
+
+    const report = rows.map(row => ({
+      sampleId: row.sample_id,
+      personName: row.person_name,
+      source: row.source,
+      sampleType: row.sample_type,
+      labName: row.lab_name || null,
+      dnaProfileCode: row.dna_profile_code,
+      reportStatus: row.report_status, // 'Matched' ba 'Awaiting Match'
+      confirmedMatchId: row.confirmed_match_id ?? null,
+      pendingReviewMatches: Number(row.pending_review_matches), // COUNT() string/bigint ashe
+    }))
+
+    // Report card er jonno duita group er count
+    const matched = report.filter(item => item.reportStatus === 'Matched').length
+
+    return res.status(200).json({
+      success: true,
+      summary: {
+        matched,
+        awaitingMatch: report.length - matched,
+        total: report.length,
+      },
+      report,
+    })
+  } catch (error) {
+    console.error('DNA sample overview report error:', error)
     return res.status(500).json({ success: false, message: 'Internal server error.' })
   }
 }

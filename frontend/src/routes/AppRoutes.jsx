@@ -18,6 +18,7 @@ import {
 } from '../pages/MissingPersons'
 import { CaseDetails, CaseForm, Cases } from '../pages/Cases'
 import IntersectionReport from '../pages/IntersectionReport'
+import DnaSampleReport from '../pages/DnaSampleReport' // UNION report (Member 1 - Issue 6)
 
 import {
   DNAAnalysis,
@@ -310,6 +311,16 @@ export default function AppRoutes() {
               ]}
             >
               <Reports />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* DNA Sample Overview — SQL UNION report (Issue 6) — backend role onujayi scoped */}
+        <Route
+          path="reports/dna-samples"
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Officer', 'Lab Technician']}>
+              <DnaSampleReport />
             </ProtectedRoute>
           }
         />

@@ -56,6 +56,16 @@ export async function getLabSummary() {
   return response.data.summary
 }
 
+// UNION report: Matched + Awaiting Match sample (Issue 6)
+// Response: { summary: { matched, awaitingMatch, total }, report: [...] }
+export async function getSampleOverviewReport() {
+  const response = await api.get('/dna-samples/report/overview')
+  return {
+    summary: response.data.summary,
+    report: response.data.report ?? [],
+  }
+}
+
 // Missing person er family member + tader reference DNA sample (Issue 2)
 // Response: { summary: {...}, familyMembers: [{ familyId, name, relationship, phone, samples: [...] }] }
 export async function getFamilyDnaByPerson(personId) {
@@ -139,6 +149,7 @@ export default {
   getFamilyDnaByPerson,
   updateSampleAnalysis,
   getLabSummary,
+  getSampleOverviewReport,
   getLabs,
   getTechnicians,
   getMatches,
