@@ -17,8 +17,8 @@ This file records every change made in each phase: what was added, the full code
 | 1 | CB-1 | Write the ForenTrace FAQ (knowledge base) and export it as a PDF | `backend/chatbot/data/forentrace_faq.pdf` (+ `forentrace_faq_source.txt`) | ✅ Done + double-checked (waiting for M2/M3 review) |
 | 2 | CB-2 | Pre-process and chunk the FAQ text (one chunk per Q&A) | `backend/chatbot/chunker.js` | ✅ Done |
 | 3 | CB-3 | PDF → chunks → 384-number embeddings → MongoDB (`faq_chunks`), no duplicates | `backend/chatbot/ingest.js` | ✅ Done (37 chunks live in Atlas) |
-| 4 | CB-4 | Create `vector_index` by script (replaces Member 2's temporary one), check READY | `backend/chatbot/createIndex.js` | ⏳ Next (needs Member 2's "API ready" + `testSearch.js`) |
-| 5 | CB-8 | Tune `CHATBOT_SCORE_THRESHOLD` with the 20-question score table | `.env` (not committed) + score table in this file | ⏳ Needs `testSearch.js` |
+| 4 | CB-4 | Create `vector_index` by script (replaces Member 2's temporary one), check READY | `backend/chatbot/createIndex.js` | ✅ Done (`vector_index` READY; re-test with Member 2's `testSearch.js` when it lands) |
+| 5 | CB-8 | Tune `CHATBOT_SCORE_THRESHOLD` with the 20-question score table | `.env` (not committed) + score table in this file | ⏳ Next |
 | 6 | Wrap-up | Final checklist, commit own files by name, push, open PR, hand-off message | — | ⏳ |
 
 Rules followed in every phase: ES modules only (`import`/`export`, `.js` on local imports), `process.env` is read inside functions, `embedder.js` and `mongoClient.js` are not modified, the chatbot never reads MySQL, `.env` is never committed, and files are added to git by name (never `git add .`).
@@ -459,4 +459,112 @@ To see it yourself (for the demo): Atlas → **Browse Collections → forentrace
 - The two guards (empty chunks, wrong vector size) were checked by reading the code but not triggered live, because triggering them would mean breaking the PDF or the model.
 - `testSearch.js` (Member 2) doesn't exist yet, so search over these chunks is tested in Phase 4 after `vector_index` is created.
 - Read-only check after ingestion: `faq_chunks` has **0 search indexes** right now, so Member 2's temporary `vector_index` hasn't been made. In Phase 4 there's nothing to delete in Atlas first, and `createIndex.js` can create `vector_index` directly.
+
+---
+
+## Phase 4 — CB-4: Create the Vector Search Index
+
+### Goal
+Create the Atlas Vector Search index `vector_index` on `faq_chunks.embedding` **with a script**, so it can always be recreated with one command, and check that it is **READY** and returns the real FAQ chunks.
+
+### Files changed
+
+| File | Type | Purpose |
+| --- | --- | --- |
+| `backend/chatbot/createIndex.js` | **New** | Creates `vector_index` (type `vectorSearch`, 384 dimensions, cosine) if it doesn't exist. If it exists, prints its status. |
+
+### Code — `backend/chatbot/createIndex.js` (full new file)
+
+```js
+// backend/chatbot/createIndex.js   →   run ONCE, AFTER ingest.js: node chatbot/createIndex.js
+// Atlas ke bole: "embedding" field e 384 ta number ache — meaning diye search korar jonno cosine diye compare koro
+// Index ekbar banale-i hoy — FAQ change hole shudhu ingest.js abar chalalei hobe
+import 'dotenv/config';
+import { getCollection, closeMongo } from './mongoClient.js';
+
+try {
+  const col = await getCollection();
+
+  // Age theke index ache kina dekha — thakle abar create korle error dito
+  const existing = await col.listSearchIndexes().toArray();
+  const found = existing.find(i => i.name === 'vector_index');
+
+  if (found) {
+    console.log('vector_index already exists. Status:', found.status); // want: READY
+  } else {
+    await col.createSearchIndex({
+      name: 'vector_index',       // Member 2 er retriever ei naam diye $vectorSearch kore (team contract)
+      type: 'vectorSearch',
+      definition: {
+        fields: [
+          // numDimensions 384 — all-MiniLM-L6-v2 er output size er sathe mil thakte hobe
+          { type: 'vector', path: 'embedding', numDimensions: 384, similarity: 'cosine' }
+        ]
+      }
+    });
+    console.log('vector_index created. Wait 1–2 minutes, then run again to see READY.');
+  }
+} catch (err) {
+  console.error('Index creation FAILED:', err.message);
+  process.exitCode = 1;
+} finally {
+  await closeMongo();
+}
+```
+
+### What each part does
+
+| Part | What it does | Why |
+| --- | --- | --- |
+| `listSearchIndexes()` + `find(i => i.name === 'vector_index')` | Checks whether the index already exists. | Creating an index with an existing name throws an error. This makes the script safe to run many times, and the second run is how we read the status. |
+| `createSearchIndex({ name, type: 'vectorSearch', definition })` | Asks Atlas to build a **vector search** index. A normal index can't do this: it only finds exact values, not "closest meaning". | Member 2's retriever runs `$vectorSearch` with `index: 'vector_index'`, which needs this index. |
+| `name: 'vector_index'` | Index name from the team contract. | The retriever looks the index up by this exact name. |
+| `path: 'embedding'` | The field that holds the vectors. | Same field `ingest.js` writes. |
+| `numDimensions: 384` | Every vector has 384 numbers. | all-MiniLM-L6-v2 always outputs 384. Sir's note says "350/345", but a wrong number would make search return nothing or error. |
+| `similarity: 'cosine'` | Compares vectors by **direction** (meaning), not length. | Standard for sentence embeddings. Our vectors are normalized (length 1.0000, checked in Phase 3). |
+| `found.status` | Prints `PENDING` / `BUILDING` / `READY`. | The index is built asynchronously. Search only works once it is `READY`. |
+| `catch` / `finally closeMongo()` | Same error handling and clean exit as `ingest.js`. | Consistent with the other chatbot scripts. |
+
+### How it was run (step order)
+1. `ingest.js` had already filled `faq_chunks` with 37 chunks (Phase 3).
+2. The guide's step "delete Member 2's temporary index in Atlas" was **skipped because there wasn't one**. A read-only `listSearchIndexes()` check showed **0** search indexes.
+3. `node chatbot/createIndex.js` → `vector_index created. Wait 1–2 minutes, then run again to see READY.`
+4. After the build: `node chatbot/createIndex.js` → **`vector_index already exists. Status: READY`** ✅
+
+### Testing results
+
+**Index state** (polled with a temporary read-only script outside the repo):
+
+| Time | Status | Queryable |
+| --- | --- | --- |
+| 0 s | PENDING | false |
+| 11 s | **READY** | **true** |
+
+Stored definition: `{"fields":[{"type":"vector","path":"embedding","numDimensions":384,"similarity":"cosine"}]}` ✅
+
+**Search test.** Member 2's `testSearch.js` isn't on `feature/chatbot` yet, so a temporary stand-in script (scratchpad, not committed) did the same thing: embed the question with the shared `embedder.js`, then run `$vectorSearch` (`numCandidates: 100`, `limit: 3`) and print `vectorSearchScore`:
+
+| Question | Top result (score, chunk) | Correct? |
+| --- | --- | --- |
+| How do I register a DNA sample? | 0.9027 · #21 *How do I register (add, create, collect) a DNA sample?* | ✅ |
+| What happens after a match is confirmed? | 0.8088 · #30 *What happens after (when) a DNA match is confirmed?* | ✅ |
+| How do I cook rice? (off-topic) | 0.5422 · #9 *How do I log in (sign in) to ForenTrace?* | ✅ correctly low: no real match, well below on-topic scores |
+
+All results came from `source: forentrace_faq.pdf` (the real FAQ, not sample data).
+
+### Important for Phase 5 (threshold): what the score means
+For `similarity: 'cosine'`, Atlas doesn't return the raw cosine. It returns a **normalized score = (1 + cosine) / 2**, so scores always fall between 0 and 1:
+
+| Atlas score | Raw cosine | Meaning |
+| --- | --- | --- |
+| 0.90 | 0.80 | very close meaning |
+| 0.70 (current threshold) | 0.40 | loosely related |
+| 0.54 ("cook rice") | 0.08 | basically unrelated |
+
+That's why even an unrelated question scores about 0.5 and not about 0. `CHATBOT_SCORE_THRESHOLD` is compared with this Atlas score, so the tuning in Phase 5 uses the same scale.
+
+### Known gaps / notes
+- **Official test still pending:** when Member 2 pushes `testSearch.js`, run `node chatbot/testSearch.js "How do I register a DNA sample?"` once to confirm the same top chunk (#21).
+- The index doesn't need to be recreated when the FAQ changes: `ingest.js` replaces the documents and Atlas re-indexes them automatically.
+- If the index ever has to be rebuilt (for example a wrong definition), delete it in Atlas (**Search & Vector Search → vector_index → Delete**) and run `node chatbot/createIndex.js` again.
 
