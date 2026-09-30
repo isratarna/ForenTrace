@@ -21,6 +21,8 @@ import adminStatsRoutes from './routes/adminStatsRoutes.js'
 import dnaSampleRoutes from './routes/dnaSampleRoutes.js' // DNA Sample module (Member 1 - Issue 1)
 import dnaMatchRoutes from './routes/dnaMatchRoutes.js' // DNA Match module (Member 1 - Issue 4)
 
+import chatbotRoutes from './routes/chatbotRoutes.js';
+
 const app = express()
 
 app.use(
@@ -61,6 +63,8 @@ app.use('/api/reports', reportRoutes)
 app.use('/api/admin/counts', adminStatsRoutes)
 app.use('/api/dna-samples', dnaSampleRoutes) // DNA sample CRUD endpoints
 app.use('/api/dna-matches', dnaMatchRoutes) // DNA comparison + match endpoints
+
+app.use('/api/chatbot', chatbotRoutes);
 
 async function startServer() {
   try {

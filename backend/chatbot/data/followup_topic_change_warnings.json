@@ -1,0 +1,33 @@
+{
+  "description": "Topic changes that pass the threshold (⚠). Step 10: Gemini must refuse each of these.",
+  "warnings": [
+    {
+      "prev": "How do I register a DNA sample?",
+      "q": "Is it raining?",
+      "used": "prev+new",
+      "score": 0.8435,
+      "topChunk": "Q: How do I register (add, create, collect) a DNA sample?"
+    },
+    {
+      "prev": "What can a lab technician do?",
+      "q": "Tell me a joke",
+      "used": "prev+new",
+      "score": 0.797,
+      "topChunk": "Q: What does a lab technician (lab tech) do in ForenTrace? What are a lab technician's permissions (duties, tasks)?"
+    },
+    {
+      "prev": "What is ForenTrace?",
+      "q": "Can you sing it for me?",
+      "used": "prev+new",
+      "score": 0.755,
+      "topChunk": "ForenTrace - Help and Frequently Asked Questions About Foren…"
+    },
+    {
+      "prev": "How does DNA matching work?",
+      "q": "Cook rice how?",
+      "used": "prev+new",
+      "score": 0.791,
+      "topChunk": "Q: How does DNA matching (DNA comparison) work in ForenTrace?"
+    }
+  ]
+}
