@@ -15,8 +15,8 @@ The earlier CB-1…CB-8 work is in `MEMBER1_CHATBOT_CHANGES.md`.
 | --- | --- | --- | --- | --- |
 | 1 | Step 1 | Fix the chunker (`Q:` only at a word start) + chunk checker | `chunker.js`, `checkChunks.js` | ✅ Done (0 problems, 37 chunks) |
 | 2 | Step 2 | Evaluation script, main + holdout question files, choose the threshold | `evaluate.js`, `data/eval_questions.json`, `data/holdout_questions.json` | ✅ Done (main 10/10, holdout 81/91 → **86/91** after the 8 wording changes (Phase 2b); threshold kept at 0.65) |
-| 3 | Step 3 | Pre-flight check (env, model, FAQ loaded, index, smoke test) | `preflight.js` | ⏳ Next |
-| 4 | Step 4 | Teach-the-bot test (swap in FAQ v2, re-ingest, restore) | `teachTest.js` | ⏳ (needs `forentrace_faq_v2.pdf` on the Desktop) |
+| 3 | Step 3 | Pre-flight check (env, model, FAQ loaded, index, smoke test) | `preflight.js` | ✅ Done (5/5 ✅; failure paths tested) |
+| 4 | Step 4 | Teach-the-bot test (swap in FAQ v2, re-ingest, restore) | `teachTest.js` | ⏳ Next (needs `forentrace_faq_v2.pdf` on the Desktop) |
 | 5 | Step 5 | FAQ checker (roles, exact menu names, vague answers) + wording list | `checkFaq.js`, `data/faq_terms.json` | ⏳ |
 | 6 | Step 6 | Bangla search-side test file | `data/bangla_questions.json` | ⏳ |
 | 7 | Step 7 | Follow-up search-side test (copy of Member 2's rule) | `followupTest.js`, `data/followup_questions.json` | ⏳ |
@@ -932,3 +932,206 @@ The real result is exactly what the offline simulation predicted. The 5 remainin
 ### Known gaps / notes
 - **Tell Member 2 you re-ingested:** the chunk text of 8 entries changed, so their scores for those questions will be slightly different.
 - Always wait ~1 minute after `ingest.js` before searching. The pre-flight (Phase 3) and teach test (Phase 4) will wait for the index automatically.
+
+---
+
+## Phase 3 — Step 3: Pre-flight check
+
+### Goal
+Before any test, demo or teach run, one command answers "is everything ready?": the `.env` values, the embedding model, the real FAQ in Atlas, the vector index, and one real search. Each check prints ✅ or ❌, the script keeps going after a ❌, and it ends with exit code 1 if anything failed.
+
+### Files changed
+
+| File | Type | Purpose |
+| --- | --- | --- |
+| `backend/chatbot/preflight.js` | **New** | The 5 checks. Also exports `runPreflight()`, so the teach test (Phase 4) can run it at the end without starting a new process. |
+
+### How to run
+```powershell
+cd backend
+node chatbot/preflight.js
+```
+
+### Code — `backend/chatbot/preflight.js` (full new file)
+
+```js
+// backend/chatbot/preflight.js   →   run from backend folder: node chatbot/preflight.js
+// One ✅ / ❌ per check, keeps going after a ❌, exit code 1 if any check failed:
+//   1. .env: MONGODB_URI and CHATBOT_SCORE_THRESHOLD set (only the threshold is shown)
+//   2. Embedding model works (384 numbers)
+//   3. The real FAQ is loaded (no sample-seed chunks, at least 25 chunks)
+//   4. vector_index exists, READY and queryable
+//   5. Smoke test: a known question finds the right chunk above the threshold
+// No Gemini call. (Demo/test er age ekbar chalale bojha jay shob thik ache kina)
+import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { embed } from './embedder.js';
+import { getCollection, closeMongo } from './mongoClient.js';
+import { searchTop, getThreshold, questionLine } from './evaluate.js';
+
+const EXPECTED_SOURCE = 'forentrace_faq.pdf';
+const EMBEDDING_SIZE = 384;
+const MIN_CHUNKS = 25; // real FAQ e 37 ta — 25 er kom mane vul PDF ba sample data
+const SMOKE_QUESTION = 'How do I register a DNA sample?';
+const SMOKE_EXPECT = 'How do I register (add, create, collect) a DNA sample';
+const SYNC_WAIT_MS = 10000; // ingest er por index sync er jonno 10s kore wait
+const SYNC_TRIES = 7;       // mot ~60s
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Ekta check chalay — error hole ❌ print kore porer check e jay (thame na)
+async function check(name, fn) {
+  try {
+    const detail = await fn();
+    console.log(`✅ ${name}${detail ? ` — ${detail}` : ''}`);
+    return true;
+  } catch (err) {
+    console.log(`❌ ${name} — ${err.message}`);
+    return false;
+  }
+}
+
+export async function runPreflight() {
+  const results = [];
+
+  results.push(await check('1. .env settings', async () => {
+    const missing = [];
+    if (!process.env.MONGODB_URI) missing.push('MONGODB_URI');
+    if (getThreshold() === null) missing.push('CHATBOT_SCORE_THRESHOLD (number between 0 and 1)');
+    if (missing.length) throw new Error(`missing: ${missing.join(', ')}`);
+    return `MONGODB_URI set, CHATBOT_SCORE_THRESHOLD = ${getThreshold()}`; // URI er value kokhono print na
+  }));
+
+  results.push(await check('2. Embedding model', async () => {
+    const vector = await embed('hello forentrace');
+    if (vector.length !== EMBEDDING_SIZE || !vector.every(Number.isFinite)) {
+      throw new Error(`vector has ${vector.length} numbers, expected ${EMBEDDING_SIZE}`);
+    }
+    return `vector length ${vector.length}`;
+  }));
+
+  results.push(await check('3. Real FAQ loaded', async () => {
+    const col = await getCollection();
+    const count = await col.countDocuments();
+    const others = await col.countDocuments({ source: { $ne: EXPECTED_SOURCE } });
+    if (others > 0) throw new Error(`${others} chunk(s) not from ${EXPECTED_SOURCE} (sample-seed left?) — run node chatbot/ingest.js`);
+    if (count < MIN_CHUNKS) throw new Error(`only ${count} chunks, expected at least ${MIN_CHUNKS} — run node chatbot/ingest.js`);
+    return `${count} chunks, all from ${EXPECTED_SOURCE}`;
+  }));
+
+  results.push(await check('4. vector_index', async () => {
+    const col = await getCollection();
+    const [index] = await col.listSearchIndexes('vector_index').toArray();
+    if (!index) throw new Error('vector_index not found — run node chatbot/createIndex.js');
+    const field = index.latestDefinition?.fields?.find(f => f.path === 'embedding');
+    if (field && field.numDimensions !== EMBEDDING_SIZE) throw new Error(`index has ${field.numDimensions} dimensions, expected ${EMBEDDING_SIZE}`);
+    if (index.status !== 'READY' || index.queryable === false) throw new Error(`status ${index.status}, queryable ${index.queryable} — wait 1–2 minutes and re-run`);
+    return `READY, queryable, ${field?.numDimensions ?? '?'} dims, ${field?.similarity ?? '?'}`;
+  }));
+
+  results.push(await check('5. Smoke test', async () => {
+    const threshold = getThreshold();
+    if (threshold === null) throw new Error('no threshold to compare with (see check 1)');
+
+    // Ingest er thik porei search faka ashe — ~60s porjonto index sync er jonno wait kori
+    // (chunk ba index-i na thakle wait kore labh nei — tokhon ekbar-i try)
+    const tries = results[2] && results[3] ? SYNC_TRIES : 1;
+    let top;
+    for (let attempt = 1; attempt <= tries; attempt++) {
+      [top] = await searchTop(SMOKE_QUESTION);
+      if (top) break;
+      if (attempt < tries) {
+        console.log(`   …no search result yet, waiting for vector_index to sync (${attempt}/${tries - 1})`);
+        await sleep(SYNC_WAIT_MS);
+      }
+    }
+    if (!top) throw new Error(tries > 1 ? 'search still returns nothing after ~60s' : 'search returns nothing (see checks 3 and 4)');
+
+    const found = `"${SMOKE_QUESTION}" → ${questionLine(top.text)} (${top.score.toFixed(4)})`;
+    if (!top.text.toLowerCase().includes(SMOKE_EXPECT.toLowerCase())) throw new Error(`wrong chunk: ${found}`);
+    if (top.score < threshold) throw new Error(`score below threshold ${threshold}: ${found}`);
+    return found;
+  }));
+
+  const passed = results.filter(Boolean).length;
+  console.log(`\nPre-flight: ${passed}/${results.length} checks passed`);
+  return passed === results.length;
+}
+
+// Shudhu "node chatbot/preflight.js" chalale — teachTest.js import kore nijei chalay
+const isMain = process.argv[1] && path.resolve(process.argv[1]).toLowerCase() === fileURLToPath(import.meta.url).toLowerCase();
+if (isMain) {
+  try {
+    if (!(await runPreflight())) process.exitCode = 1;
+  } catch (err) {
+    console.error('Pre-flight FAILED:', err.message);
+    process.exitCode = 1;
+  } finally {
+    await closeMongo(); // fail korleo connection bondho
+  }
+}
+```
+
+### What each part does
+
+| Part | What it does |
+| --- | --- |
+| `check(name, fn)` | Runs one check. If `fn` returns → ✅ plus the detail text. If it throws → ❌ plus the reason, and the script **moves on** to the next check instead of stopping. Returns true/false. |
+| Check 1: `.env` settings | `MONGODB_URI` must exist (its value is **never** printed) and `CHATBOT_SCORE_THRESHOLD` must be a number between 0 and 1 (uses `getThreshold()` from `evaluate.js`). The threshold is the only value shown. |
+| Check 2: embedding model | Embeds a test sentence with the shared `embedder.js`. It must give 384 real numbers, the same size as the chunks and the index. |
+| Check 3: real FAQ loaded | Counts the chunks. Any chunk whose `source` isn't `forentrace_faq.pdf` = a leftover (e.g. Member 2's sample-seed). Under 25 chunks = the wrong PDF or a failed ingest (the real FAQ has 37). |
+| Check 4: `vector_index` | `listSearchIndexes('vector_index')`: it must exist, be `READY` and `queryable`, and its `embedding` field must have 384 dimensions. It also shows the similarity type (`cosine`). |
+| Check 5: smoke test | Searches "How do I register a DNA sample?" with `searchTop()` from `evaluate.js`. The top chunk must be the "register a DNA sample" Q&A **and** score at or above the threshold. |
+| Index sync wait (`SYNC_WAIT_MS`, `SYNC_TRIES`) | Right after `ingest.js`, Atlas needs a few seconds to index the new chunks, and search returns nothing (found in Phase 2b). If checks 3 and 4 passed, check 5 waits 10 s and retries, up to ~60 s. If there are no chunks or no index, waiting can't help, so it tries once. |
+| `runPreflight()` (exported) | Runs the 5 checks, prints `Pre-flight: X/5 checks passed` and returns true only if all passed. |
+| `isMain` block | Only when started with `node chatbot/preflight.js`: sets exit code 1 on failure and always closes the Mongo connection in `finally`. When imported (teach test), the importing script closes it. |
+
+### Testing results
+
+**Normal run:**
+```text
+✅ 1. .env settings — MONGODB_URI set, CHATBOT_SCORE_THRESHOLD = 0.65
+✅ 2. Embedding model — vector length 384
+✅ 3. Real FAQ loaded — 37 chunks, all from forentrace_faq.pdf
+✅ 4. vector_index — READY, queryable, 384 dims, cosine
+✅ 5. Smoke test — "How do I register a DNA sample?" → Q: How do I register (add, create, collect) a DNA sample? (0.9027)
+
+Pre-flight: 5/5 checks passed          (exit code 0)
+```
+
+**Right after a re-ingest (same PDF, nothing changed): the sync wait works:**
+```text
+✅ 4. vector_index — READY, queryable, 384 dims, cosine
+   …no search result yet, waiting for vector_index to sync (1/6)
+✅ 5. Smoke test — "How do I register a DNA sample?" → … (0.9027)
+Pre-flight: 5/5 checks passed
+```
+
+**Failure test (a): threshold blanked for one run (`CHATBOT_SCORE_THRESHOLD=` in front of the command, `.env` not changed):**
+```text
+❌ 1. .env settings — missing: CHATBOT_SCORE_THRESHOLD (number between 0 and 1)
+✅ 2. Embedding model — vector length 384
+✅ 3. Real FAQ loaded — 37 chunks, all from forentrace_faq.pdf
+✅ 4. vector_index — READY, queryable, 384 dims, cosine
+❌ 5. Smoke test — no threshold to compare with (see check 1)
+Pre-flight: 3/5 checks passed          (exit code 1)
+```
+
+**Failure test (b): pointed at an empty database for one run (`MONGODB_DB=forentrace_preflight_empty_test`):**
+```text
+✅ 1. .env settings — MONGODB_URI set, CHATBOT_SCORE_THRESHOLD = 0.65
+✅ 2. Embedding model — vector length 384
+❌ 3. Real FAQ loaded — only 0 chunks, expected at least 25 — run node chatbot/ingest.js
+❌ 4. vector_index — vector_index not found — run node chatbot/createIndex.js
+❌ 5. Smoke test — search returns nothing (see checks 3 and 4)
+Pre-flight: 2/5 checks passed          (exit code 1)
+```
+The first version of the script waited the full 60 s in test (b). That's why the wait now only happens when checks 3 and 4 passed. Afterwards, the Atlas database list still showed only `forentrace_chatbot`: the test only read, so it created nothing.
+
+### What you (Member 1) do for this step
+Nothing. Run `node chatbot/preflight.js` before the demo and before each end-to-end test.
+
+### Known gaps / notes
+- Check 5 uses one fixed question. If that FAQ entry is ever reworded, update `SMOKE_EXPECT`.
+- The pre-flight checks the search side only. It doesn't start the server or call Gemini (that is the end-to-end test in Part B).
