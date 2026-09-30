@@ -16,8 +16,8 @@ This file records every change made in each phase: what was added, the full code
 | 0 | Setup | Check that `.env`, the embedder and MongoDB work on this laptop | — (no code) | ✅ Done |
 | 1 | CB-1 | Write the ForenTrace FAQ (knowledge base) and export it as a PDF | `backend/chatbot/data/forentrace_faq.pdf` (+ `forentrace_faq_source.txt`) | ✅ Done + double-checked (waiting for M2/M3 review) |
 | 2 | CB-2 | Pre-process and chunk the FAQ text (one chunk per Q&A) | `backend/chatbot/chunker.js` | ✅ Done |
-| 3 | CB-3 | PDF → chunks → 384-number embeddings → MongoDB (`faq_chunks`), no duplicates | `backend/chatbot/ingest.js` | ⏳ Next |
-| 4 | CB-4 | Create `vector_index` by script (replaces Member 2's temporary one), check READY | `backend/chatbot/createIndex.js` | ⏳ Needs Member 2's "API ready" + `testSearch.js` |
+| 3 | CB-3 | PDF → chunks → 384-number embeddings → MongoDB (`faq_chunks`), no duplicates | `backend/chatbot/ingest.js` | ✅ Done (37 chunks live in Atlas) |
+| 4 | CB-4 | Create `vector_index` by script (replaces Member 2's temporary one), check READY | `backend/chatbot/createIndex.js` | ⏳ Next (needs Member 2's "API ready" + `testSearch.js`) |
 | 5 | CB-8 | Tune `CHATBOT_SCORE_THRESHOLD` with the 20-question score table | `.env` (not committed) + score table in this file | ⏳ Needs `testSearch.js` |
 | 6 | Wrap-up | Final checklist, commit own files by name, push, open PR, hand-off message | — | ⏳ |
 
@@ -319,4 +319,144 @@ Run with a temporary test script (kept outside the repo, in the session scratchp
 - A real Q&A shorter than 21 characters would be dropped by the filter. None of the FAQ's Q&As is anywhere near that short (the smallest is 27 words).
 - The chunker trusts that `Q:` appears only at question starts. That is guaranteed by the FAQ writing rule and verified in Phase 1 (36 `Q:` for 36 questions).
 - The PDF isn't read here. That happens in `ingest.js` (Phase 3), which passes the text to `chunkText()`.
+
+---
+
+## Phase 3 — CB-3: Embedding & Insertion Script
+
+### Goal
+One command (`node chatbot/ingest.js`, run from `backend/`) that reads the FAQ PDF, chunks it, turns every chunk into a 384-number vector and stores it in MongoDB Atlas (`forentrace_chatbot.faq_chunks`). Running it again must **replace** the data, not duplicate it.
+
+### Files changed
+
+| File | Type | Purpose |
+| --- | --- | --- |
+| `backend/chatbot/ingest.js` | **New** | The ingestion pipeline: PDF → text → chunks → embeddings → MongoDB. |
+
+`embedder.js` and `mongoClient.js` are only **imported** (shared, not modified). `.env` isn't changed.
+
+### Code — `backend/chatbot/ingest.js` (full new file)
+
+```js
+// backend/chatbot/ingest.js   →   run from backend folder: node chatbot/ingest.js
+// PDF → text → chunks → embeddings → MongoDB   (left side of sir's diagram)
+// FAQ change hole: PDF abar export kore ei script abar chalalei hobe (index notun kore lage na)
+import 'dotenv/config';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import pdfParse from 'pdf-parse/lib/pdf-parse.js'; // direct lib import — noile 05-versions-space.pdf error ashe
+import { chunkText } from './chunker.js';
+import { embed } from './embedder.js';
+import { getCollection, closeMongo } from './mongoClient.js';
+
+// ES modules have no __dirname, so we build the path from this file's URL
+const here = path.dirname(fileURLToPath(import.meta.url));
+const PDF_PATH = path.join(here, 'data', 'forentrace_faq.pdf');
+const EMBEDDING_SIZE = 384; // all-MiniLM-L6-v2 shob shomoy 384 ta number dey — vector_index o 384
+
+try {
+  // 1. Read the PDF and extract plain text
+  const buffer = fs.readFileSync(PDF_PATH);
+  const { text } = await pdfParse(buffer);
+  console.log(`PDF read: ${text.length} characters`);
+
+  // 2. Pre-process + chunking
+  const chunks = chunkText(text);
+  console.log(`Created ${chunks.length} chunks`);
+
+  // Faka PDF hole thamo — noile niche deleteMany purono shob chunk muche felto, notun kichu dhukto na
+  if (chunks.length === 0) {
+    throw new Error('No chunks created from the PDF. Old chunks were NOT deleted.');
+  }
+
+  // 3. Embedding: every chunk becomes a vector of 384 numbers
+  const docs = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const embedding = await embed(chunks[i]);
+
+    // Vul size er vector index e search e ashbe na — tai insert er agei check
+    if (embedding.length !== EMBEDDING_SIZE) {
+      throw new Error(`Chunk ${i} has ${embedding.length} numbers, expected ${EMBEDDING_SIZE}. Old chunks were NOT deleted.`);
+    }
+
+    docs.push({
+      text: chunks[i],
+      embedding,
+      source: 'forentrace_faq.pdf',
+      chunkIndex: i,
+      createdAt: new Date()
+    });
+    console.log(`Embedded chunk ${i + 1}/${chunks.length}`);
+  }
+
+  // 4. Insertion: replace old chunks with the new ones
+  // Shob embedding ready howar PORE delete — majhe error hole purono data thik thake
+  // deleteMany({}) → Member 2 er 'sample-seed' chunk o chole jay, ar abar run korle duplicate hoy na
+  const col = await getCollection();
+  await col.deleteMany({});
+  await col.insertMany(docs);
+  console.log(`Inserted ${docs.length} chunks into MongoDB`);
+} catch (err) {
+  console.error('Ingestion FAILED:', err.message);
+  process.exitCode = 1;
+} finally {
+  await closeMongo(); // connection bondho, noile script shesh hoy na
+}
+```
+
+### What each part does
+
+| Part | What it does | Why |
+| --- | --- | --- |
+| `import 'dotenv/config'` (first import) | Loads `backend/.env` into `process.env`. | `mongoClient.js` reads `MONGODB_URI` / `MONGODB_DB` **inside its functions**, so they're available by the time we connect. Run from `backend/` so `.env` is found. |
+| `import pdfParse from 'pdf-parse/lib/pdf-parse.js'` | Imports the parser file directly. | The package's `index.js` runs a debug test that looks for `05-versions-space.pdf` and crashes. The direct lib import avoids that (guide tip). |
+| `here` / `PDF_PATH` via `fileURLToPath(import.meta.url)` | Builds the absolute path of `data/forentrace_faq.pdf`. | ES modules have no `__dirname`. This way the path works no matter where the script is started from. |
+| Step 1 `pdfParse(buffer)` | Extracts plain text from the PDF. | The embedding model needs text, not PDF bytes. |
+| Step 2 `chunkText(text)` | Phase 2 chunker: one chunk per Q&A + intro. | One clear meaning per vector. |
+| **Guard:** `chunks.length === 0` → throw | Stops if the PDF produced no chunks. | *Added beyond the guide.* Without it, an empty or broken PDF would still reach `deleteMany({})` and wipe the knowledge base with nothing to replace it. |
+| Step 3 `embed(chunks[i])` | Turns each chunk into a vector (all-MiniLM-L6-v2, mean pooling, normalized). | This vector is what `$vectorSearch` compares with the user's question vector. |
+| **Guard:** `embedding.length !== 384` → throw | Checks every vector's size before touching the database. | *Added beyond the guide.* `vector_index` is defined with `numDimensions: 384`. A wrong-sized vector would be silently left out of search. |
+| Document shape `{ text, embedding, source, chunkIndex, createdAt }` | Exactly the team contract from the task guide. | Member 2's retriever reads these field names. |
+| Step 4 `deleteMany({})` then `insertMany(docs)` | Replaces all old chunks with the new set. | This is what makes re-runs **duplicate-free**. It also removes Member 2's `sample-seed` chunks. The delete happens only **after** all embeddings succeed, so an error during embedding leaves the old data untouched. |
+| `catch` → `process.exitCode = 1` | Prints a clear error and marks the run as failed. | `exitCode` (not `process.exit`) lets `finally` still run. |
+| `finally` → `closeMongo()` | Closes the MongoDB connection. | An open connection keeps Node running and the script would never end. |
+
+### Testing results
+
+**Run 1** (`faq_chunks` was empty before):
+```text
+PDF read: 12233 characters
+Created 37 chunks
+Loading embedding model (first time downloads ~25 MB)...
+Embedded chunk 1/37
+...
+Embedded chunk 37/37
+Inserted 37 chunks into MongoDB
+```
+
+**Run 2** (same command again, to test duplicates) → `Created 37 chunks … Inserted 37 chunks into MongoDB`.
+
+**Database check after run 2** (read-only script kept outside the repo, using the shared `mongoClient.js`):
+
+| Check | Result |
+| --- | --- |
+| Documents in `faq_chunks` | **37** (not 74) ✅ no duplicates after 2 runs |
+| Distinct `text` values | 37 ✅ |
+| `source` values | only `forentrace_faq.pdf` ✅ |
+| `sample-seed` documents left | 0 ✅ |
+| `chunkIndex` | 0 … 36 in order ✅ |
+| Every `embedding` is an array of exactly **384 numbers** | ✅ |
+| Vector length (L2 norm) | 1.0000 for all ✅ (normalized, which is what cosine similarity expects) |
+| Fields | `_id, text, embedding, source, chunkIndex, createdAt` ✅ matches team contract |
+| Example (chunk 7) | `Q: Who creates officer accounts? Who creates (approves) lab technician accounts? A: …`, embedding starts `-0.0311, -0.0281, 0.0315 …` |
+
+To see it yourself (for the demo): Atlas → **Browse Collections → forentrace_chatbot → faq_chunks**.
+
+### Known gaps / notes
+- **Member 2's seed:** `faq_chunks` was empty, so no `sample-seed` chunks existed to delete. If Member 2 seeds sample chunks later, just run `node chatbot/ingest.js` again. It replaces everything with the real FAQ.
+- **Not atomic:** if the connection drops *between* `deleteMany` and `insertMany`, the collection could be left empty. Fix: run the script again. A transaction wasn't used, to keep the script simple and in line with the guide.
+- The two guards (empty chunks, wrong vector size) were checked by reading the code but not triggered live, because triggering them would mean breaking the PDF or the model.
+- `testSearch.js` (Member 2) doesn't exist yet, so search over these chunks is tested in Phase 4 after `vector_index` is created.
+- Read-only check after ingestion: `faq_chunks` has **0 search indexes** right now, so Member 2's temporary `vector_index` hasn't been made. In Phase 4 there's nothing to delete in Atlas first, and `createIndex.js` can create `vector_index` directly.
 
