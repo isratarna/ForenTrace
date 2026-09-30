@@ -20,7 +20,7 @@ USE forentrace_db;
 
 DROP PROCEDURE IF EXISTS compare_dna_samples;
 
-DELIMITER //
+DELIMITER // -- procedure koi shuru and kothay shesh, ei delimiter diye define kora hoyeche
 
 CREATE PROCEDURE compare_dna_samples(
     IN  p_unknown_sample_id INT,         -- unknown / evidence sample

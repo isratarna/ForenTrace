@@ -130,7 +130,7 @@ export default function DnaLabsPage() {
     });
 
     return (
-        <div className="container-fluid py-4">
+        <>
             <PageHeader
                 title="DNA Laboratories"
                 subtitle="Manage and oversee registered forensic DNA testing facilities."
@@ -148,16 +148,16 @@ export default function DnaLabsPage() {
                 }
             />
 
-            {error && <div className="alert alert-danger my-3 shadow-sm">{error}</div>}
-            {success && <div className="alert alert-success my-3 shadow-sm">{success}</div>}
+            {error && <div className="alert alert-danger">{error}</div>}
+            {success && <div className="alert alert-success">{success}</div>}
 
             {/* Collapsible / Toggleable Form */}
             {showForm && (
-                <div className="card shadow-sm border-0 mb-4 bg-light">
-                    <div className="card-body p-4">
-                        <h5 className="card-title fw-bold mb-3">
-                            {editingId ? 'Edit DNA Laboratory' : 'Register New DNA Laboratory'}
-                        </h5>
+                <div className="card mb-4">
+                    <div className="card-header bg-white">
+                        <strong>{editingId ? 'Edit DNA Laboratory' : 'Register New DNA Laboratory'}</strong>
+                    </div>
+                    <div className="card-body">
                         <form onSubmit={handleSubmit}>
                             <div className="row g-3">
                                 <div className="col-md-6">
@@ -224,7 +224,7 @@ export default function DnaLabsPage() {
                                     <button type="submit" className="btn btn-primary px-4">
                                         {editingId ? 'Update Laboratory' : 'Save Laboratory'}
                                     </button>
-                                    <button type="button" className="btn btn-outline-secondary" onClick={resetForm}>
+                                    <button type="button" className="btn btn-light" onClick={resetForm}>
                                         Cancel
                                     </button>
                                 </div>
@@ -235,7 +235,7 @@ export default function DnaLabsPage() {
             )}
 
             {/* Filter / Search Bar */}
-            <div className="card mb-4 shadow-sm border-0">
+            <div className="card mb-4">
                 <div className="card-body">
                     <div className="row g-3 align-items-end">
                         <div className="col-md-5">
@@ -286,10 +286,10 @@ export default function DnaLabsPage() {
                     <p className="mt-2 text-secondary">Loading live laboratory records...</p>
                 </div>
             ) : (
-                <div className="card shadow-sm border-0">
+                <div className="card">
                     <div className="table-responsive">
                         <table className="table table-hover align-middle mb-0">
-                            <thead className="table-light">
+                            <thead>
                                 <tr>
                                     <th className="ps-4">ID</th>
                                     <th>Lab Name</th>
@@ -303,7 +303,7 @@ export default function DnaLabsPage() {
                             <tbody>
                                 {filteredLabs.length === 0 ? (
                                     <tr>
-                                        <td colSpan="7" className="text-center py-4 text-muted">
+                                        <td colSpan="7" className="text-center py-4 text-secondary">
                                             No DNA laboratories found matching your criteria.
                                         </td>
                                     </tr>
@@ -311,13 +311,13 @@ export default function DnaLabsPage() {
                                     filteredLabs.map((lab) => (
                                         <tr key={lab.lab_id}>
                                             <td className="ps-4 fw-bold text-secondary">#{lab.lab_id}</td>
-                                            <td className="fw-semibold text-dark">{lab.lab_name}</td>
+                                            <td className="fw-semibold">{lab.lab_name}</td>
                                             <td>
-                                                <span className="badge bg-light text-dark border">
+                                                <span className="badge text-bg-secondary status-badge">
                                                     {lab.city}
                                                 </span>
                                             </td>
-                                            <td className="small text-muted" style={{ maxWidth: '220px' }}>
+                                            <td className="small text-secondary" style={{ maxWidth: '220px' }}>
                                                 {lab.address}
                                             </td>
                                             <td className="small">{lab.contact_number}</td>
@@ -348,6 +348,6 @@ export default function DnaLabsPage() {
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 }

@@ -256,9 +256,9 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
 
       {/* Add / Edit Family Member Form */}
       {showForm && (
-        <div className="card mb-4 border-primary">
-          <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <h5 className="mb-0">{editingId ? 'Edit Family Member' : 'Add New Family Member'}</h5>
+        <div className="card mb-4">
+          <div className="card-header bg-white d-flex justify-content-between align-items-center">
+            <strong>{editingId ? 'Edit Family Member' : 'Add New Family Member'}</strong>
             <button
               type="button"
               className="btn btn-sm btn-light"
@@ -432,12 +432,12 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
               </div>
 
               <div className="col-12 d-flex gap-2">
-                <button type="submit" className="btn btn-success">
+                <button type="submit" className="btn btn-primary">
                   {editingId ? 'Update Family Member' : 'Save Family Member'}
                 </button>
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn btn-light"
                   onClick={() => setShowForm(false)}
                 >
                   Cancel
@@ -450,11 +450,11 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
 
       {/* Register Family DNA Sample Modal/Card */}
       {dnaTargetMember && (
-        <div className="card mb-4 border-info">
-          <div className="card-header bg-info text-dark d-flex justify-content-between align-items-center">
-            <h5 className="mb-0">
+        <div className="card mb-4">
+          <div className="card-header bg-white d-flex justify-content-between align-items-center">
+            <strong>
               Register Reference DNA Sample — {dnaTargetMember.first_name} {dnaTargetMember.last_name} ({dnaTargetMember.relationship})
-            </h5>
+            </strong>
             <button
               type="button"
               className="btn btn-sm btn-light"
@@ -547,12 +547,12 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
               </div>
 
               <div className="col-12 d-flex gap-2">
-                <button type="submit" className="btn btn-info">
+                <button type="submit" className="btn btn-primary">
                   Confirm & Register DNA Sample
                 </button>
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn btn-light"
                   onClick={() => setDnaTargetMember(null)}
                 >
                   Cancel
@@ -596,7 +596,7 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
                         {m.email && <small className="text-muted">{m.email}</small>}
                       </td>
                       <td>
-                        <span className="badge bg-secondary">{m.relationship}</span>
+                        <span className="badge text-bg-secondary status-badge">{m.relationship}</span>
                       </td>
                       {!personId && (
                         <td>
@@ -612,7 +612,7 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
                         <div className="d-flex justify-content-end gap-2">
                           {allowDnaRegistration && (
                             <button
-                              className="btn btn-sm btn-outline-info"
+                              className="btn btn-sm btn-outline-primary"
                               onClick={() => handleOpenDnaModal(m)}
                             >
                               Register DNA

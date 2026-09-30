@@ -23,6 +23,8 @@
   font-family: 'DM Sans', Arial, sans-serif;
   color: var(--ft-text);
   background: var(--ft-bg);
+  /* Browser ke bola page ta dark — tai select er dropdown list, date picker, scrollbar o kalo hoy */
+  color-scheme: dark;
 }
 
 /* Bootstrap dark mode er rong (index.html e data-bs-theme="dark") — blue er jaygay teal */
@@ -256,10 +258,11 @@ body::before {
   background: var(--ft-teal-light);
   transition: width .1s linear;
 }
+/* Chatbot er "Help" button niche-dane thake, tai eta tar upore (22px + button ~50px + gap) */
 .back-to-top {
   position: fixed;
   right: 1.5rem;
-  bottom: 1.5rem;
+  bottom: 5.25rem;
   z-index: 1030;
   width: 40px;
   height: 40px;
@@ -394,6 +397,17 @@ body::before {
   color: #fff;
 }
 .form-control::placeholder { color: rgba(160, 172, 175, 0.5); }
+/* Select khulle je list ashe (option) — noile shada background e halka lekha, pora jay na */
+option, optgroup { background-color: var(--ft-surface-solid); color: var(--ft-text); }
+/* Browser autofill (login e) shada/nil background dey — eke dark kora */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ft-text);
+  caret-color: var(--ft-text);
+  box-shadow: 0 0 0 1000px #15191b inset;
+  transition: background-color 9999s ease-out;
+}
 .form-label { color: #b9c2c4; font-size: .85rem; }
 .form-check-input:checked { background-color: var(--ft-teal); border-color: var(--ft-teal); }
 .form-check-input:focus { border-color: var(--ft-teal); box-shadow: 0 0 0 .2rem rgba(45, 212, 191, 0.15); }

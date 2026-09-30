@@ -4,12 +4,12 @@ import FamilyMembersManager from '../components/FamilyMembersManager';
 
 export default function FamilyMembersPage() {
   return (
-    <div className="container-fluid py-3">
+    <>
       <PageHeader
         title="Family Members"
         subtitle="Manage family contacts of missing persons and register reference DNA samples"
       />
       <FamilyMembersManager />
-    </div>
+    </>
   );
 }

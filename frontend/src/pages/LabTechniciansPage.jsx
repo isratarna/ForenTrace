@@ -183,7 +183,7 @@ export default function LabTechniciansPage() {
     });
 
     return (
-        <div className="container-fluid py-4">
+        <>
             <PageHeader
                 title="Lab Technicians"
                 subtitle="Manage forensic laboratory technicians and personnel assignments."
@@ -201,16 +201,16 @@ export default function LabTechniciansPage() {
                 }
             />
 
-            {error && <div className="alert alert-danger my-3 shadow-sm">{error}</div>}
-            {success && <div className="alert alert-success my-3 shadow-sm">{success}</div>}
+            {error && <div className="alert alert-danger">{error}</div>}
+            {success && <div className="alert alert-success">{success}</div>}
 
             {/* Collapsible / Toggleable Form */}
             {showForm && (
-                <div className="card shadow-sm border-0 mb-4 bg-light">
-                    <div className="card-body p-4">
-                        <h5 className="card-title fw-bold mb-3">
-                            {editingId ? 'Edit Lab Technician' : 'Register New Lab Technician'}
-                        </h5>
+                <div className="card mb-4">
+                    <div className="card-header bg-white">
+                        <strong>{editingId ? 'Edit Lab Technician' : 'Register New Lab Technician'}</strong>
+                    </div>
+                    <div className="card-body">
                         <form onSubmit={handleSubmit}>
                             <div className="row g-3">
                                 <div className="col-md-6">
@@ -294,7 +294,7 @@ export default function LabTechniciansPage() {
                                     <button type="submit" className="btn btn-primary px-4">
                                         {editingId ? 'Update Technician' : 'Save Technician'}
                                     </button>
-                                    <button type="button" className="btn btn-outline-secondary" onClick={resetForm}>
+                                    <button type="button" className="btn btn-light" onClick={resetForm}>
                                         Cancel
                                     </button>
                                 </div>
@@ -305,7 +305,7 @@ export default function LabTechniciansPage() {
             )}
 
             {/* Filter / Search Bar */}
-            <div className="card mb-4 shadow-sm border-0">
+            <div className="card mb-4">
                 <div className="card-body">
                     <div className="row g-3 align-items-end">
                         <div className="col-md-5">
@@ -356,10 +356,10 @@ export default function LabTechniciansPage() {
                     <p className="mt-2 text-secondary">Loading live technician records...</p>
                 </div>
             ) : (
-                <div className="card shadow-sm border-0">
+                <div className="card">
                     <div className="table-responsive">
                         <table className="table table-hover align-middle mb-0">
-                            <thead className="table-light">
+                            <thead>
                                 <tr>
                                     <th className="ps-4">ID</th>
                                     <th>Technician Name</th>
@@ -373,7 +373,7 @@ export default function LabTechniciansPage() {
                             <tbody>
                                 {filteredTechnicians.length === 0 ? (
                                     <tr>
-                                        <td colSpan="7" className="text-center py-4 text-muted">
+                                        <td colSpan="7" className="text-center py-4 text-secondary">
                                             No technicians found matching your criteria.
                                         </td>
                                     </tr>
@@ -381,37 +381,37 @@ export default function LabTechniciansPage() {
                                     filteredTechnicians.map((tech) => (
                                         <tr key={tech.technician_id}>
                                             <td className="ps-4 fw-bold text-secondary">#{tech.technician_id}</td>
-                                            <td className="fw-semibold text-dark">
+                                            <td className="fw-semibold">
                                                 {tech.first_name} {tech.last_name}
                                             </td>
                                             <td>
                                                 <div>
                                                     <span className="fw-medium">{tech.lab_name}</span>
                                                     {tech.lab_city && (
-                                                        <span className="badge bg-light text-secondary ms-2 border">
+                                                        <span className="badge text-bg-secondary status-badge ms-2">
                                                             {tech.lab_city}
                                                         </span>
                                                     )}
                                                 </div>
                                             </td>
                                             <td>
-                                                <span className="badge bg-info-subtle text-info-emphasis border">
+                                                <span className="badge text-bg-primary status-badge">
                                                     {tech.designation}
                                                 </span>
                                             </td>
                                             <td>
                                                 <div className="small text-primary">{tech.email}</div>
-                                                <div className="small text-muted">{tech.phone}</div>
+                                                <div className="small text-secondary">{tech.phone}</div>
                                             </td>
                                             <td>
                                                 {tech.user_id ? (
-                                                    <span className="badge bg-success-subtle text-success-emphasis border">
+                                                    <span className="badge text-bg-success status-badge">
                                                         Linked: User #{tech.user_id}
                                                     </span>
                                                 ) : (
                                                     <button
                                                         type="button"
-                                                        className="btn btn-sm btn-outline-info"
+                                                        className="btn btn-sm btn-outline-primary"
                                                         onClick={() => {
                                                             setLinkingTech(tech);
                                                             setUserIdInput('');
@@ -506,6 +506,6 @@ export default function LabTechniciansPage() {
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { askChatbot } from '../services/chatbotService'
+import { DnaHelix } from './DnaEffects' // sidebar logo er same DNA icon, header e
 import './ChatWidget.css'
 
 const INITIAL_GREETING = {
@@ -36,9 +37,38 @@ export default function ChatWidget() {
   const [messages, setMessages] = useState([INITIAL_GREETING])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  // Suggested question — prothom proshner por nije lukay, Clear chat e abar ashe; Hide/Show diyeo kora jay
   const [showSuggestions, setShowSuggestions] = useState(true)
+  const [isMaximized, setIsMaximized] = useState(false) // boro kore dekhano (prai pura screen)
+  const [size, setSize] = useState(null) // user drag kore je size dilo { w, h } — null hole default 400x560
+  const [isResizing, setIsResizing] = useState(false)
   const listRef = useRef(null)
   const textareaRef = useRef(null)
+  const panelRef = useRef(null)
+
+  // Panel niche-dane atkano, tai upor-bam kona tene boro/choto kora hoy.
+  // Mouse jotota bame/upore jay, width/height totota bare.
+  const startResize = (e) => {
+    e.preventDefault()
+    const rect = panelRef.current.getBoundingClientRect()
+    const startX = e.clientX
+    const startY = e.clientY
+    setIsMaximized(false)
+    setIsResizing(true)
+
+    const onMove = (ev) => {
+      const w = Math.min(Math.max(rect.width + (startX - ev.clientX), 320), window.innerWidth - 44)
+      const h = Math.min(Math.max(rect.height + (startY - ev.clientY), 380), window.innerHeight - 44)
+      setSize({ w, h })
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      setIsResizing(false)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
 
   // Auto-scroll to newest message
   useEffect(() => {
@@ -158,15 +188,42 @@ export default function ChatWidget() {
       )}
 
       {isOpen && (
-        <div className="ft-chat-panel" role="dialog" aria-label="ForenTrace Assistant chat">
+        <div
+          ref={panelRef}
+          className={`ft-chat-panel${isMaximized ? ' ft-chat-panel-max' : ''}${isResizing ? ' ft-chat-panel-resizing' : ''}`}
+          // CSS variable diye size — tai mobile er media query (full screen) eta ke override korte pare
+          style={size ? { '--ft-chat-w': `${size.w}px`, '--ft-chat-h': `${size.h}px` } : undefined}
+          role="dialog"
+          aria-label="ForenTrace Assistant chat"
+        >
+          <div
+            className="ft-chat-resize"
+            onPointerDown={startResize}
+            title="Drag to resize"
+            aria-hidden="true"
+          />
           <div className="ft-chat-header">
+            <span className="ft-chat-avatar"><DnaHelix rungs={4} /></span>
             <div className="ft-chat-header-text">
               <h2 className="ft-chat-title">ForenTrace Assistant</h2>
-              <p className="ft-chat-subtitle">Ask questions about the ForenTrace system.</p>
+              <p className="ft-chat-subtitle">Ask about using ForenTrace.</p>
             </div>
             <button
               type="button"
-              className="ft-chat-close"
+              className="ft-chat-icon-btn ft-chat-max"
+              aria-label={isMaximized ? 'Restore chat size' : 'Maximize chat'}
+              title={isMaximized ? 'Restore' : 'Maximize'}
+              onClick={() => setIsMaximized((v) => !v)}
+            >
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                {isMaximized
+                  ? <path d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6" />
+                  : <path d="M9 3H3v6M15 3h6v6M9 21H3v-6M15 21h6v-6" />}
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="ft-chat-icon-btn"
               aria-label="Close chat"
               title="Close chat"
               onClick={() => setIsOpen(false)}
@@ -211,21 +268,36 @@ export default function ChatWidget() {
             )}
           </div>
 
-          {showSuggestions && (
-            <div className="ft-chat-suggestions" aria-label="Suggested questions">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  className="ft-chat-chip"
-                  onClick={() => handleSuggestion(s)}
-                  disabled={isLoading}
-                >
-                  {s}
-                </button>
-              ))}
+          <div className="ft-chat-footer">
+          <div className="ft-chat-suggestions">
+            <div className="ft-chat-suggestions-bar">
+              <span className="ft-chat-suggestions-label">Suggested questions</span>
+              <button
+                type="button"
+                className="ft-chat-suggestions-toggle"
+                aria-expanded={showSuggestions}
+                aria-controls="ft-chat-chip-list"
+                onClick={() => setShowSuggestions((v) => !v)}
+              >
+                {showSuggestions ? 'Hide ▾' : 'Show ▸'}
+              </button>
             </div>
-          )}
+            {showSuggestions && (
+              <div id="ft-chat-chip-list" className="ft-chat-chip-list">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className="ft-chat-chip"
+                    onClick={() => handleSuggestion(s)}
+                    disabled={isLoading}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           <form className="ft-chat-input-area" onSubmit={handleSubmit}>
             <label htmlFor="ft-chat-input" className="visually-hidden">
@@ -251,16 +323,6 @@ export default function ChatWidget() {
               <div className="ft-chat-actions">
                 <button
                   type="button"
-                  className={`ft-chat-suggest-toggle${showSuggestions ? ' is-active' : ''}`}
-                  onClick={() => setShowSuggestions((v) => !v)}
-                  aria-pressed={showSuggestions}
-                  aria-label={showSuggestions ? 'Hide suggested questions' : 'Show suggested questions'}
-                  title="Suggested questions"
-                >
-                  💡
-                </button>
-                <button
-                  type="button"
                   className="ft-chat-clear"
                   onClick={clearChat}
                   disabled={isLoading && messages.length <= 1}
@@ -273,6 +335,7 @@ export default function ChatWidget() {
               </div>
             </div>
           </form>
+          </div>
         </div>
       )}
     </div>

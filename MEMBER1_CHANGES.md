@@ -24,6 +24,7 @@ This file records every change made for Member 1, phase by phase. Each phase mat
 | UI 1 | UI upgrade: black + teal DNA theme, live elements, scroll effects (branch `ui/m1-ui-upgrade`) | ✅ Done |
 | UI 1b | UI minimal pass: neutral dark, teal only as accent, fewer/quieter effects | ✅ Done |
 | UI 2 | DNA Analytics page onto the theme + removed unprotected duplicate `/dna-analytics` route | ✅ Done |
+| UI 3 | Chatbot widget onto the dark theme + leftover light-theme pages (DNA Labs, Lab Technicians, Family Members) | ✅ Done |
 
 ---
 
@@ -9180,3 +9181,1154 @@ index 7d9428e..8e556e8 100644
 | `PoliceStations.jsx` | Unused + broken file (see above). Team decision whether to delete it |
 | `/dna-labs`, `/lab-technicians` | Also declared at the top level of `AppRoutes.jsx` without `ProtectedRoute`. The sidebar uses `/admin/labs` and `/admin/technicians`, so these look like leftovers. Not changed (other members' area); flag to the team |
 | Back-to-top position | Bottom-right. Check again when the chatbot widget is merged |
+
+---
+
+# UI Phase 3 — Chatbot Widget + Leftover Pages Onto the Theme
+
+## Goal
+
+The chatbot widget (`ChatWidget`) came in with its own **light** theme (white panel, navy header `#102a43`, old teal `#1f7a8c`), so it looked like a different app on top of the black + teal UI. This phase puts it on the same theme and fixes the other places the UI upgrade had missed.
+
+## What was found
+
+| Place | Finding | Action |
+|---|---|---|
+| `ChatWidget.css` | Hard-coded light colours: white panel/bubbles, navy header, `#f4f7fa` message area, old teal `#1f7a8c` | **Converted** to the `--ft-*` variables from `index.css` |
+| Back-to-top button | Same corner as the chat "Help" launcher (bottom-right). Launcher has higher z-index, so it **covered** back-to-top (the known gap noted after UI Phase 2) | Moved back-to-top **above** the launcher |
+| `FamilyMembersManager.jsx` | Solid `bg-primary` / `bg-info` card headers (bright cyan with dark text), `btn-success` / `btn-info` / `btn-secondary`, `badge bg-secondary` | Same pattern as other forms: `card-header bg-white` + `<strong>`, `btn-primary` / `btn-light`, soft `status-badge` |
+| `DnaLabsPage.jsx`, `LabTechniciansPage.jsx` | Extra `container-fluid py-4` wrapper (double padding inside `.content-wrap`), `border-0` cards (no border, unlike every other card), `thead.table-light`, `text-dark` / `text-muted`, `bg-light` / `-subtle` badges, `btn-outline-info` | Same structure as `Cases.jsx`: fragment + `PageHeader` + plain `card`, `card-header` for the form title, soft `status-badge`s |
+| `FamilyMembersPage.jsx` | Extra `container-fluid py-3` wrapper | Replaced with a fragment |
+| Every `<select>` dropdown list, date picker | The browser drew the open option list in **light mode** (white background) while options took the theme's light text → white on white, unreadable (e.g. DNA Matches sample select). Date picker icon was dark on dark | `color-scheme: dark` on `:root` + dark `option` / `optgroup` colours in `index.css` (one global fix, every page) |
+| Browser autofill (login) | Autofilled inputs get the browser's pale background | Autofill kept dark with an inset shadow |
+| `PoliceStations.jsx` | Still Tailwind + unused (see UI Phase 2) | **Not touched** — dead code, team decision |
+| `btn-success` "Confirm Match" (`Laboratory.jsx`), `btn-outline-success` "Activate" (`Administration.jsx`) | Green, but on purpose (paired with red Reject / Deactivate) | **Kept** |
+
+## Files changed
+
+| File | What changed |
+|---|---|
+| `frontend/src/components/ChatWidget.css` | Every colour now from `--ft-*` variables; livelier header / bubbles; separate footer band; suggestion toggle, maximize and resize styles |
+| `frontend/src/components/ChatWidget.jsx` | DNA helix avatar in the header, Hide / Show button for suggested questions, maximize button, drag-to-resize handle. **Chat logic (send, errors, sources) unchanged** |
+| `frontend/src/index.css` | `.back-to-top` `bottom: 1.5rem` → `5.25rem`; `color-scheme: dark` on `:root`; dark `option, optgroup`; dark autofill |
+| `frontend/src/components/FamilyMembersManager.jsx` | Form card headers, buttons, relationship badge, "Register DNA" button |
+| `frontend/src/pages/DnaLabsPage.jsx` | Wrapper, cards, form header, table head, badges, text colours |
+| `frontend/src/pages/LabTechniciansPage.jsx` | Same as DnaLabsPage + designation / "Linked" badges, "+ Link User" button |
+| `frontend/src/pages/FamilyMembersPage.jsx` | Wrapper → fragment |
+
+## Chat widget: old → new
+
+| Part | Old | New (same as the rest of the app) |
+|---|---|---|
+| Launcher | `#1f7a8c`, white text | `--ft-teal`, dark text `#04201d` (like `btn-primary`), hover `--ft-teal-light` |
+| Panel | White, `#e0e8ef` border, radius 9px | `--ft-surface-solid`, `--ft-border`, radius 10px (like `.card`) |
+| Header | Navy `#102a43` | Transparent (same surface as the panel) + `--ft-border` bottom line, subtitle `--ft-muted` |
+| Message area | `#f4f7fa` | Transparent — same surface as the panel. (First try used `--ft-bg`, the near-black page colour; it looked like a black hole inside the panel, so dropped) |
+| Assistant bubble | White | `rgba(255,255,255,0.04)` (a little lighter than the panel) + `--ft-border` |
+| User bubble | Navy | `--ft-teal` with dark text |
+| Error bubble | Pink `#fff4f4` | Soft red (same red as `text-bg-danger` status badge) |
+| Off-topic badge / border | Pastel yellow | Soft amber (same as `text-bg-warning` status badge) |
+| Source tag | Grey-blue | `--ft-teal-soft` + `--ft-teal-light` (same as `text-bg-primary` badge) |
+| Chips, textarea, Clear / Send | White / old teal | Dark surface, teal focus ring (like `.form-control:focus`), Clear = `btn-light` look, Send = `btn-primary` look |
+| Shadows | Navy-tinted | Plain black (no teal glow — UI Phase 1b rule) |
+
+## Chat widget round 2 (after feedback)
+
+Feedback: after the dark conversion the bot looked **dull**, the suggested questions and the chat space blended together, suggestions took too much space, and the window should be **maximizable / resizable**.
+
+| Change | How |
+|---|---|
+| Livelier header | DNA helix avatar (`DnaHelix` from `DnaEffects.jsx`, same as the sidebar logo) + faint teal glow top-left |
+| Assistant bubbles stand out | A bit lighter (`rgba(255,255,255,0.06)`) + thin teal left edge (like the sidebar's active link); typing dots teal |
+| Chat space vs suggestions | Suggestions + input sit in a separate darker **footer band** (`.ft-chat-footer`) with a stronger top border; chips are teal (clearly clickable, not messages) |
+| Suggestions take less space | "SUGGESTED QUESTIONS" label + **Hide ▾ / Show ▸** button (`showSuggestions` state). Chips smaller, wrap into 2 rows |
+| Maximize | Header button toggles `.ft-chat-panel-max` → `min(960px, 100vw − 44px)` × `100vh − 44px`. Icon switches between expand / shrink corners |
+| Resize | Grip at the **top-left** corner (panel is anchored bottom-right, so that corner moves). `pointerdown` → track the mouse on `window` → new size = start size + how far the mouse moved left / up. Clamped to min 320 × 380, max screen − 44px. Size is passed as CSS variables (`--ft-chat-w`, `--ft-chat-h`), so the mobile media query can still force full screen |
+| Mobile (≤ 480px) | Panel already full screen → grip and maximize button hidden |
+| Default size | 380 → 400px wide so 2 chips + subtitle fit on one line each |
+
+**Merged with teammate commit `aaafb90`** ("chatbot ui: fix suggestion chip layout and shorten greeting replies", pushed to `main` at the same time; conflict in `ChatWidget.jsx`):
+
+| From `aaafb90` | Result |
+|---|---|
+| Suggestions auto-hide after the first question, come back on "Clear chat" | **Kept** — works together with the Hide / Show button |
+| Shorter greeting ("Hi! Ask me anything about how ForenTrace works, or try a suggestion below.") | **Kept** |
+| Shorter small-talk reply in `backend/chatbot/smallTalk.js` | **Kept** (no conflict) |
+| 💡 toggle button next to Clear chat + `.ft-chat-suggest-toggle` CSS (old white / navy colours) | **Removed** — same job as the Hide / Show button, and it was light-themed |
+
+Tested with the real `ChatWidget` bundled into a scratch page (headless Edge, script clicks launcher / maximize / drags the grip): default **400×560**, maximized **960×(screen − 44)**, dragged 200px left → width grew by 200 + grab offset, height stopped at the screen limit; Hide collapses the chips to the one-line label.
+
+## Code
+
+### `frontend/src/components/ChatWidget.jsx` (modified)
+
+```diff
+diff --git a/frontend/src/components/ChatWidget.jsx b/frontend/src/components/ChatWidget.jsx
+index 23d564e..4c66eb8 100644
+--- a/frontend/src/components/ChatWidget.jsx
++++ b/frontend/src/components/ChatWidget.jsx
+@@ -1,5 +1,6 @@
+ import { useEffect, useRef, useState } from 'react'
+ import { askChatbot } from '../services/chatbotService'
++import { DnaHelix } from './DnaEffects' // sidebar logo er same DNA icon, header e
+ import './ChatWidget.css'
+ 
+ const INITIAL_GREETING = {
+@@ -36,8 +37,37 @@ export default function ChatWidget() {
+   const [messages, setMessages] = useState([INITIAL_GREETING])
+   const [input, setInput] = useState('')
+   const [isLoading, setIsLoading] = useState(false)
++  const [showSuggestions, setShowSuggestions] = useState(true) // suggested question gula lukano / dekhano
++  const [isMaximized, setIsMaximized] = useState(false) // boro kore dekhano (prai pura screen)
++  const [size, setSize] = useState(null) // user drag kore je size dilo { w, h } — null hole default 380x560
++  const [isResizing, setIsResizing] = useState(false)
+   const listRef = useRef(null)
+   const textareaRef = useRef(null)
++  const panelRef = useRef(null)
++
++  // Panel niche-dane atkano, tai upor-bam kona tene boro/choto kora hoy.
++  // Mouse jotota bame/upore jay, width/height totota bare.
++  const startResize = (e) => {
++    e.preventDefault()
++    const rect = panelRef.current.getBoundingClientRect()
++    const startX = e.clientX
++    const startY = e.clientY
++    setIsMaximized(false)
++    setIsResizing(true)
++
++    const onMove = (ev) => {
++      const w = Math.min(Math.max(rect.width + (startX - ev.clientX), 320), window.innerWidth - 44)
++      const h = Math.min(Math.max(rect.height + (startY - ev.clientY), 380), window.innerHeight - 44)
++      setSize({ w, h })
++    }
++    const onUp = () => {
++      window.removeEventListener('pointermove', onMove)
++      window.removeEventListener('pointerup', onUp)
++      setIsResizing(false)
++    }
++    window.addEventListener('pointermove', onMove)
++    window.addEventListener('pointerup', onUp)
++  }
+ 
+   // Auto-scroll to newest message
+   useEffect(() => {
+@@ -155,15 +185,42 @@ export default function ChatWidget() {
+       )}
+ 
+       {isOpen && (
+-        <div className="ft-chat-panel" role="dialog" aria-label="ForenTrace Assistant chat">
++        <div
++          ref={panelRef}
++          className={`ft-chat-panel${isMaximized ? ' ft-chat-panel-max' : ''}${isResizing ? ' ft-chat-panel-resizing' : ''}`}
++          // CSS variable diye size — tai mobile er media query (full screen) eta ke override korte pare
++          style={size ? { '--ft-chat-w': `${size.w}px`, '--ft-chat-h': `${size.h}px` } : undefined}
++          role="dialog"
++          aria-label="ForenTrace Assistant chat"
++        >
++          <div
++            className="ft-chat-resize"
++            onPointerDown={startResize}
++            title="Drag to resize"
++            aria-hidden="true"
++          />
+           <div className="ft-chat-header">
++            <span className="ft-chat-avatar"><DnaHelix rungs={4} /></span>
+             <div className="ft-chat-header-text">
+               <h2 className="ft-chat-title">ForenTrace Assistant</h2>
+-              <p className="ft-chat-subtitle">Ask questions about the ForenTrace system.</p>
++              <p className="ft-chat-subtitle">Ask about using ForenTrace.</p>
+             </div>
+             <button
+               type="button"
+-              className="ft-chat-close"
++              className="ft-chat-icon-btn ft-chat-max"
++              aria-label={isMaximized ? 'Restore chat size' : 'Maximize chat'}
++              title={isMaximized ? 'Restore' : 'Maximize'}
++              onClick={() => setIsMaximized((v) => !v)}
++            >
++              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
++                {isMaximized
++                  ? <path d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6" />
++                  : <path d="M9 3H3v6M15 3h6v6M9 21H3v-6M15 21h6v-6" />}
++              </svg>
++            </button>
++            <button
++              type="button"
++              className="ft-chat-icon-btn"
+               aria-label="Close chat"
+               title="Close chat"
+               onClick={() => setIsOpen(false)}
+@@ -208,18 +265,35 @@ export default function ChatWidget() {
+             )}
+           </div>
+ 
+-          <div className="ft-chat-suggestions" aria-label="Suggested questions">
+-            {SUGGESTIONS.map((s) => (
++          <div className="ft-chat-footer">
++          <div className="ft-chat-suggestions">
++            <div className="ft-chat-suggestions-bar">
++              <span className="ft-chat-suggestions-label">Suggested questions</span>
+               <button
+-                key={s}
+                 type="button"
+-                className="ft-chat-chip"
+-                onClick={() => handleSuggestion(s)}
+-                disabled={isLoading}
++                className="ft-chat-suggestions-toggle"
++                aria-expanded={showSuggestions}
++                aria-controls="ft-chat-chip-list"
++                onClick={() => setShowSuggestions((v) => !v)}
+               >
+-                {s}
++                {showSuggestions ? 'Hide ▾' : 'Show ▸'}
+               </button>
+-            ))}
++            </div>
++            {showSuggestions && (
++              <div id="ft-chat-chip-list" className="ft-chat-chip-list">
++                {SUGGESTIONS.map((s) => (
++                  <button
++                    key={s}
++                    type="button"
++                    className="ft-chat-chip"
++                    onClick={() => handleSuggestion(s)}
++                    disabled={isLoading}
++                  >
++                    {s}
++                  </button>
++                ))}
++              </div>
++            )}
+           </div>
+ 
+           <form className="ft-chat-input-area" onSubmit={handleSubmit}>
+@@ -258,6 +332,7 @@ export default function ChatWidget() {
+               </div>
+             </div>
+           </form>
++          </div>
+         </div>
+       )}
+     </div>
+```
+
+### `frontend/src/components/ChatWidget.css` (modified)
+
+```diff
+diff --git a/frontend/src/components/ChatWidget.css b/frontend/src/components/ChatWidget.css
+index 6479d5e..d4b565a 100644
+--- a/frontend/src/components/ChatWidget.css
++++ b/frontend/src/components/ChatWidget.css
+@@ -1,4 +1,4 @@
+-/* ForenTrace ChatWidget - follows index.css conventions: DM Sans, navy #102a43, teal #1f7a8c, bg #f4f7fa, card 9px */
++/* ForenTrace ChatWidget — index.css er --ft-* variable use kore, tai baki app er moto kalo + teal dekhay */
+ .ft-chat-widget {
+   font-family: 'DM Sans', Arial, sans-serif;
+ }
+@@ -14,30 +14,30 @@
+   gap: 0.45rem;
+   padding: 0.75rem 1rem;
+   border-radius: 999px;
+-  border: 1px solid #1f7a8c;
+-  background: #1f7a8c;
+-  color: #fff;
++  border: 1px solid var(--ft-teal);
++  background: var(--ft-teal);
++  color: #04201d;
+   font-weight: 600;
+   font-size: 0.92rem;
+-  box-shadow: 0 8px 24px rgba(16, 42, 67, 0.22), 0 2px 8px rgba(16, 42, 67, 0.14);
++  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+   cursor: pointer;
+   transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+ }
+ .ft-chat-launcher:hover {
+-  background: #175a69;
++  background: var(--ft-teal-light);
++  border-color: var(--ft-teal-light);
+   transform: translateY(-1px);
+-  box-shadow: 0 12px 28px rgba(16, 42, 67, 0.28);
+ }
+ .ft-chat-launcher:focus-visible {
+-  outline: 2px solid #102a43;
++  outline: 2px solid var(--ft-teal-light);
+   outline-offset: 2px;
+ }
+ .ft-chat-launcher-icon {
+   width: 26px;
+   height: 26px;
+   border-radius: 50%;
+-  background: #fff;
+-  color: #1f7a8c;
++  background: #04201d;
++  color: var(--ft-teal-light);
+   display: inline-grid;
+   place-items: center;
+   font-weight: 700;
+@@ -53,30 +53,85 @@
+   right: 22px;
+   bottom: 22px;
+   z-index: 1080;
+-  width: 380px;
+-  height: 560px;
++  /* Size CSS variable theke — user drag korle JSX eta bodlay */
++  width: var(--ft-chat-w, 400px);
++  height: var(--ft-chat-h, 560px);
++  max-width: calc(100vw - 44px);
+   max-height: calc(100vh - 44px);
++  transition: width 0.2s ease, height 0.2s ease;
+   display: flex;
+   flex-direction: column;
+-  background: #fff;
+-  border: 1px solid #e0e8ef;
+-  border-radius: 9px;
+-  box-shadow: 0 16px 40px rgba(16, 42, 67, 0.18), 0 4px 12px rgba(16, 42, 67, 0.1);
++  background: var(--ft-surface-solid);
++  border: 1px solid var(--ft-border);
++  border-radius: 10px;
++  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+   overflow: hidden;
+ }
+ 
++/* Maximize — prai pura screen (charpashe 22px faka) */
++.ft-chat-panel.ft-chat-panel-max {
++  width: min(960px, calc(100vw - 44px));
++  height: calc(100vh - 44px);
++}
++/* Drag er shomoy animation bondho + lekha select hobe na */
++.ft-chat-panel.ft-chat-panel-resizing {
++  transition: none;
++  user-select: none;
++}
++
++/* Upor-bam konar resize handle — duita choto teal dag */
++.ft-chat-resize {
++  position: absolute;
++  top: 0;
++  left: 0;
++  z-index: 2;
++  width: 16px;
++  height: 16px;
++  cursor: nwse-resize;
++  touch-action: none;
++}
++.ft-chat-resize::before {
++  content: '';
++  position: absolute;
++  top: 4px;
++  left: 4px;
++  width: 8px;
++  height: 8px;
++  border-top: 2px solid var(--ft-border-hover);
++  border-left: 2px solid var(--ft-border-hover);
++  border-top-left-radius: 3px;
++  transition: border-color 0.2s;
++}
++.ft-chat-resize:hover::before,
++.ft-chat-panel-resizing .ft-chat-resize::before {
++  border-color: var(--ft-teal-light);
++}
++
+ /* Header */
+ .ft-chat-header {
+   display: flex;
+-  align-items: flex-start;
++  align-items: center;
+   justify-content: space-between;
+   gap: 0.75rem;
+   padding: 0.95rem 1rem 0.85rem;
+-  background: #102a43;
+-  color: #d9e2ec;
+-  border-bottom: 1px solid #243b53;
++  /* Upore halka teal alo — page background er moto, tai "zinda" lage */
++  background: radial-gradient(ellipse at 0% 0%, rgba(20, 184, 166, 0.16), transparent 70%);
++  color: var(--ft-text);
++  border-bottom: 1px solid var(--ft-border);
++}
++.ft-chat-avatar {
++  flex: 0 0 36px;
++  width: 36px;
++  height: 36px;
++  border-radius: 9px;
++  background: var(--ft-teal-soft);
++  border: 1px solid rgba(45, 212, 191, 0.25);
++  display: inline-grid;
++  place-items: center;
++  overflow: hidden;
+ }
+ .ft-chat-header-text {
++  flex: 1;
+   min-width: 0;
+ }
+ .ft-chat-title {
+@@ -89,29 +144,33 @@
+ .ft-chat-subtitle {
+   margin: 0.2rem 0 0;
+   font-size: 0.78rem;
+-  color: #9fb3c8;
++  color: var(--ft-muted);
+   line-height: 1.3;
+ }
+-.ft-chat-close {
++.ft-chat-icon-btn {
+   flex: 0 0 auto;
+   width: 32px;
+   height: 32px;
+   border-radius: 6px;
+   border: 1px solid transparent;
+-  background: #243b53;
+-  color: #d9e2ec;
++  background: var(--ft-surface-hover);
++  color: var(--ft-text);
+   font-size: 1.35rem;
+   line-height: 1;
+   cursor: pointer;
+   display: inline-grid;
+   place-items: center;
++  transition: background 0.2s, color 0.2s;
++}
++.ft-chat-max {
++  margin-right: -0.4rem; /* close button er pashe kache thakuk */
+ }
+-.ft-chat-close:hover {
+-  background: #334e68;
++.ft-chat-icon-btn:hover {
++  background: var(--ft-border-hover);
+   color: #fff;
+ }
+-.ft-chat-close:focus-visible {
+-  outline: 2px solid #fff;
++.ft-chat-icon-btn:focus-visible {
++  outline: 2px solid var(--ft-teal-light);
+   outline-offset: 2px;
+ }
+ 
+@@ -120,7 +179,7 @@
+   flex: 1;
+   overflow-y: auto;
+   padding: 0.9rem 0.9rem 0.6rem;
+-  background: #f4f7fa;
++  background: transparent;
+   display: flex;
+   flex-direction: column;
+   gap: 0.7rem;
+@@ -138,25 +197,35 @@
+ .ft-chat-bubble {
+   max-width: 82%;
+   padding: 0.6rem 0.75rem;
+-  border-radius: 9px;
+-  border: 1px solid #e0e8ef;
+-  background: #fff;
+-  box-shadow: 0 1px 2px rgba(20, 44, 68, 0.04);
++  border-radius: 10px;
++  border: 1px solid var(--ft-border);
++  background: rgba(255, 255, 255, 0.06);
++  color: var(--ft-text);
+   overflow-wrap: anywhere;
+ }
++/* Assistant er uttor — bam e patla teal dag (sidebar er active link er moto) */
++.ft-chat-msg-assistant .ft-chat-bubble {
++  border-left: 2px solid var(--ft-teal-light);
++  border-top-left-radius: 4px;
++}
++/* User er bubble dan dike, tai dan er upor kona choto */
+ .ft-chat-msg-user .ft-chat-bubble {
+-  background: #102a43;
+-  color: #fff;
+-  border-color: #102a43;
++  border-top-right-radius: 4px;
++}
++.ft-chat-msg-user .ft-chat-bubble {
++  background: var(--ft-teal);
++  color: #04201d;
++  border-color: var(--ft-teal);
+ }
+ .ft-chat-msg-error .ft-chat-bubble {
+-  background: #fff4f4;
+-  border-color: #f1c0c0;
+-  color: #6b1a1a;
++  background: rgba(248, 113, 113, 0.1);
++  border-color: rgba(248, 113, 113, 0.4);
++  color: #f87171;
+ }
+ .ft-chat-msg-offtopic .ft-chat-bubble {
+   border-style: dashed;
+-  border-color: #c9a86a;
++  border-color: #fbbf24;
++  border-left-style: solid;
+ }
+ .ft-chat-text {
+   margin: 0;
+@@ -169,11 +238,11 @@
+   margin-top: 0.45rem;
+   padding: 0.15rem 0.45rem;
+   border-radius: 999px;
+-  background: #fef3d6;
+-  color: #6b4a00;
++  background: rgba(251, 191, 36, 0.12);
++  color: #fbbf24;
+   font-size: 0.7rem;
+   font-weight: 600;
+-  border: 1px solid #f0d48a;
++  border: 1px solid rgba(251, 191, 36, 0.3);
+ }
+ .ft-chat-sources {
+   margin-top: 0.5rem;
+@@ -185,9 +254,9 @@
+   display: inline-block;
+   padding: 0.15rem 0.45rem;
+   border-radius: 999px;
+-  background: #eef4f7;
+-  border: 1px solid #d9e2ec;
+-  color: #334e68;
++  background: var(--ft-teal-soft);
++  border: 1px solid rgba(45, 212, 191, 0.3);
++  color: var(--ft-teal-light);
+   font-size: 0.7rem;
+   font-weight: 500;
+ }
+@@ -203,7 +272,7 @@
+   width: 6px;
+   height: 6px;
+   border-radius: 50%;
+-  background: #829ab1;
++  background: var(--ft-teal-light);
+   animation: ft-bounce 1.2s infinite ease-in-out both;
+ }
+ .ft-chat-dot:nth-child(1) { animation-delay: -0.32s; }
+@@ -213,44 +282,82 @@
+   40% { transform: scale(1); opacity: 1; }
+ }
+ 
++/* Footer (suggestion + input) — chat er jayga theke alada, ektu gadho band */
++.ft-chat-footer {
++  background: rgba(0, 0, 0, 0.28);
++  border-top: 1px solid var(--ft-border-hover);
++}
++
+ /* Suggestions */
+ .ft-chat-suggestions {
++  padding: 0.5rem 0.9rem 0.55rem;
++}
++.ft-chat-suggestions-bar {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++}
++.ft-chat-suggestions-label {
++  font-size: 0.66rem;
++  font-weight: 600;
++  letter-spacing: 0.1em;
++  text-transform: uppercase;
++  color: var(--ft-muted);
++}
++.ft-chat-suggestions-toggle {
++  padding: 0.1rem 0.45rem;
++  border: 1px solid transparent;
++  border-radius: 6px;
++  background: transparent;
++  color: var(--ft-teal-light);
++  font-size: 0.72rem;
++  font-weight: 600;
++  cursor: pointer;
++}
++.ft-chat-suggestions-toggle:hover {
++  background: var(--ft-teal-soft);
++}
++.ft-chat-suggestions-toggle:focus-visible {
++  outline: 2px solid var(--ft-teal-light);
++  outline-offset: 2px;
++}
++.ft-chat-chip-list {
+   display: flex;
+   flex-wrap: wrap;
+-  gap: 0.4rem;
+-  padding: 0.6rem 0.9rem 0.2rem;
+-  background: #fff;
+-  border-top: 1px solid #e8eef3;
++  gap: 0.35rem;
++  margin-top: 0.45rem;
+ }
+ .ft-chat-chip {
+-  padding: 0.32rem 0.6rem;
++  white-space: nowrap;
++  padding: 0.26rem 0.55rem;
+   border-radius: 999px;
+-  border: 1px solid #d9e2ec;
+-  background: #f8fafb;
+-  color: #243b53;
+-  font-size: 0.76rem;
++  border: 1px solid rgba(45, 212, 191, 0.3);
++  background: var(--ft-teal-soft);
++  color: var(--ft-teal-light);
++  font-size: 0.73rem;
+   font-weight: 500;
+   cursor: pointer;
+-  transition: background 0.15s, border-color 0.15s;
++  transition: background 0.15s, border-color 0.15s, color 0.15s;
+ }
+ .ft-chat-chip:hover:not(:disabled) {
+-  background: #eef4f7;
+-  border-color: #1f7a8c;
++  background: rgba(45, 212, 191, 0.22);
++  border-color: var(--ft-teal-light);
++  color: #fff;
+ }
+ .ft-chat-chip:disabled {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+ .ft-chat-chip:focus-visible {
+-  outline: 2px solid #1f7a8c;
++  outline: 2px solid var(--ft-teal-light);
+   outline-offset: 2px;
+ }
+ 
+ /* Input area */
+ .ft-chat-input-area {
+-  padding: 0.7rem 0.9rem 0.8rem;
+-  background: #fff;
+-  border-top: 1px solid #e8eef3;
++  padding: 0.6rem 0.9rem 0.8rem;
++  background: transparent;
++  border-top: 1px solid var(--ft-border);
+   display: flex;
+   flex-direction: column;
+   gap: 0.5rem;
+@@ -260,22 +367,26 @@
+   min-height: 44px;
+   max-height: 92px;
+   padding: 0.55rem 0.65rem;
+-  border: 1px solid #d9e2ec;
+-  border-radius: 9px;
++  border: 1px solid var(--ft-border);
++  border-radius: 10px;
+   font-family: 'DM Sans', Arial, sans-serif;
+   font-size: 0.88rem;
+   line-height: 1.4;
+-  color: #1c2d41;
+-  background: #fff;
++  color: var(--ft-text);
++  background: var(--ft-surface);
+   resize: vertical;
++  transition: border-color 0.2s, box-shadow 0.2s;
++}
++.ft-chat-textarea::placeholder {
++  color: var(--ft-muted);
+ }
+ .ft-chat-textarea:focus {
+   outline: none;
+-  border-color: #1f7a8c;
+-  box-shadow: 0 0 0 3px rgba(31, 122, 140, 0.12);
++  border-color: var(--ft-teal);
++  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
+ }
+ .ft-chat-textarea:disabled {
+-  background: #f4f7fa;
++  background: var(--ft-surface-hover);
+   opacity: 0.7;
+ }
+ .ft-chat-controls {
+@@ -286,10 +397,10 @@
+ }
+ .ft-chat-count {
+   font-size: 0.72rem;
+-  color: #829ab1;
++  color: var(--ft-muted);
+ }
+ .ft-chat-count-error {
+-  color: #b42318;
++  color: #f87171;
+   font-weight: 600;
+ }
+ .ft-chat-actions {
+@@ -304,22 +415,25 @@
+   font-size: 0.82rem;
+   font-weight: 600;
+   cursor: pointer;
++  transition: background 0.2s, border-color 0.2s, color 0.2s;
+ }
+ .ft-chat-clear {
+-  background: #fff;
+-  border-color: #d9e2ec;
+-  color: #334e68;
++  background: var(--ft-surface);
++  border-color: var(--ft-border);
++  color: var(--ft-text);
+ }
+ .ft-chat-clear:hover:not(:disabled) {
+-  background: #f4f7fa;
++  background: var(--ft-surface-hover);
++  border-color: var(--ft-border-hover);
+ }
+ .ft-chat-send {
+-  background: #1f7a8c;
+-  color: #fff;
+-  border-color: #1f7a8c;
++  background: var(--ft-teal);
++  color: #04201d;
++  border-color: var(--ft-teal);
+ }
+ .ft-chat-send:hover:not(:disabled) {
+-  background: #175a69;
++  background: var(--ft-teal-light);
++  border-color: var(--ft-teal-light);
+ }
+ .ft-chat-clear:disabled,
+ .ft-chat-send:disabled {
+@@ -328,7 +442,7 @@
+ }
+ .ft-chat-clear:focus-visible,
+ .ft-chat-send:focus-visible {
+-  outline: 2px solid #102a43;
++  outline: 2px solid var(--ft-teal-light);
+   outline-offset: 2px;
+ }
+ 
+@@ -347,11 +461,13 @@
+ 
+ /* Responsive */
+ @media (max-width: 480px) {
+-  .ft-chat-panel {
++  .ft-chat-panel,
++  .ft-chat-panel.ft-chat-panel-max {
+     right: 0;
+     bottom: 0;
+     width: 100vw;
+     height: 100vh;
++    max-width: 100vw;
+     max-height: 100vh;
+     border-radius: 0;
+     border-left: none;
+@@ -361,4 +477,9 @@
+     right: 14px;
+     bottom: 14px;
+   }
++  /* Mobile e panel already full screen — resize / maximize lage na */
++  .ft-chat-resize,
++  .ft-chat-max {
++    display: none;
++  }
+ }
+```
+
+### `frontend/src/index.css` (modified)
+
+```diff
+diff --git a/frontend/src/index.css b/frontend/src/index.css
+index f710ad3..2151898 100644
+--- a/frontend/src/index.css
++++ b/frontend/src/index.css
+@@ -23,6 +23,8 @@
+   font-family: 'DM Sans', Arial, sans-serif;
+   color: var(--ft-text);
+   background: var(--ft-bg);
++  /* Browser ke bola page ta dark — tai select er dropdown list, date picker, scrollbar o kalo hoy */
++  color-scheme: dark;
+ }
+ 
+ /* Bootstrap dark mode er rong (index.html e data-bs-theme="dark") — blue er jaygay teal */
+@@ -256,10 +258,11 @@ body::before {
+   background: var(--ft-teal-light);
+   transition: width .1s linear;
+ }
++/* Chatbot er "Help" button niche-dane thake, tai eta tar upore (22px + button ~50px + gap) */
+ .back-to-top {
+   position: fixed;
+   right: 1.5rem;
+-  bottom: 1.5rem;
++  bottom: 5.25rem;
+   z-index: 1030;
+   width: 40px;
+   height: 40px;
+@@ -394,6 +397,17 @@ body::before {
+   color: #fff;
+ }
+ .form-control::placeholder { color: rgba(160, 172, 175, 0.5); }
++/* Select khulle je list ashe (option) — noile shada background e halka lekha, pora jay na */
++option, optgroup { background-color: var(--ft-surface-solid); color: var(--ft-text); }
++/* Browser autofill (login e) shada/nil background dey — eke dark kora */
++input:-webkit-autofill,
++input:-webkit-autofill:hover,
++input:-webkit-autofill:focus {
++  -webkit-text-fill-color: var(--ft-text);
++  caret-color: var(--ft-text);
++  box-shadow: 0 0 0 1000px #15191b inset;
++  transition: background-color 9999s ease-out;
++}
+ .form-label { color: #b9c2c4; font-size: .85rem; }
+ .form-check-input:checked { background-color: var(--ft-teal); border-color: var(--ft-teal); }
+ .form-check-input:focus { border-color: var(--ft-teal); box-shadow: 0 0 0 .2rem rgba(45, 212, 191, 0.15); }
+```
+
+### `frontend/src/components/FamilyMembersManager.jsx` (modified)
+
+```diff
+diff --git a/frontend/src/components/FamilyMembersManager.jsx b/frontend/src/components/FamilyMembersManager.jsx
+index dfd0ff4..a9feeef 100644
+--- a/frontend/src/components/FamilyMembersManager.jsx
++++ b/frontend/src/components/FamilyMembersManager.jsx
+@@ -256,9 +256,9 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
+ 
+       {/* Add / Edit Family Member Form */}
+       {showForm && (
+-        <div className="card mb-4 border-primary">
+-          <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+-            <h5 className="mb-0">{editingId ? 'Edit Family Member' : 'Add New Family Member'}</h5>
++        <div className="card mb-4">
++          <div className="card-header bg-white d-flex justify-content-between align-items-center">
++            <strong>{editingId ? 'Edit Family Member' : 'Add New Family Member'}</strong>
+             <button
+               type="button"
+               className="btn btn-sm btn-light"
+@@ -432,12 +432,12 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
+               </div>
+ 
+               <div className="col-12 d-flex gap-2">
+-                <button type="submit" className="btn btn-success">
++                <button type="submit" className="btn btn-primary">
+                   {editingId ? 'Update Family Member' : 'Save Family Member'}
+                 </button>
+                 <button
+                   type="button"
+-                  className="btn btn-secondary"
++                  className="btn btn-light"
+                   onClick={() => setShowForm(false)}
+                 >
+                   Cancel
+@@ -450,11 +450,11 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
+ 
+       {/* Register Family DNA Sample Modal/Card */}
+       {dnaTargetMember && (
+-        <div className="card mb-4 border-info">
+-          <div className="card-header bg-info text-dark d-flex justify-content-between align-items-center">
+-            <h5 className="mb-0">
++        <div className="card mb-4">
++          <div className="card-header bg-white d-flex justify-content-between align-items-center">
++            <strong>
+               Register Reference DNA Sample — {dnaTargetMember.first_name} {dnaTargetMember.last_name} ({dnaTargetMember.relationship})
+-            </h5>
++            </strong>
+             <button
+               type="button"
+               className="btn btn-sm btn-light"
+@@ -547,12 +547,12 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
+               </div>
+ 
+               <div className="col-12 d-flex gap-2">
+-                <button type="submit" className="btn btn-info">
++                <button type="submit" className="btn btn-primary">
+                   Confirm & Register DNA Sample
+                 </button>
+                 <button
+                   type="button"
+-                  className="btn btn-secondary"
++                  className="btn btn-light"
+                   onClick={() => setDnaTargetMember(null)}
+                 >
+                   Cancel
+@@ -596,7 +596,7 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
+                         {m.email && <small className="text-muted">{m.email}</small>}
+                       </td>
+                       <td>
+-                        <span className="badge bg-secondary">{m.relationship}</span>
++                        <span className="badge text-bg-secondary status-badge">{m.relationship}</span>
+                       </td>
+                       {!personId && (
+                         <td>
+@@ -612,7 +612,7 @@ export default function FamilyMembersManager({ personId = null, allowDnaRegistra
+                         <div className="d-flex justify-content-end gap-2">
+                           {allowDnaRegistration && (
+                             <button
+-                              className="btn btn-sm btn-outline-info"
++                              className="btn btn-sm btn-outline-primary"
+                               onClick={() => handleOpenDnaModal(m)}
+                             >
+                               Register DNA
+```
+
+### `frontend/src/pages/DnaLabsPage.jsx` (modified)
+
+```diff
+diff --git a/frontend/src/pages/DnaLabsPage.jsx b/frontend/src/pages/DnaLabsPage.jsx
+index 6315495..e0a9d2f 100644
+--- a/frontend/src/pages/DnaLabsPage.jsx
++++ b/frontend/src/pages/DnaLabsPage.jsx
+@@ -130,7 +130,7 @@ export default function DnaLabsPage() {
+     });
+ 
+     return (
+-        <div className="container-fluid py-4">
++        <>
+             <PageHeader
+                 title="DNA Laboratories"
+                 subtitle="Manage and oversee registered forensic DNA testing facilities."
+@@ -148,16 +148,16 @@ export default function DnaLabsPage() {
+                 }
+             />
+ 
+-            {error && <div className="alert alert-danger my-3 shadow-sm">{error}</div>}
+-            {success && <div className="alert alert-success my-3 shadow-sm">{success}</div>}
++            {error && <div className="alert alert-danger">{error}</div>}
++            {success && <div className="alert alert-success">{success}</div>}
+ 
+             {/* Collapsible / Toggleable Form */}
+             {showForm && (
+-                <div className="card shadow-sm border-0 mb-4 bg-light">
+-                    <div className="card-body p-4">
+-                        <h5 className="card-title fw-bold mb-3">
+-                            {editingId ? 'Edit DNA Laboratory' : 'Register New DNA Laboratory'}
+-                        </h5>
++                <div className="card mb-4">
++                    <div className="card-header bg-white">
++                        <strong>{editingId ? 'Edit DNA Laboratory' : 'Register New DNA Laboratory'}</strong>
++                    </div>
++                    <div className="card-body">
+                         <form onSubmit={handleSubmit}>
+                             <div className="row g-3">
+                                 <div className="col-md-6">
+@@ -224,7 +224,7 @@ export default function DnaLabsPage() {
+                                     <button type="submit" className="btn btn-primary px-4">
+                                         {editingId ? 'Update Laboratory' : 'Save Laboratory'}
+                                     </button>
+-                                    <button type="button" className="btn btn-outline-secondary" onClick={resetForm}>
++                                    <button type="button" className="btn btn-light" onClick={resetForm}>
+                                         Cancel
+                                     </button>
+                                 </div>
+@@ -235,7 +235,7 @@ export default function DnaLabsPage() {
+             )}
+ 
+             {/* Filter / Search Bar */}
+-            <div className="card mb-4 shadow-sm border-0">
++            <div className="card mb-4">
+                 <div className="card-body">
+                     <div className="row g-3 align-items-end">
+                         <div className="col-md-5">
+@@ -286,10 +286,10 @@ export default function DnaLabsPage() {
+                     <p className="mt-2 text-secondary">Loading live laboratory records...</p>
+                 </div>
+             ) : (
+-                <div className="card shadow-sm border-0">
++                <div className="card">
+                     <div className="table-responsive">
+                         <table className="table table-hover align-middle mb-0">
+-                            <thead className="table-light">
++                            <thead>
+                                 <tr>
+                                     <th className="ps-4">ID</th>
+                                     <th>Lab Name</th>
+@@ -303,7 +303,7 @@ export default function DnaLabsPage() {
+                             <tbody>
+                                 {filteredLabs.length === 0 ? (
+                                     <tr>
+-                                        <td colSpan="7" className="text-center py-4 text-muted">
++                                        <td colSpan="7" className="text-center py-4 text-secondary">
+                                             No DNA laboratories found matching your criteria.
+                                         </td>
+                                     </tr>
+@@ -311,13 +311,13 @@ export default function DnaLabsPage() {
+                                     filteredLabs.map((lab) => (
+                                         <tr key={lab.lab_id}>
+                                             <td className="ps-4 fw-bold text-secondary">#{lab.lab_id}</td>
+-                                            <td className="fw-semibold text-dark">{lab.lab_name}</td>
++                                            <td className="fw-semibold">{lab.lab_name}</td>
+                                             <td>
+-                                                <span className="badge bg-light text-dark border">
++                                                <span className="badge text-bg-secondary status-badge">
+                                                     {lab.city}
+                                                 </span>
+                                             </td>
+-                                            <td className="small text-muted" style={{ maxWidth: '220px' }}>
++                                            <td className="small text-secondary" style={{ maxWidth: '220px' }}>
+                                                 {lab.address}
+                                             </td>
+                                             <td className="small">{lab.contact_number}</td>
+@@ -348,6 +348,6 @@ export default function DnaLabsPage() {
+                     </div>
+                 </div>
+             )}
+-        </div>
++        </>
+     );
+ }
+\ No newline at end of file
+```
+
+### `frontend/src/pages/LabTechniciansPage.jsx` (modified)
+
+```diff
+diff --git a/frontend/src/pages/LabTechniciansPage.jsx b/frontend/src/pages/LabTechniciansPage.jsx
+index edf5ba5..88160a0 100644
+--- a/frontend/src/pages/LabTechniciansPage.jsx
++++ b/frontend/src/pages/LabTechniciansPage.jsx
+@@ -183,7 +183,7 @@ export default function LabTechniciansPage() {
+     });
+ 
+     return (
+-        <div className="container-fluid py-4">
++        <>
+             <PageHeader
+                 title="Lab Technicians"
+                 subtitle="Manage forensic laboratory technicians and personnel assignments."
+@@ -201,16 +201,16 @@ export default function LabTechniciansPage() {
+                 }
+             />
+ 
+-            {error && <div className="alert alert-danger my-3 shadow-sm">{error}</div>}
+-            {success && <div className="alert alert-success my-3 shadow-sm">{success}</div>}
++            {error && <div className="alert alert-danger">{error}</div>}
++            {success && <div className="alert alert-success">{success}</div>}
+ 
+             {/* Collapsible / Toggleable Form */}
+             {showForm && (
+-                <div className="card shadow-sm border-0 mb-4 bg-light">
+-                    <div className="card-body p-4">
+-                        <h5 className="card-title fw-bold mb-3">
+-                            {editingId ? 'Edit Lab Technician' : 'Register New Lab Technician'}
+-                        </h5>
++                <div className="card mb-4">
++                    <div className="card-header bg-white">
++                        <strong>{editingId ? 'Edit Lab Technician' : 'Register New Lab Technician'}</strong>
++                    </div>
++                    <div className="card-body">
+                         <form onSubmit={handleSubmit}>
+                             <div className="row g-3">
+                                 <div className="col-md-6">
+@@ -294,7 +294,7 @@ export default function LabTechniciansPage() {
+                                     <button type="submit" className="btn btn-primary px-4">
+                                         {editingId ? 'Update Technician' : 'Save Technician'}
+                                     </button>
+-                                    <button type="button" className="btn btn-outline-secondary" onClick={resetForm}>
++                                    <button type="button" className="btn btn-light" onClick={resetForm}>
+                                         Cancel
+                                     </button>
+                                 </div>
+@@ -305,7 +305,7 @@ export default function LabTechniciansPage() {
+             )}
+ 
+             {/* Filter / Search Bar */}
+-            <div className="card mb-4 shadow-sm border-0">
++            <div className="card mb-4">
+                 <div className="card-body">
+                     <div className="row g-3 align-items-end">
+                         <div className="col-md-5">
+@@ -356,10 +356,10 @@ export default function LabTechniciansPage() {
+                     <p className="mt-2 text-secondary">Loading live technician records...</p>
+                 </div>
+             ) : (
+-                <div className="card shadow-sm border-0">
++                <div className="card">
+                     <div className="table-responsive">
+                         <table className="table table-hover align-middle mb-0">
+-                            <thead className="table-light">
++                            <thead>
+                                 <tr>
+                                     <th className="ps-4">ID</th>
+                                     <th>Technician Name</th>
+@@ -373,7 +373,7 @@ export default function LabTechniciansPage() {
+                             <tbody>
+                                 {filteredTechnicians.length === 0 ? (
+                                     <tr>
+-                                        <td colSpan="7" className="text-center py-4 text-muted">
++                                        <td colSpan="7" className="text-center py-4 text-secondary">
+                                             No technicians found matching your criteria.
+                                         </td>
+                                     </tr>
+@@ -381,37 +381,37 @@ export default function LabTechniciansPage() {
+                                     filteredTechnicians.map((tech) => (
+                                         <tr key={tech.technician_id}>
+                                             <td className="ps-4 fw-bold text-secondary">#{tech.technician_id}</td>
+-                                            <td className="fw-semibold text-dark">
++                                            <td className="fw-semibold">
+                                                 {tech.first_name} {tech.last_name}
+                                             </td>
+                                             <td>
+                                                 <div>
+                                                     <span className="fw-medium">{tech.lab_name}</span>
+                                                     {tech.lab_city && (
+-                                                        <span className="badge bg-light text-secondary ms-2 border">
++                                                        <span className="badge text-bg-secondary status-badge ms-2">
+                                                             {tech.lab_city}
+                                                         </span>
+                                                     )}
+                                                 </div>
+                                             </td>
+                                             <td>
+-                                                <span className="badge bg-info-subtle text-info-emphasis border">
++                                                <span className="badge text-bg-primary status-badge">
+                                                     {tech.designation}
+                                                 </span>
+                                             </td>
+                                             <td>
+                                                 <div className="small text-primary">{tech.email}</div>
+-                                                <div className="small text-muted">{tech.phone}</div>
++                                                <div className="small text-secondary">{tech.phone}</div>
+                                             </td>
+                                             <td>
+                                                 {tech.user_id ? (
+-                                                    <span className="badge bg-success-subtle text-success-emphasis border">
++                                                    <span className="badge text-bg-success status-badge">
+                                                         Linked: User #{tech.user_id}
+                                                     </span>
+                                                 ) : (
+                                                     <button
+                                                         type="button"
+-                                                        className="btn btn-sm btn-outline-info"
++                                                        className="btn btn-sm btn-outline-primary"
+                                                         onClick={() => {
+                                                             setLinkingTech(tech);
+                                                             setUserIdInput('');
+@@ -506,6 +506,6 @@ export default function LabTechniciansPage() {
+                     </div>
+                 </div>
+             )}
+-        </div>
++        </>
+     );
+ }
+\ No newline at end of file
+```
+
+### `frontend/src/pages/FamilyMembersPage.jsx` (modified)
+
+```diff
+diff --git a/frontend/src/pages/FamilyMembersPage.jsx b/frontend/src/pages/FamilyMembersPage.jsx
+index 3a1173e..c43a267 100644
+--- a/frontend/src/pages/FamilyMembersPage.jsx
++++ b/frontend/src/pages/FamilyMembersPage.jsx
+@@ -4,12 +4,12 @@ import FamilyMembersManager from '../components/FamilyMembersManager';
+ 
+ export default function FamilyMembersPage() {
+   return (
+-    <div className="container-fluid py-3">
++    <>
+       <PageHeader
+         title="Family Members"
+         subtitle="Manage family contacts of missing persons and register reference DNA samples"
+       />
+       <FamilyMembersManager />
+-    </div>
++    </>
+   );
+ }
+\ No newline at end of file
+```
+
+## UI Phase 3 testing
+
+| Test | Result |
+|---|---|
+| `vite build` | ✅ |
+| Chat panel screenshot (headless Edge, built CSS, static markup of every message type) | ✅ Panel matches cards; user bubble teal with readable dark text; source tag, off-topic badge, error bubble, typing dots, chips, Clear / Send all on theme |
+| Launcher closed screenshot | ✅ "Help" launcher bottom-right, back-to-top now above it (no overlap) |
+| Select option list + date input screenshot | ✅ Options dark with readable text, calendar icon light |
+| Grep of all `.jsx` for inline hex colours / light Bootstrap classes (`text-black`, `bg-info`, `text-bg-light`, `table-light` …) | ✅ Nothing left that sets a light background or dark text (only the dark modal backdrop) |
+| Grep for leftover `btn-info` / `btn-secondary` / `bg-primary` / `bg-info` / `-subtle` / `container-fluid` / `border-0` cards in `src/` | ✅ None left (except the intentional green Confirm / Activate buttons) |
+
+## Known gaps after UI Phase 3
+
+| Item | Note |
+|---|---|
+| `PoliceStations.jsx` | Still unused + Tailwind. Team decision whether to delete |
+| Real app check | Screenshots used static markup (login + backend needed for the real widget). Open the app once and click through the chatbot to confirm |
