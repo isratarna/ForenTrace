@@ -1,7 +1,10 @@
+import bcrypt from 'bcrypt'
+import pool from '../config/db.js'
 import {
   findAllUsers,
   findUserById,
   findRoleByName,
+  generateUniqueUsername,
   emailExists,
   usernameExists,
   updateUserById,
@@ -51,6 +54,224 @@ function parseUserId(value) {
   const userId = Number(value)
   if (!Number.isInteger(userId) || userId <= 0) return null
   return userId
+}
+
+export async function createManagedUser(req, res) {
+  const {
+    role,
+    firstName,
+    lastName,
+    email,
+    password,
+    username: requestedUsername,
+    phone,
+    rank,
+    badgeNumber,
+    stationId,
+    designation,
+    labId,
+  } = req.body || {}
+
+  if (!['Officer', 'Lab Technician'].includes(role)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Role must be Officer or Lab Technician.',
+    })
+  }
+
+  const requiredValues = [firstName, lastName, email, password, phone]
+  const requiredProfileValues = role === 'Officer'
+    ? [rank, badgeNumber]
+    : [designation]
+  const roleValues = role === 'Officer'
+    ? [rank, badgeNumber, stationId]
+    : [designation, labId]
+
+  if (
+    requiredValues.some(value => typeof value !== 'string' || !value.trim()) ||
+    requiredProfileValues.some(value => typeof value !== 'string' || !value.trim()) ||
+    roleValues.some(value => value === undefined || value === null || value === '')
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: 'Complete all required account and profile fields.',
+    })
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must contain at least 6 characters.',
+    })
+  }
+
+  const emailAddress = email.trim().toLowerCase()
+  const profileId = Number(role === 'Officer' ? stationId : labId)
+  if (!Number.isInteger(profileId) || profileId <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: role === 'Officer' ? 'A valid police station is required.' : 'A valid laboratory is required.',
+    })
+  }
+
+  let conn = null
+  let transactionStarted = false
+
+  try {
+    const passwordHash = await bcrypt.hash(password, 10)
+    conn = await pool.getConnection()
+    await conn.beginTransaction()
+    transactionStarted = true
+
+    const [roleRows] = await conn.execute(
+      'SELECT role_id FROM roles WHERE role_name = ? LIMIT 1',
+      [role]
+    )
+    if (!roleRows[0]) {
+      await conn.rollback()
+      transactionStarted = false
+      return res.status(400).json({ success: false, message: 'The selected role does not exist.' })
+    }
+
+    const parentTable = role === 'Officer' ? 'police_stations' : 'dna_labs'
+    const parentColumn = role === 'Officer' ? 'station_id' : 'lab_id'
+    const [parentRows] = await conn.execute(
+      `SELECT ${parentColumn} FROM ${parentTable} WHERE ${parentColumn} = ? LIMIT 1`,
+      [profileId]
+    )
+    if (!parentRows[0]) {
+      await conn.rollback()
+      transactionStarted = false
+      return res.status(400).json({
+        success: false,
+        message: role === 'Officer' ? 'The specified police station does not exist.' : 'The specified laboratory does not exist.',
+      })
+    }
+
+    const [emailRows] = await conn.execute(
+      'SELECT user_id FROM users WHERE email = ? LIMIT 1',
+      [emailAddress]
+    )
+    if (emailRows.length) {
+      await conn.rollback()
+      transactionStarted = false
+      return res.status(409).json({ success: false, message: 'An account with this email already exists.' })
+    }
+
+    const profileTable = role === 'Officer' ? 'officers' : 'lab_technicians'
+    const [profileEmailRows] = await conn.execute(
+      `SELECT 1 FROM ${profileTable} WHERE email = ? LIMIT 1`,
+      [emailAddress]
+    )
+    if (profileEmailRows.length) {
+      await conn.rollback()
+      transactionStarted = false
+      return res.status(409).json({
+        success: false,
+        message: role === 'Officer' ? 'An officer with this email already exists.' : 'A technician with this email already exists.',
+      })
+    }
+
+    if (role === 'Officer') {
+      const [badgeRows] = await conn.execute(
+        'SELECT officer_id FROM officers WHERE station_id = ? AND badge_number = ? LIMIT 1',
+        [profileId, badgeNumber.trim()]
+      )
+      if (badgeRows.length) {
+        await conn.rollback()
+        transactionStarted = false
+        return res.status(409).json({ success: false, message: 'An officer with this badge number already exists at this station.' })
+      }
+    }
+
+    const username = typeof requestedUsername === 'string' && requestedUsername.trim()
+      ? requestedUsername.trim()
+      : await generateUniqueUsername(firstName, lastName, conn)
+    if (username.length > 100) {
+      await conn.rollback()
+      transactionStarted = false
+      return res.status(400).json({ success: false, message: 'Username must be 100 characters or fewer.' })
+    }
+    const [usernameRows] = await conn.execute(
+      'SELECT user_id FROM users WHERE username = ? LIMIT 1',
+      [username]
+    )
+    if (usernameRows.length) {
+      await conn.rollback()
+      transactionStarted = false
+      return res.status(409).json({ success: false, message: 'An account with this username already exists.' })
+    }
+
+    let officerId = null
+    let technicianId = null
+
+    if (role === 'Officer') {
+      const [officerResult] = await conn.execute(
+        `INSERT INTO officers
+          (station_id, first_name, last_name, \`rank\`, badge_number, phone, email)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [profileId, firstName.trim(), lastName.trim(), rank.trim(), badgeNumber.trim(), phone.trim(), emailAddress]
+      )
+      officerId = officerResult.insertId
+    } else {
+      const [technicianResult] = await conn.execute(
+        `INSERT INTO lab_technicians
+          (lab_id, user_id, first_name, last_name, designation, phone, email)
+         VALUES (?, NULL, ?, ?, ?, ?, ?)`,
+        [profileId, firstName.trim(), lastName.trim(), designation.trim(), phone.trim(), emailAddress]
+      )
+      technicianId = technicianResult.insertId
+    }
+
+    const [userResult] = await conn.execute(
+      `INSERT INTO users
+        (role_id, officer_id, technician_id, username, password_hash, email, account_status)
+       VALUES (?, ?, NULL, ?, ?, ?, 'pending_approval')`,
+      [roleRows[0].role_id, officerId, username, passwordHash, emailAddress]
+    )
+    const userId = userResult.insertId
+
+    if (technicianId) {
+      await conn.execute(
+        'UPDATE lab_technicians SET user_id = ? WHERE technician_id = ?',
+        [userId, technicianId]
+      )
+    }
+
+    await conn.commit()
+    transactionStarted = false
+
+    return res.status(201).json({
+      success: true,
+      message: `${role} account created successfully. Activate it to allow sign-in.`,
+      user: {
+        id: userId,
+        username,
+        email: emailAddress,
+        role,
+        officerId,
+        technicianId,
+        status: 'Pending Approval',
+      },
+    })
+  } catch (error) {
+    if (transactionStarted) await conn.rollback()
+    console.error('Create user error:', error)
+
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({
+        success: false,
+        message: 'The email, username, or officer badge number is already in use.',
+      })
+    }
+    if (error.code === 'ER_NO_REFERENCED_ROW_2') {
+      return res.status(400).json({ success: false, message: 'The selected station or laboratory does not exist.' })
+    }
+
+    return res.status(500).json({ success: false, message: 'Internal server error.' })
+  } finally {
+    conn?.release()
+  }
 }
 
 export async function listUsers(req, res) {

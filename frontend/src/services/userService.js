@@ -10,6 +10,11 @@ export async function getUserById(id) {
   return response.data.user
 }
 
+export async function createManagedUser(values) {
+  const response = await api.post('/users/create', values)
+  return response.data
+}
+
 export async function updateUser(id, values) {
   const response = await api.put(`/users/${id}`, {
     name: values.name,

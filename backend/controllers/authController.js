@@ -1,17 +1,8 @@
 import bcrypt from 'bcrypt'
-import pool from '../config/db.js'
 import {
   findUserByEmail,
-  findRoleByName,
-  emailExists,
-  usernameExists,
-  generateUniqueUsername,
-  createUser,
   updateLastLogin,
 } from '../models/userModel.js'
-import { badgeNumberExists, emailExistsInOfficers } from '../models/officerModel.js'
-
-const REGISTERABLE_ROLES = ['Officer', 'Lab Technician']
 
 export async function login(req, res) {
   try {
@@ -84,81 +75,6 @@ export async function login(req, res) {
     })
   }
 }
-export async function register(req, res) {
-  try {
-    const { name, email, password, role } = req.body
-    const username = name?.trim()
-    const normalizedEmail = email?.trim().toLowerCase()
-
-    if (!username || !normalizedEmail || !password || !role) {
-      return res.status(400).json({
-        success: false,
-        message: 'Complete all registration fields.',
-      })
-    }
-
-    if (!REGISTERABLE_ROLES.includes(role)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Only Police Officers and Lab Technicians can register.',
-      })
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must contain at least 6 characters.',
-      })
-    }
-
-    const roleRecord = await findRoleByName(role)
-
-    if (!roleRecord) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid role.',
-      })
-    }
-
-    if (await emailExists(normalizedEmail)) {
-      return res.status(409).json({
-        success: false,
-        message: 'An account with this email already exists.',
-      })
-    }
-
-    if (await usernameExists(username)) {
-      return res.status(409).json({
-        success: false,
-        message: 'An account with this username already exists.',
-      })
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10)
-
-    await createUser({
-      username,
-      email: normalizedEmail,
-      passwordHash,
-      roleId: roleRecord.role_id,
-      accountStatus: 'pending_approval',
-    })
-
-    return res.status(201).json({
-      success: true,
-      message:
-        'Registration submitted. An administrator must approve your account before you can sign in.',
-    })
-  } catch (error) {
-    console.error('Register error:', error)
-
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error.',
-    })
-  }
-}
-
 // When the client makes a request with the `connect.sid` cookie,
 // express-session automatically restores `req.session.user`.
 export function getCurrentUser(req, res) {
@@ -167,7 +83,6 @@ export function getCurrentUser(req, res) {
     user: req.session.user,
   })
 }
-
 // Clears the session from the server store and deletes the cookie from the browser.
 export function logout(req, res) {
   req.session.destroy((error) => {
@@ -186,157 +101,4 @@ export function logout(req, res) {
       message: 'Logout successful.',
     })
   })
-}
-
-export async function registerOfficer(req, res) {
-  try {
-    const { firstName, lastName, email, password, rank, badgeNumber, phone, stationId } = req.body
-
-    if (
-      !firstName?.trim() ||
-      !lastName?.trim() ||
-      !email?.trim() ||
-      !password ||
-      !rank?.trim() ||
-      !badgeNumber?.trim() ||
-      !stationId
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: 'Complete all required registration fields.',
-      })
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must contain at least 6 characters.',
-      })
-    }
-
-    // Verify station exists
-    const [stationRows] = await pool.execute(
-      'SELECT station_id FROM police_stations WHERE station_id = ? LIMIT 1',
-      [stationId]
-    )
-    if (stationRows.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'The specified police station does not exist.',
-      })
-    }
-
-    const username = await generateUniqueUsername(firstName,lastName)
-    const normalizedEmail = email.trim().toLowerCase()
-
-    // Uniqueness checks
-    if (await emailExists(normalizedEmail)) {
-      return res.status(409).json({
-        success: false,
-        message: 'An account with this email already exists in users.',
-      })
-    }
-
-    if (await emailExistsInOfficers(normalizedEmail)) {
-      return res.status(409).json({
-        success: false,
-        message: 'An officer with this email already exists.',
-      })
-    }
-
-    if (await badgeNumberExists(badgeNumber, stationId)) {
-      return res.status(409).json({
-        success: false,
-        message: 'An officer with this badge number already exists.',
-      })
-    }
-
-    const accountStatus = 'pending_approval'
-
-    // Perform transaction
-    const conn = await pool.getConnection()
-    try {
-      await conn.beginTransaction()
-
-      // 1. Insert into officers
-      const [officerResult] = await conn.execute(
-        `INSERT INTO officers (station_id, first_name, last_name, \`rank\`, badge_number, phone, email)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          stationId,
-          firstName.trim(),
-          lastName.trim(),
-          rank.trim(),
-          badgeNumber.trim(),
-          phone?.trim() || null,
-          normalizedEmail,
-        ]
-      )
-      const officerId = officerResult.insertId
-
-      // 2. Hash password
-      const passwordHash = await bcrypt.hash(password, 10)
-
-      // 3. Find role_id for 'Officer'
-      const [roleRows] = await conn.execute(
-        'SELECT role_id FROM roles WHERE role_name = ? LIMIT 1',
-        ['Officer']
-      )
-      const roleId = roleRows[0]?.role_id
-
-      if (!roleId) {
-        throw new Error('Officer role not found in database.')
-      }
-
-      // 4. Insert into users linked to the new officer
-      await conn.execute(
-        `INSERT INTO users (role_id, officer_id, technician_id, username, password_hash, email, account_status)
-         VALUES (?, ?, NULL, ?, ?, ?, ?)`,
-        [
-          roleId,
-          officerId,
-          username,
-          passwordHash,
-          normalizedEmail,
-          accountStatus,
-        ]
-      )
-
-      await conn.commit()
-    } catch (err) {
-      await conn.rollback()
-      throw err
-    } finally {
-      conn.release()
-    }
-
-    return res.status(201).json({
-      success: true,
-      message: 'Officer registration submitted successfully. An administrator must approve your account before you can sign in.',
-    })
-  } catch (error) {
-  console.error('Register officer error:', error)
-
-  if (error.code === 'ER_DUP_ENTRY') {
-
-    if (error.sqlMessage.includes('badge_number')) {
-      return res.status(409).json({
-        success: false,
-        message: 'This badge number already exists. Please use a different badge number.',
-      })
-    }
-
-    if (error.sqlMessage.includes('email')) {
-      return res.status(409).json({
-        success: false,
-        message: 'This email already exists.',
-      })
-    }
-  }
-
-  return res.status(500).json({
-    success: false,
-    message: 'Internal server error.',
-  })
-}
 }
