@@ -329,3 +329,45 @@ BEGIN
     END;
 END //
 DELIMITER ;
+
+-- Stored Procedure: case create kora (Member 2 - Issue 6)
+-- Raw SQL + test: database/cp3/create_case_procedure.sql
+-- Backend: caseModel.createCase() → CALL create_case(...)
+DROP PROCEDURE IF EXISTS create_case;
+DELIMITER //
+CREATE PROCEDURE create_case(
+    IN p_person_id INT,
+    IN p_station_id INT,
+    IN p_officer_id INT,
+    IN p_priority VARCHAR(20),
+    IN p_case_notes TEXT
+)
+BEGIN
+    -- 1. Insert case
+    -- 2. Link missing person (p_person_id)
+    -- 3. Assign investigating officer (p_officer_id, p_station_id)
+    -- 4. Set initial case status ('Active')
+    INSERT INTO case_files (
+        person_id,
+        station_id,
+        officer_id,
+        report_date,
+        case_status,
+        priority,
+        case_notes
+    ) VALUES (
+        p_person_id,
+        p_station_id,
+        p_officer_id,
+        CURDATE(),
+        'Active',
+        p_priority,
+        p_case_notes
+    );
+
+    -- Additional Step: automatic vabe missing person er status update
+    UPDATE missing_persons
+    SET status = 'Under Investigation'
+    WHERE person_id = p_person_id;
+END //
+DELIMITER ;
