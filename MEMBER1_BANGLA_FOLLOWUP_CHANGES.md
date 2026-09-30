@@ -18,8 +18,8 @@ The earlier CB-1…CB-8 work is in `MEMBER1_CHATBOT_CHANGES.md`.
 | 3 | Step 3 | Pre-flight check (env, model, FAQ loaded, index, smoke test) | `preflight.js` | ✅ Done (5/5 ✅; failure paths tested) |
 | 4 | Step 4 | Teach-the-bot test (swap in FAQ v2, re-ingest, restore) | `teachTest.js` | ✅ Done (blocked 0.6445 → answered 0.8265 by the new entry; original restored; pre-flight 5/5) |
 | 5 | Step 5 | FAQ checker (roles, exact menu names, vague answers) + wording list | `checkFaq.js`, `data/faq_terms.json` | ✅ Done (5 entries fixed in Phase 5b → checker 0 problems; main 10/10, holdout 85/91, same answer/block decisions) |
-| 6 | Step 6 | Bangla search-side test file | `data/bangla_questions.json` | ⏳ Next |
-| 7 | Step 7 | Follow-up search-side test (copy of Member 2's rule) | `followupTest.js`, `data/followup_questions.json` | ⏳ |
+| 6 | Step 6 | Bangla search-side test file | `data/bangla_questions.json` | ✅ Done (after Phase 6b: natural 36/36 right entry and answered, Bangla 48/50; off 13/13 blocked; threshold 0.65 confirmed) |
+| 7 | Step 7 | Follow-up search-side test (copy of Member 2's rule) | `followupTest.js`, `data/followup_questions.json` | ⏳ Next |
 | 8 | Step 8 | Draft FAQ entries for the new features (not added yet) | `data/new_feature_faq_drafts.txt` | ⏳ |
 | — | Steps 9–13 | End-to-end Bangla / follow-up tests, run-all, team message | — | ⏸ Waiting for Members 2 and 3 |
 
@@ -612,8 +612,8 @@ Every `expect` was taken from the question line of the real chunk in Atlas (all 
     { "kind": "paraphrase", "type": "on", "q": "Which account types exist?", "expect": "What user roles (user types" },
     { "kind": "paraphrase", "type": "on", "q": "What powers does the admin have?", "expect": "What can an Admin (administrator) do" },
     { "kind": "paraphrase", "type": "on", "q": "What is the administrator allowed to do in the system?", "expect": "What can an Admin (administrator) do" },
-    { "kind": "paraphrase", "type": "on", "q": "What are a police officer's duties in the system?", "expect": "What can a police officer do" },
-    { "kind": "paraphrase", "type": "on", "q": "What is an officer allowed to do here?", "expect": "What can a police officer do" },
+    { "kind": "paraphrase", "type": "on", "q": "What are a police officer's duties in the system?", "expect": "What can a police officer (investigating officer) do" },
+    { "kind": "paraphrase", "type": "on", "q": "What is an officer allowed to do here?", "expect": "What can a police officer (investigating officer) do" },
     { "kind": "paraphrase", "type": "on", "q": "What does a lab tech do in ForenTrace?", "expect": "a lab technician's permissions (duties, tasks)" },
     { "kind": "paraphrase", "type": "on", "q": "What tasks are given to laboratory technicians?", "expect": "a lab technician's permissions (duties, tasks)" },
     { "kind": "paraphrase", "type": "on", "q": "How can I sign up for ForenTrace?", "expect": "How do I sign up for ForenTrace" },
@@ -622,16 +622,16 @@ Every `expect` was taken from the question line of the real chunk in Atlas (all 
     { "kind": "paraphrase", "type": "on", "q": "Who activates a technician account after registration?", "expect": "Who creates officer accounts" },
     { "kind": "paraphrase", "type": "on", "q": "Why does it say no technician profile is linked to my account?", "expect": "No technician profile is linked" },
     { "kind": "paraphrase", "type": "on", "q": "The technician cannot see any samples from the lab", "expect": "No technician profile is linked" },
-    { "kind": "paraphrase", "type": "on", "q": "How do I sign in to the system?", "expect": "How do I log in (sign in) to ForenTrace" },
-    { "kind": "paraphrase", "type": "on", "q": "Where do I enter my email and password to get in?", "expect": "How do I log in (sign in) to ForenTrace" },
+    { "kind": "paraphrase", "type": "on", "q": "How do I sign in to the system?", "expect": "How do I log in (sign in)? How do I log in to ForenTrace" },
+    { "kind": "paraphrase", "type": "on", "q": "Where do I enter my email and password to get in?", "expect": "How do I log in (sign in)? How do I log in to ForenTrace" },
     { "kind": "paraphrase", "type": "on", "q": "It says account is not active when I try to log in", "expect": "My login failed or my account is not active" },
     { "kind": "paraphrase", "type": "on", "q": "My login keeps failing, what is wrong?", "expect": "My login failed or my account is not active" },
     { "kind": "paraphrase", "type": "on", "q": "How can I reset my password?", "expect": "How do I change (update, reset) my password" },
     { "kind": "paraphrase", "type": "on", "q": "I want a new password, where do I set it?", "expect": "How do I change (update, reset) my password" },
     { "kind": "paraphrase", "type": "on", "q": "How do I sign out of ForenTrace?", "expect": "How do I log out (sign out)" },
     { "kind": "paraphrase", "type": "on", "q": "How do I end my session?", "expect": "How do I log out (sign out)" },
-    { "kind": "paraphrase", "type": "on", "q": "How do I report someone as missing?", "expect": "How do I register (add, report) a missing person" },
-    { "kind": "paraphrase", "type": "on", "q": "What are the steps to add a new missing person?", "expect": "How do I register (add, report) a missing person" },
+    { "kind": "paraphrase", "type": "on", "q": "How do I report someone as missing?", "expect": "How do I register (add, report) a missing (lost) person" },
+    { "kind": "paraphrase", "type": "on", "q": "What are the steps to add a new missing person?", "expect": "How do I register (add, report) a missing (lost) person" },
     { "kind": "paraphrase", "type": "on", "q": "What status can a missing person have?", "expect": "What are the missing person statuses" },
     { "kind": "paraphrase", "type": "on", "q": "What does the Missing status mean for a person?", "expect": "What are the missing person statuses" },
     { "kind": "paraphrase", "type": "on", "q": "When is a person marked as Identified?", "expect": "What does the Identified status mean" },
@@ -691,7 +691,7 @@ Every `expect` was taken from the question line of the real chunk in Atlas (all 
     { "kind": "short", "type": "on", "q": "confidence level", "expect": "What is the confidence level" },
     { "kind": "short", "type": "on", "q": "sample types", "expect": "What DNA sample types can be registered" },
 
-    { "kind": "long", "type": "on", "q": "hi, so I am a new police officer and my supervisor told me I need to put a missing person into the system today but I have no idea where to click or what details I need, can you explain how I register the missing person", "expect": "How do I register (add, report) a missing person" },
+    { "kind": "long", "type": "on", "q": "hi, so I am a new police officer and my supervisor told me I need to put a missing person into the system today but I have no idea where to click or what details I need, can you explain how I register the missing person", "expect": "How do I register (add, report) a missing (lost) person" },
     { "kind": "long", "type": "on", "q": "okay so the lab already analysed the evidence sample and we also have a reference sample from the family, I want to know how the system compares the two DNA samples and decides if they match", "expect": "How does DNA matching (DNA comparison) work" },
     { "kind": "long", "type": "on", "q": "I registered as a lab technician yesterday and filled in everything on the form but when I try to sign in today it still does not let me in and shows some message about my account, what should I do", "expect": "My login failed or my account is not active" },
 
@@ -1235,19 +1235,26 @@ function runIngest(label) {
 }
 
 // Ingest er por index notun chunk dhorte shomoy ney — shob chunk search e asha porjonto wait
+// Network ekbar timeout dileo (ETIMEDOUT) thami na — porer attempt e abar try
 async function waitForIndexSync() {
-  const col = await getCollection();
-  const expected = await col.countDocuments();
+  let lastError = null;
   for (let attempt = 1; attempt <= SYNC_TRIES; attempt++) {
-    const found = (await searchTop('index sync check', 100)).length; // limit 100 ≥ chunk count
-    if (found === expected) {
-      console.log(`   vector_index synced (${found}/${expected} chunks searchable)`);
-      return;
+    try {
+      const col = await getCollection();
+      const expected = await col.countDocuments();
+      const found = (await searchTop('index sync check', 100)).length; // limit 100 ≥ chunk count
+      if (found === expected) {
+        console.log(`   vector_index synced (${found}/${expected} chunks searchable)`);
+        return;
+      }
+      console.log(`   …waiting for vector_index to sync (${found}/${expected} chunks searchable)`);
+    } catch (err) {
+      lastError = err;
+      console.log(`   …Atlas not reachable (${err.message}), retrying`);
     }
-    console.log(`   …waiting for vector_index to sync (${found}/${expected} chunks searchable)`);
     await sleep(SYNC_WAIT_MS);
   }
-  throw new Error('vector_index did not sync within ~150s');
+  throw new Error(`vector_index did not sync within ~150s${lastError ? ` (last error: ${lastError.message})` : ''}`);
 }
 
 // Shob question search kore top result, score, decision table e dekhay
@@ -1876,3 +1883,275 @@ Every number is exactly what the offline check in Phase 5 predicted.
 ### Known gaps / notes
 - **Tell the team:** (1) you re-ingested (5 answers changed), (2) Change Password on `main` only shows "not available yet". If someone implements it, change FAQ answer 1 back to the step-by-step version.
 - The two `*_thresholds.csv` files are tracked in git since the step 2 commit, so every evaluation run shows them as modified. Commit them when you want the latest numbers saved, or stop tracking them with `git rm --cached backend/chatbot/data/*_thresholds.csv`.
+
+---
+
+## Phase 6 — Step 6: Test Bangla on the search side
+
+### Goal
+Member 2's Bangla feature will translate a Bangla question to English and then search with the English text. This phase checks, **without Gemini**, that typical English translations of Bangla questions still find the right FAQ entry above the threshold, and that unrelated Bangla questions are still blocked. It includes clumsy word-by-word translations, like a weak translator would produce.
+
+### Files changed
+
+| File | Type | Purpose |
+| --- | --- | --- |
+| `backend/chatbot/data/bangla_questions.json` | **New** | 63 questions in the step 2 format, plus the `bn` field (original Bangla) |
+| `backend/chatbot/data/bangla_questions_thresholds.csv` | Generated (**not committed**) | Threshold sweep from `evaluate.js` |
+
+No script changed: `evaluate.js` already shows the `bn` column when the file has it (added in Phase 2 for this step).
+
+### How to run
+```powershell
+cd backend
+node chatbot/evaluate.js bangla_questions.json
+```
+
+### What is in the file
+
+| kind | Count | What it is |
+| --- | --- | --- |
+| `natural` | 36 | One Bangla question **per FAQ entry** with a good English translation, e.g. ডিএনএ নমুনা কীভাবে নিবন্ধন করব? → "How do I register a DNA sample?" |
+| `literal` | 14 | Clumsy word-by-word translations, e.g. ম্যাচ পাকা হলে কী হয়? → "If match becomes **ripe** what happens?" (পাকা = confirmed/ripe), হিসাব খুলব কীভাবে? → "How will I open **calculation**?" (হিসাব = account/calculation) |
+| `unrelated` | 13 | Off-topic Bangla, e.g. ভাত কীভাবে রান্না করব? → "How do I cook rice?", পদ্মা সেতুর দৈর্ঘ্য কত?, ঈদের ছুটি কবে থেকে? (2 of them also literal) |
+
+Every `expect` is the question line of the current chunk in Atlas (after Phases 2b and 5b).
+
+### Code — `backend/chatbot/data/bangla_questions.json` (full new file)
+
+```json
+{
+  "description": "Bangla search-side test (step 6). bn = the original Bangla question (reference only), q = the English translation that is searched. kind = natural (a good translation, one per FAQ entry) | literal (a clumsy word-by-word translation, like a weak translator) | unrelated (off-topic Bangla). Run: node chatbot/evaluate.js bangla_questions.json",
+  "questions": [
+    { "kind": "natural", "type": "on", "bn": "ফরেনট্রেস সিস্টেমটা আসলে কী কাজ করে?", "q": "What does the ForenTrace system actually do?", "expect": "What is ForenTrace? What does this system" },
+    { "kind": "natural", "type": "on", "bn": "এই সিস্টেমে কী কী ধরনের ইউজার আছে?", "q": "What types of users are there in this system?", "expect": "What user roles (user types" },
+    { "kind": "natural", "type": "on", "bn": "অ্যাডমিন কী কী করতে পারে?", "q": "What can the admin do?", "expect": "What can an Admin (administrator) do" },
+    { "kind": "natural", "type": "on", "bn": "একজন পুলিশ অফিসার এই সিস্টেমে কী করতে পারেন?", "q": "What can a police officer do in this system?", "expect": "What can a police officer (investigating officer) do" },
+    { "kind": "natural", "type": "on", "bn": "ল্যাব টেকনিশিয়ানের কাজ কী?", "q": "What is the job of a lab technician?", "expect": "a lab technician's permissions (duties, tasks)" },
+    { "kind": "natural", "type": "on", "bn": "আমি কীভাবে অ্যাকাউন্ট খুলব?", "q": "How do I open an account?", "expect": "How do I sign up for ForenTrace" },
+    { "kind": "natural", "type": "on", "bn": "অফিসারের অ্যাকাউন্ট কে অনুমোদন করে?", "q": "Who approves an officer's account?", "expect": "Who creates officer accounts" },
+    { "kind": "natural", "type": "on", "bn": "টেকনিশিয়ান কোনো নমুনা দেখতে পাচ্ছে না কেন?", "q": "Why can't the technician see any samples?", "expect": "No technician profile is linked" },
+    { "kind": "natural", "type": "on", "bn": "আমি কীভাবে লগইন করব?", "q": "How do I log in?", "expect": "How do I log in (sign in)? How do I log in to ForenTrace" },
+    { "kind": "natural", "type": "on", "bn": "আমার অ্যাকাউন্ট সক্রিয় নয় বলছে কেন?", "q": "Why does it say my account is not active?", "expect": "My login failed or my account is not active" },
+    { "kind": "natural", "type": "on", "bn": "পাসওয়ার্ড কীভাবে পরিবর্তন করব?", "q": "How do I change the password?", "expect": "How do I change (update, reset) my password" },
+    { "kind": "natural", "type": "on", "bn": "কীভাবে লগআউট করব?", "q": "How do I log out?", "expect": "How do I log out (sign out)" },
+    { "kind": "natural", "type": "on", "bn": "নিখোঁজ ব্যক্তির তথ্য কীভাবে যোগ করব?", "q": "How do I add a missing person's information?", "expect": "How do I register (add, report) a missing (lost) person" },
+    { "kind": "natural", "type": "on", "bn": "নিখোঁজ ব্যক্তির স্ট্যাটাসগুলো কী কী?", "q": "What are the statuses of a missing person?", "expect": "What are the missing person statuses" },
+    { "kind": "natural", "type": "on", "bn": "আইডেন্টিফাইড মানে কী?", "q": "What does Identified mean?", "expect": "What does the Identified status mean" },
+    { "kind": "natural", "type": "on", "bn": "নতুন তদন্ত মামলা কীভাবে খুলব?", "q": "How do I open a new investigation case?", "expect": "How do I create (open, register) an investigation case" },
+    { "kind": "natural", "type": "on", "bn": "মামলার স্ট্যাটাস সক্রিয়, মুলতুবি আর সমাধান মানে কী?", "q": "What do the case statuses active, pending and solved mean?", "expect": "What do the case statuses" },
+    { "kind": "natural", "type": "on", "bn": "পরিবারের সদস্য কীভাবে যোগ করব?", "q": "How do I add a family member?", "expect": "What is a family member in ForenTrace" },
+    { "kind": "natural", "type": "on", "bn": "পারিবারিক রেফারেন্স নমুনা কী?", "q": "What is a family reference sample?", "expect": "What is a family reference DNA sample" },
+    { "kind": "natural", "type": "on", "bn": "পরিবারের সদস্যের ডিএনএ নমুনা কীভাবে নিবন্ধন করব?", "q": "How do I register a family member's DNA sample?", "expect": "How do I register a family reference DNA sample" },
+    { "kind": "natural", "type": "on", "bn": "ডিএনএ নমুনা কীভাবে নিবন্ধন করব?", "q": "How do I register a DNA sample?", "expect": "How do I register (add, create, collect) a DNA sample" },
+    { "kind": "natural", "type": "on", "bn": "কী কী ধরনের নমুনা নেওয়া যায়?", "q": "What kinds of samples can be taken?", "expect": "What DNA sample types can be registered" },
+    { "kind": "natural", "type": "on", "bn": "নমুনার স্ট্যাটাস 'বিশ্লেষণের অপেক্ষায়' মানে কী?", "q": "What does the sample status 'awaiting analysis' mean?", "expect": "What do the DNA sample statuses" },
+    { "kind": "natural", "type": "on", "bn": "টেকনিশিয়ান কীভাবে নমুনা বিশ্লেষণ করেন?", "q": "How does the technician analyze a sample?", "expect": "How does a lab technician analyse" },
+    { "kind": "natural", "type": "on", "bn": "ডিএনএ প্রোফাইল কোড কী?", "q": "What is a DNA profile code?", "expect": "What is a DNA profile code?" },
+    { "kind": "natural", "type": "on", "bn": "ডিএনএ মিলানো কীভাবে কাজ করে?", "q": "How does DNA matching work?", "expect": "How does DNA matching (DNA comparison) work" },
+    { "kind": "natural", "type": "on", "bn": "মিলের শতাংশ কীভাবে হিসাব করা হয়?", "q": "How is the match percentage calculated?", "expect": "What is the similarity percentage" },
+    { "kind": "natural", "type": "on", "bn": "কনফিডেন্স লেভেল হাই, মিডিয়াম, লো মানে কী?", "q": "What do the confidence levels high, medium and low mean?", "expect": "What is the confidence level" },
+    { "kind": "natural", "type": "on", "bn": "ম্যাচ কীভাবে নিশ্চিত বা বাতিল করব?", "q": "How do I confirm or reject a match?", "expect": "What do the DNA match statuses" },
+    { "kind": "natural", "type": "on", "bn": "ম্যাচ নিশ্চিত হলে কী হয়?", "q": "What happens when a match is confirmed?", "expect": "What happens after (when) a DNA match is confirmed" },
+    { "kind": "natural", "type": "on", "bn": "ড্যাশবোর্ডে কী দেখা যায়?", "q": "What can be seen on the dashboard?", "expect": "What does the dashboard show" },
+    { "kind": "natural", "type": "on", "bn": "রিপোর্ট কীভাবে ডাউনলোড করব?", "q": "How do I download a report?", "expect": "What reports are available" },
+    { "kind": "natural", "type": "on", "bn": "অ্যাডমিন কীভাবে নতুন থানা যোগ করে?", "q": "How does the admin add a new police station?", "expect": "How does the Admin add (create) and manage police stations" },
+    { "kind": "natural", "type": "on", "bn": "আমার তথ্য কি নিরাপদ?", "q": "Is my data safe?", "expect": "Is my data secure" },
+    { "kind": "natural", "type": "on", "bn": "চ্যাটবট কি কোনো মামলার তথ্য দেখাতে পারে?", "q": "Can the chatbot show information about a case?", "expect": "Can the assistant (chatbot) tell me about a specific case" },
+    { "kind": "natural", "type": "on", "bn": "এই সহকারী কী কী প্রশ্নের উত্তর দিতে পারে?", "q": "What questions can this assistant answer?", "expect": "What can the ForenTrace assistant" },
+
+    { "kind": "literal", "type": "on", "bn": "ডিএনএ নমুনা কীভাবে নিবন্ধন করব?", "q": "DNA sample how will I register?", "expect": "How do I register (add, create, collect) a DNA sample" },
+    { "kind": "literal", "type": "on", "bn": "নিখোঁজ মানুষের নাম কীভাবে তুলব?", "q": "How will I raise the name of lost man?", "expect": "How do I register (add, report) a missing (lost) person" },
+    { "kind": "literal", "type": "on", "bn": "আমার পাসওয়ার্ড বদলাবো কীভাবে?", "q": "My password change will how?", "expect": "How do I change (update, reset) my password" },
+    { "kind": "literal", "type": "on", "bn": "মামলা খুলতে কী করতে হবে?", "q": "Case to open what to do?", "expect": "How do I create (open, register) an investigation case" },
+    { "kind": "literal", "type": "on", "bn": "ম্যাচ পাকা হলে কী হয়?", "q": "If match becomes ripe what happens?", "expect": "What happens after (when) a DNA match is confirmed" },
+    { "kind": "literal", "type": "on", "bn": "টেকনিশিয়ান নমুনা দেখতে পায় না কেন?", "q": "Technician sample cannot see why?", "expect": "No technician profile is linked" },
+    { "kind": "literal", "type": "on", "bn": "আত্মীয়ের ডিএনএ কোথায় জমা দেব?", "q": "Relative's DNA where will I deposit?", "expect": "How do I register a family reference DNA sample" },
+    { "kind": "literal", "type": "on", "bn": "মিলের শতকরা হার কীভাবে বের হয়?", "q": "Match of percentage rate how comes out?", "expect": "What is the similarity percentage" },
+    { "kind": "literal", "type": "on", "bn": "হিসাব খুলব কীভাবে?", "q": "How will I open calculation?", "expect": "How do I sign up for ForenTrace" },
+    { "kind": "literal", "type": "on", "bn": "কে কে এই সফটওয়্যার ব্যবহার করে?", "q": "Who who uses this software?", "expect": "What user roles (user types" },
+    { "kind": "literal", "type": "on", "bn": "লগ আউট করার উপায় কী?", "q": "Log out doing way what?", "expect": "How do I log out (sign out)" },
+    { "kind": "literal", "type": "on", "bn": "নমুনার অবস্থা কয়টা আছে?", "q": "Sample's condition how many are there?", "expect": "What do the DNA sample statuses" },
+    { "kind": "literal", "type": "on", "bn": "প্রোফাইল কোড জিনিসটা কী?", "q": "Profile code thing is what?", "expect": "What is a DNA profile code?" },
+    { "kind": "literal", "type": "on", "bn": "তদন্ত কর্মকর্তা কী করতে পারেন?", "q": "Investigation officer what can do?", "expect": "What can a police officer (investigating officer) do" },
+
+    { "kind": "unrelated", "type": "off", "bn": "ভাত কীভাবে রান্না করব?", "q": "How do I cook rice?" },
+    { "kind": "unrelated", "type": "off", "bn": "আজকে আবহাওয়া কেমন?", "q": "How is the weather today?" },
+    { "kind": "unrelated", "type": "off", "bn": "বাংলাদেশের রাজধানী কোথায়?", "q": "Where is the capital of Bangladesh?" },
+    { "kind": "unrelated", "type": "off", "bn": "একটা কবিতা লিখে দাও", "q": "Write a poem" },
+    { "kind": "unrelated", "type": "off", "bn": "বিশ্বকাপ ক্রিকেট কে জিতেছে?", "q": "Who won the Cricket World Cup?" },
+    { "kind": "unrelated", "type": "off", "bn": "ঢাকা থেকে চট্টগ্রাম যেতে কত সময় লাগে?", "q": "How long does it take to go from Dhaka to Chittagong?" },
+    { "kind": "unrelated", "type": "off", "bn": "একটা মজার জোকস বলো", "q": "Tell a funny joke" },
+    { "kind": "unrelated", "type": "off", "bn": "পদ্মা সেতুর দৈর্ঘ্য কত?", "q": "What is the length of the Padma Bridge?" },
+    { "kind": "unrelated", "type": "off", "bn": "ইংরেজি শেখার সহজ উপায় কী?", "q": "What is an easy way to learn English?" },
+    { "kind": "unrelated", "type": "off", "bn": "ডায়াবেটিস হলে কী খাওয়া উচিত?", "q": "What should I eat if I have diabetes?" },
+    { "kind": "unrelated", "type": "off", "bn": "ভাত রান্না করতে কত পানি লাগে?", "q": "Rice cooking how much water needs?" },
+    { "kind": "unrelated", "type": "off", "bn": "মাথা ব্যথা হলে কী করব?", "q": "Head pain if happens what will I do?" },
+    { "kind": "unrelated", "type": "off", "bn": "ঈদের ছুটি কবে থেকে?", "q": "From when is the Eid holiday?" }
+  ]
+}
+```
+
+### Testing results
+```text
+> node chatbot/evaluate.js bangla_questions.json
+Question file: chatbot\data\bangla_questions.json  (63 questions, 0 waiting)
+CHATBOT_SCORE_THRESHOLD = 0.65
+Accuracy (right FAQ entry first): 45/50 (90.0%)
+Lowest "on" score:  0.5996  ← How will I open calculation?
+Highest "off" score: 0.5768  ← From when is the Eid holiday?
+At 0.65: on answered 48/50, off blocked 13/13
+Suggested threshold: 0.59  — midpoint (every on > every off)
+```
+
+| kind | Right entry first | Answered / blocked at 0.65 | Score range |
+| --- | --- | --- | --- |
+| natural (36) | **35/36** | **36/36 answered** | 0.7374 – 0.9272 |
+| literal (14) | 10/14 | 12/14 answered | 0.5996 – 0.8934 |
+| unrelated (13) | — | **13/13 blocked** | 0.4988 – 0.5768 |
+
+**Threshold check (promised in Phase 2):** every natural translation scores at least **0.7374**, and every unrelated Bangla question scores at most **0.5768**. 0.65 sits safely between them, so the threshold stays **0.65**. Only badly mistranslated questions fall under it.
+
+### Every miss and the FAQ entry it should have found
+
+| # | Bangla | Translation searched | Came first (score) | Should have found |
+| --- | --- | --- | --- | --- |
+| 9 | আমি কীভাবে লগইন করব? | How do I log in? *(natural)* | Why can't I log in? … (0.7802) | How do I log in (sign in) to ForenTrace? |
+| 38 | নিখোঁজ মানুষের নাম কীভাবে তুলব? | How will I raise the name of lost man? *(literal)* | What is a family member …? (0.6088, **blocked**) | How do I register (add, report) a missing person? |
+| 45 | হিসাব খুলব কীভাবে? | How will I open calculation? *(literal)* | How does a lab technician analyse …? (0.5996, **blocked**) | How do I sign up for ForenTrace? |
+| 48 | নমুনার অবস্থা কয়টা আছে? | Sample's condition how many are there? *(literal)* | What is a family reference DNA sample? (0.6880) | What do the DNA sample statuses …? |
+| 50 | তদন্ত কর্মকর্তা কী করতে পারেন? | Investigation officer what can do? *(literal)* | How do I create … an investigation case? (0.7507) | What can a police officer do? |
+
+### Suggested FAQ wording changes (question lines only; checked offline first)
+
+Each candidate was simulated one at a time and then together, against **all three** question files (main, holdout, Bangla). The FAQ and Atlas were not touched.
+
+| # | FAQ entry | Change the question line from | To | Fixes |
+| --- | --- | --- | --- | --- |
+| A | Log in | `Q: How do I log in (sign in) to ForenTrace?` | `Q: How do I log in (sign in)? How do I log in to ForenTrace?` | #9 (the only **natural** miss) |
+| B | Register missing person | `Q: How do I register (add, report) a missing person?` | `Q: How do I register (add, report) a missing (lost) person?` | #38 now finds the right entry (0.6412, still blocked) |
+| D | Police officer | `Q: What can a police officer do? …` | `Q: What can a police officer (investigating officer) do? …` | #50 |
+| ~~C~~ | Sample statuses | adding "(sample conditions: …)" | — | Fixed nothing → **dropped** |
+
+**Simulated result with A + B + D:**
+
+| File | Now | With A + B + D |
+| --- | --- | --- |
+| Main (`eval_questions.json`) | 10/10 | 10/10 (highest off 0.5926 → 0.5890) |
+| Holdout | 85/91 | 85/91 (lowest on 0.6078 → 0.6115, still separated from highest off 0.5971) |
+| Bangla | 45/50 | **48/50** (natural 36/36 right entry first) |
+| Answered / blocked at 0.65 | unchanged | unchanged: the same 2 literal + 2 holdout typos blocked, every off blocked |
+
+**No wording can fix:**
+- **#45 "open calculation":** the translator picked the wrong meaning of হিসাব. The English text has nothing to do with accounts. Member 2's translator (Gemini) should translate "account" correctly in context. If it doesn't, that's a translation-prompt fix for Member 2, not an FAQ fix.
+- **#48 "Sample's condition":** after the changes, it still lands on a related sample entry (0.6880, answered), so Gemini sees sample text and can still answer.
+
+### What you (Member 1) do for this step
+Your plan: "Only apply FAQ changes if the agent reports failures." There is **one natural failure** (#9, login), so change **A is recommended**. B and D only help clumsy translations. They're safe (no score drops anywhere), but optional.
+- Say **"apply A, B and D"** (or just "apply A"), and the agent applies them the same way as Phase 2b/5b and re-runs steps 1, 2, 5 and 6.
+- Or say **proceed** to leave the FAQ as it is and go to Phase 7.
+
+### Known gaps / notes
+- These are **my** translations of what a translator would produce. The real test of Member 2's `translate.js` is the end-to-end test (step 9), which sends the Bangla text itself.
+- The `bn` text is for reference only. The embedding model is English-only, so searching the Bangla directly would not work. That's why Member 2 translates first.
+
+---
+
+## Phase 6b — Bangla wording changes A, B, D applied; teach test made network-safe
+
+### Goal
+Apply the 3 question-line changes from Phase 6 (A fixes the only natural Bangla miss, and B and D fix clumsy translations), re-ingest, and re-run steps 1, 2, 5 and 6 plus the teach test.
+
+### Files changed
+
+| File | Type | Change |
+| --- | --- | --- |
+| `backend/chatbot/data/forentrace_faq_source.txt` | Modified | Question lines A, B, D (answers unchanged) |
+| `backend/chatbot/data/forentrace_faq.docx` / `.pdf` | Modified | Rebuilt Word file; PDF exported by Word (text identical to the source) |
+| `backend/chatbot/data/holdout_questions.json` (7), `bangla_questions.json` (5) | Modified | `expect` texts updated to the new question lines |
+| `backend/chatbot/teachTest.js` | Modified | `waitForIndexSync()` retries after a network error instead of failing the restore |
+| `C:\Users\MSI\Desktop\forentrace_faq_v2.pdf` / `.docx` | Outside the repo | Rebuilt again = current FAQ + delete Q&A |
+
+### The 3 changes (diff of `forentrace_faq_source.txt`)
+```diff
+-Q: What can a police officer do? What are a police officer's permissions (duties, tasks)?
++Q: What can a police officer (investigating officer) do? What are a police officer's permissions (duties, tasks)?
+-Q: How do I log in (sign in) to ForenTrace?
++Q: How do I log in (sign in)? How do I log in to ForenTrace?
+-Q: How do I register (add, report) a missing person?
++Q: How do I register (add, report) a missing (lost) person?
+```
+
+### `expect` changes in the question files
+```diff
+-"expect": "How do I log in (sign in) to ForenTrace"
++"expect": "How do I log in (sign in)? How do I log in to ForenTrace"
+-"expect": "How do I register (add, report) a missing person"
++"expect": "How do I register (add, report) a missing (lost) person"
+-"expect": "What can a police officer do"
++"expect": "What can a police officer (investigating officer) do"
+```
+
+### Testing results (real Atlas, after re-ingest)
+
+| Check | Before Phase 6b | After |
+| --- | --- | --- |
+| Pre-flight | 5/5 | 5/5 ✅ |
+| Step 1: `checkChunks.js` | 0 problems | 0 problems ✅ |
+| Step 2: main | 10/10 (highest off 0.5926) | 10/10 (highest off 0.5890) ✅ |
+| Step 2: holdout | 85/91 | 85/91 (lowest on 0.6078 → 0.6115; highest off 0.5971) ✅ |
+| Step 5: `checkFaq.js` | 0 problems | 0 problems ✅ |
+| Step 6: Bangla | 45/50 | **48/50** — natural **36/36** right entry first ✅ |
+| Answered / blocked at 0.65 | Bangla on 48/50, off 13/13 | the same ✅ |
+| Step 4: teach test | pass | pass ✅ (after the fix below) |
+
+Every number is what the offline simulation in Phase 6 predicted. The 2 Bangla misses left are the ones wording can't fix: "open calculation" (হিসাব mistranslated) and "Sample's condition" (still lands on a related sample entry and is answered).
+
+### Teach test: a network timeout during restore (and the fix)
+The first teach test run after this change failed at step 4:
+```text
+❌ 4. Original FAQ restored — connect ETIMEDOUT 159.41.242.109:27017 — backup kept at …\forentrace_faq.backup.pdf
+✅ 5. Pre-flight after restore — all checks passed
+```
+The PDF had already been restored (sha256 identical) and the ingest ran. Then **one** Atlas connection timed out while waiting for the index, so the step was reported as failed and the backup was kept, as designed. Before cleaning up, the state was checked: Atlas had 37 chunks, no delete-case chunk, the new login line present, and the backup was identical to the current PDF. Only then was the backup deleted by hand.
+
+**Fix (code diff, `teachTest.js`):**
+```diff
++// Network ekbar timeout dileo (ETIMEDOUT) thami na — porer attempt e abar try
+ async function waitForIndexSync() {
+-  const col = await getCollection();
+-  const expected = await col.countDocuments();
++  let lastError = null;
+   for (let attempt = 1; attempt <= SYNC_TRIES; attempt++) {
+-    const found = (await searchTop('index sync check', 100)).length;
+-    if (found === expected) { … return; }
+-    console.log(`   …waiting for vector_index to sync (…)`);
++    try {
++      const col = await getCollection();
++      const expected = await col.countDocuments();
++      const found = (await searchTop('index sync check', 100)).length;
++      if (found === expected) { … return; }
++      console.log(`   …waiting for vector_index to sync (…)`);
++    } catch (err) {
++      lastError = err;
++      console.log(`   …Atlas not reachable (${err.message}), retrying`);
++    }
+     await sleep(SYNC_WAIT_MS);
+   }
+-  throw new Error('vector_index did not sync within ~150s');
++  throw new Error(`vector_index did not sync within ~150s${lastError ? ` (last error: ${lastError.message})` : ''}`);
+ }
+```
+A single timeout is now retried 5 s later (up to ~150 s in total). `mongoClient.js` already drops a failed connection so the next `getCollection()` reconnects. The Phase 4 code block above shows the updated function.
+
+**Re-run after the fix:**
+```text
+✅ 1. Before: main question blocked — "Can I delete a case?" 0.6445 → blocked
+✅ 3. After: new entry first and answered — "Can I delete a case?" 0.8265; 4/4 wordings answered by the new entry
+✅ 4. Original FAQ restored — PDF identical, 37 chunks re-ingested, backup removed
+✅ 5. Pre-flight after restore — all checks passed
+```
+The timeout didn't happen again in this run, so the new retry branch hasn't actually been triggered yet. It will only show up if Atlas times out again.
+
+### Known gaps / notes
+- Tell Member 2 you re-ingested again (3 question lines changed).
+- **For Member 2 (translate.js):** make sure the translation prompt says the text is about a software system (accounts, cases, samples). Otherwise হিসাব may become "calculation" and পাকা may become "ripe", and those questions miss or get blocked.

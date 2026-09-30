@@ -7,7 +7,7 @@ Q: What user roles (user types, account types) are there in ForenTrace? Who uses
 A: There are three roles: Admin, Officer (Police Officer) and Lab Technician. The Admin manages users, police stations, officers, DNA labs and technicians and can see all data. Officers manage missing persons, investigation cases and DNA samples for their assigned cases. Lab Technicians analyse the DNA samples of their own laboratory.
 Q: What can an Admin (administrator) do?
 A: The Admin can see all records and manages Police Stations, Police Officers, DNA Labs, Lab Technicians and Users & Accounts. The Admin approves, activates or deactivates user accounts and can confirm or reject DNA matches. The Admin account is predefined and cannot be registered.
-Q: What can a police officer do? What are a police officer's permissions (duties, tasks)?
+Q: What can a police officer (investigating officer) do? What are a police officer's permissions (duties, tasks)?
 A: An Officer registers missing persons, creates investigation cases, adds family members and registers DNA samples. Officers can only manage DNA samples and family DNA for their own assigned cases. Officers can also run DNA comparisons and confirm or reject DNA matches.
 Q: What does a lab technician (lab tech) do in ForenTrace? What are a lab technician's permissions (duties, tasks)?
 A: A Lab Technician sees the DNA samples assigned to their own laboratory. They open a sample, click Analyze, and record the analysis status, DNA profile code and laboratory remarks. They can also run DNA comparisons, but they cannot register samples or confirm matches.
@@ -17,7 +17,7 @@ Q: Who creates officer accounts? Who creates (approves) lab technician accounts?
 A: Officers and Lab Technicians create their own accounts through registration on the login page. The Admin then finds the account in Users & Accounts and clicks Activate to approve it. The user can sign in only after this approval. For a Lab Technician, the Admin must also link the account to a technician record in Lab Technicians.
 Q: Why can't a lab technician see or analyse any DNA samples? What does "No technician profile is linked to this account" mean?
 A: A Lab Technician account must be linked to a technician record of a DNA lab. The Admin opens Lab Technicians and clicks + Link User beside the technician to link the login account. After that, the technician sees and analyses the samples of that laboratory.
-Q: How do I log in (sign in) to ForenTrace?
+Q: How do I log in (sign in)? How do I log in to ForenTrace?
 A: Open the login page, enter your registered email address and password, and click Sign in. You are taken to the dashboard for your role. Your account must be active (approved by the Admin) to sign in.
 Q: Why can't I log in? My login failed or my account is not active (pending).
 A: "Invalid email or password" means the email or password is wrong. "Account is not active" means the Admin has not approved your registration yet, or your account was deactivated. Contact the Admin to activate your account.
@@ -25,7 +25,7 @@ Q: How do I change (update, reset) my password?
 A: Any user (Admin, Officer or Lab Technician) can click My Profile at the bottom of the sidebar, then click Change Password. Changing the password is not available yet, so please contact the Admin.
 Q: How do I log out (sign out) of ForenTrace?
 A: Any user (Admin, Officer or Lab Technician) can click Sign out at the bottom of the sidebar. Your session ends and you return to the login page.
-Q: How do I register (add, report) a missing person?
+Q: How do I register (add, report) a missing (lost) person?
 A: Log in as an Officer, open Missing Persons and click Register person. Fill in details such as name, gender, date of birth, missing date, last seen location, city and description, then click Register Missing Person. Only Officers can register missing persons.
 Q: What are the missing person statuses (Missing, Identified)?
 A: A missing person has one of two statuses. Missing means the person has not been found or identified yet. Identified means a DNA match for this person has been confirmed.

@@ -51,19 +51,26 @@ function runIngest(label) {
 }
 
 // Ingest er por index notun chunk dhorte shomoy ney — shob chunk search e asha porjonto wait
+// Network ekbar timeout dileo (ETIMEDOUT) thami na — porer attempt e abar try
 async function waitForIndexSync() {
-  const col = await getCollection();
-  const expected = await col.countDocuments();
+  let lastError = null;
   for (let attempt = 1; attempt <= SYNC_TRIES; attempt++) {
-    const found = (await searchTop('index sync check', 100)).length; // limit 100 ≥ chunk count
-    if (found === expected) {
-      console.log(`   vector_index synced (${found}/${expected} chunks searchable)`);
-      return;
+    try {
+      const col = await getCollection();
+      const expected = await col.countDocuments();
+      const found = (await searchTop('index sync check', 100)).length; // limit 100 ≥ chunk count
+      if (found === expected) {
+        console.log(`   vector_index synced (${found}/${expected} chunks searchable)`);
+        return;
+      }
+      console.log(`   …waiting for vector_index to sync (${found}/${expected} chunks searchable)`);
+    } catch (err) {
+      lastError = err;
+      console.log(`   …Atlas not reachable (${err.message}), retrying`);
     }
-    console.log(`   …waiting for vector_index to sync (${found}/${expected} chunks searchable)`);
     await sleep(SYNC_WAIT_MS);
   }
-  throw new Error('vector_index did not sync within ~150s');
+  throw new Error(`vector_index did not sync within ~150s${lastError ? ` (last error: ${lastError.message})` : ''}`);
 }
 
 // Shob question search kore top result, score, decision table e dekhay
