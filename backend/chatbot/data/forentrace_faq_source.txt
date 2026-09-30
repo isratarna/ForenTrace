@@ -1,0 +1,75 @@
+ForenTrace - Help and Frequently Asked Questions
+About ForenTrace
+ForenTrace is a DNA-based missing person identification system. Police officers register missing persons and investigation cases, DNA laboratories analyse DNA samples, and the system compares DNA profiles to help identify missing persons. This help document explains how to use ForenTrace.
+Q: What is ForenTrace? What does this system (app, website) do?
+A: ForenTrace is a web-based DNA identification system that helps police and forensic DNA laboratories trace missing persons. It keeps missing person reports, investigation cases, family members, DNA samples and DNA matches in one place.
+Q: What user roles (user types, account types) are there in ForenTrace? Who uses ForenTrace?
+A: There are three roles: Admin, Officer (Police Officer) and Lab Technician. The Admin manages users, police stations, officers, DNA labs and technicians and can see all data. Officers manage missing persons, investigation cases and DNA samples for their assigned cases. Lab Technicians analyse the DNA samples of their own laboratory.
+Q: What can an Admin (administrator) do?
+A: The Admin can see all records and manages Police Stations, Police Officers, DNA Labs, Lab Technicians and Users & Accounts. The Admin approves, activates or deactivates user accounts and can confirm or reject DNA matches. The Admin account is predefined and cannot be registered.
+Q: What can a police officer do? What are an officer's permissions?
+A: An Officer registers missing persons, creates investigation cases, adds family members and registers DNA samples. Officers can only manage DNA samples and family DNA for their own assigned cases. Officers can also run DNA comparisons and confirm or reject DNA matches.
+Q: What can a lab technician do? What are a lab technician's permissions (duties, tasks)?
+A: A Lab Technician sees the DNA samples assigned to their own laboratory. They open a sample, click Analyze, and record the analysis status, DNA profile code and laboratory remarks. They can also run DNA comparisons, but they cannot register samples or confirm matches.
+Q: How do I get an account? Can I register (sign up, create an account) myself?
+A: Yes. Police Officers and Lab Technicians register on the login page using "Register as an officer or lab technician" or "Register as Police Officer (Detailed)". A new account stays Pending Approval until the Admin activates it. Admin accounts cannot be registered.
+Q: Who creates officer accounts? Who creates (approves) lab technician accounts?
+A: Officers and Lab Technicians create their own accounts through registration on the login page. The Admin then finds the account in Users & Accounts and clicks Activate to approve it. The user can sign in only after this approval. For a Lab Technician, the Admin must also link the account to a technician record in Lab Technicians.
+Q: Why can't a lab technician see or analyse any DNA samples? What does "No technician profile is linked to this account" mean?
+A: A Lab Technician account must be linked to a technician record of a DNA lab. The Admin opens Lab Technicians and clicks + Link User beside the technician to link the login account. After that, the technician sees and analyses the samples of that laboratory.
+Q: How do I log in (sign in) to ForenTrace?
+A: Open the login page, enter your registered email address and password, and click Sign in. You are taken to the dashboard for your role. Your account must be active (approved by the Admin) to sign in.
+Q: Why can't I log in? My login failed or my account is not active (pending).
+A: "Invalid email or password" means the email or password is wrong. "Account is not active" means the Admin has not approved your registration yet, or your account was deactivated. Contact the Admin to activate your account.
+Q: How do I change (update, reset) my password?
+A: Click My Profile at the bottom of the sidebar, then click Change Password. Enter your current password and your new password, then click Save.
+Q: How do I log out (sign out)?
+A: Click Sign out at the bottom of the sidebar. Your session ends and you return to the login page.
+Q: How do I register (add, report) a missing person?
+A: Log in as an Officer, open Missing Persons and click Register person. Fill in details such as name, gender, date of birth, missing date, last seen location, city and description, then click Register Missing Person. Only Officers can register missing persons.
+Q: What are the missing person statuses (Missing, Identified)?
+A: A missing person has one of two statuses. Missing means the person has not been found or identified yet. Identified means a DNA match for this person has been confirmed.
+Q: What does the Identified status mean? When does a person become Identified?
+A: Identified means the missing person has been identified through a confirmed DNA match. When an Admin or Officer confirms a DNA match, the system automatically changes the person's status from Missing to Identified.
+Q: How do I create (open, register) an investigation case?
+A: Log in as an Officer, open Investigation Cases and click Create Case. Select the missing person, police station and investigating officer, set the report date, case status and priority, then click Save Case. Each case links one missing person report to a police station and an officer.
+Q: What do the case statuses (Active, Pending, Solved) and case priorities mean?
+A: Active means the investigation is in progress. Pending means the case is waiting for evidence or action. Solved means the investigation is closed, usually after the person is identified. Priority can be High, Medium or Low.
+Q: What is a family member in ForenTrace? How do I add (register) a family member (relative)?
+A: A family member is a relative of a missing person, such as a father, mother, brother, sister, daughter or spouse. Open Family Members, click + Add Family Member, select the missing person, enter the name, relationship and phone, then click Save Family Member. Admins and Officers can manage family members.
+Q: What is a family reference DNA sample (reference sample)?
+A: A family reference sample is a DNA sample given by a close relative of a missing person. Because relatives share DNA, it is compared with unknown or evidence samples to find a possible match and identify the missing person.
+Q: How do I register a family reference DNA sample for a family member?
+A: Open Family Members and click Register DNA beside the family member. Choose the DNA lab, sample type and collection date, and optionally a technician and storage location, then click Confirm & Register DNA Sample. You can also use Register DNA Sample and choose the person in the Family Member (reference sample) field.
+Q: How do I register (add, create, collect) a DNA sample?
+A: Go to DNA Samples and click Register DNA Sample. Select the missing person, a family member only if it is a reference sample, the DNA lab, an optional technician, the sample type, collection date and storage location, then click Save DNA Sample. Only Admins and Officers can register DNA samples.
+Q: What DNA sample types can be registered?
+A: ForenTrace supports these sample types: Buccal Swab, Blood Sample, Hair Strand, Bone Sample, Tissue Sample and Personal Belonging.
+Q: What do the DNA sample statuses (Awaiting Analysis, In Analysis, Analyzed, Rejected) mean?
+A: Awaiting Analysis means the sample is registered and waiting in the laboratory queue. In Analysis means a technician is processing it. Analyzed means the DNA profile code has been recorded. Rejected means the sample was unusable.
+Q: How does a lab technician analyse (process, test) a DNA sample? What is the lab analysis workflow?
+A: The technician opens DNA Samples, which shows only their laboratory's samples, and clicks Analyze on a sample. On the Analyze Sample page they set the status to In Analysis, Analyzed or Rejected, enter the DNA profile code and laboratory remarks, then click Save Analysis. The DNA profile code is required when the status is Analyzed.
+Q: What is a DNA profile code?
+A: A DNA profile code is the result of the laboratory analysis, stored as 6 to 50 letters, numbers or hyphens. The system compares these codes to measure how similar two samples are. Only Analyzed samples have a profile code and can be compared.
+Q: How does DNA matching (DNA comparison) work in ForenTrace?
+A: Open DNA Matches and click New Comparison, or click Compare on an analyzed evidence sample. Select an Unknown / Evidence Sample and a Matched / Reference Sample, then click Run Comparison. The system compares the two DNA profile codes position by position and shows the similarity percentage and confidence level. Click Save Match to record the result.
+Q: What is the similarity percentage of a DNA match? How is it calculated?
+A: The similarity percentage is the number of positions where the two DNA profile codes are the same, divided by the length of the longer code, times 100. For example, codes that are the same in 7 of 8 positions give 87.5%. Admins and Officers can also enter a similarity percentage manually.
+Q: What is the confidence level (High, Medium, Low) of a DNA match?
+A: The confidence level is based on the similarity percentage. 90% or more is High, 80% up to 90% is Medium, and below 80% is Low.
+Q: What do the DNA match statuses (Pending Review, Confirmed, Rejected) mean? How do I confirm or reject a match?
+A: A new match starts as Pending Review. An Admin or Officer opens the match in DNA Matches and clicks Confirm Match or Reject Match. Lab Technicians can create comparisons but cannot confirm or reject matches.
+Q: What happens after (when) a DNA match is confirmed?
+A: When a match status becomes Confirmed, a database trigger automatically changes the status of the missing person linked to the reference sample to Identified. No manual status change is needed. Rejecting a match does not change the person's status.
+Q: What does the dashboard show? What is on my dashboard?
+A: Each role has its own dashboard. The Admin Dashboard shows system-wide statistics such as solved and pending cases, samples awaiting analysis, police stations and DNA labs. The Officer dashboard shows active cases, pending cases, samples awaiting results and new DNA matches, and the Lab Technician dashboard shows samples awaiting analysis, analyzed samples and DNA matches.
+Q: What reports are available? How do I export (download) a report?
+A: Open Reports to see solved and total cases per police station and the average identification time, and click Export Report (CSV) to download a CSV file. The DNA Sample Report shows whether each sample is Matched or Awaiting Match, and the Labs Intersection report lists labs with above-average technician capacity and active technicians. Admins and Lab Technicians can also open DNA Analytics.
+Q: How does the Admin manage police stations, police officers, DNA labs and lab technicians?
+A: The Admin uses the sidebar pages Police Stations, Police Officers, DNA Labs and Lab Technicians. Each page has an Add button, and each record can be viewed, edited or deleted. Users & Accounts is used to edit, activate or deactivate login accounts.
+Q: Is my data secure? How does ForenTrace protect data (privacy, security, access control)?
+A: Every user must sign in, and each role can only open the pages and records allowed for that role. Officers only manage their assigned cases, and Lab Technicians only see their own laboratory's samples. Passwords are stored in hashed (encrypted) form, never as plain text.
+Q: Can the assistant (chatbot) tell me about a specific case, person or DNA result? Can it show private data?
+A: No. For privacy, the ForenTrace assistant only explains how the system works and cannot see any case, missing person or DNA data. It never shares names, DNA profile codes or match results. Please log in and open the relevant page to see the records you are allowed to access.
+Q: What can the ForenTrace assistant (chatbot, help bot) answer?
+A: The assistant only answers questions about using ForenTrace, such as roles, accounts, missing persons, cases, family members, DNA samples, lab analysis and DNA matching. For anything else, please ask your Admin or supervisor.
