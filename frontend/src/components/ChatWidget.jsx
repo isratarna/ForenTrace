@@ -6,7 +6,7 @@ import './ChatWidget.css'
 const INITIAL_GREETING = {
   id: 'greeting',
   role: 'assistant',
-  text: "Hi! Ask me anything about how ForenTrace works, or try a suggestion below.",
+  text: "Hello! I'm the ForenTrace Assistant. I can answer questions about ForenTrace, cases, DNA samples, DNA matching, laboratories, and accounts. Ask me anything about using the system.",
   isGreeting: true,
 }
 
@@ -37,14 +37,28 @@ export default function ChatWidget() {
   const [messages, setMessages] = useState([INITIAL_GREETING])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  // Suggested question — prothom proshner por nije lukay, Clear chat e abar ashe; Hide/Show diyeo kora jay
-  const [showSuggestions, setShowSuggestions] = useState(true)
+  const [showSuggestions, setShowSuggestions] = useState(true) // suggested question gula lukano / dekhano
   const [isMaximized, setIsMaximized] = useState(false) // boro kore dekhano (prai pura screen)
-  const [size, setSize] = useState(null) // user drag kore je size dilo { w, h } — null hole default 400x560
+  const [size, setSize] = useState(null) // user drag kore je size dilo { w, h } — null hole default 380x560
   const [isResizing, setIsResizing] = useState(false)
   const listRef = useRef(null)
   const textareaRef = useRef(null)
   const panelRef = useRef(null)
+  const chipsRef = useRef(null)
+
+  // Mouse er chaka (upor-niche) ghurale suggestion chip gula pashe scroll hoy.
+  // passive: false lage, noile preventDefault kaj kore na (pichoner page scroll hoye jeto).
+  useEffect(() => {
+    const row = chipsRef.current
+    if (!row) return
+    const onWheel = (e) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
+      e.preventDefault()
+      row.scrollLeft += e.deltaY
+    }
+    row.addEventListener('wheel', onWheel, { passive: false })
+    return () => row.removeEventListener('wheel', onWheel)
+  }, [isOpen, showSuggestions])
 
   // Panel niche-dane atkano, tai upor-bam kona tene boro/choto kora hoy.
   // Mouse jotota bame/upore jay, width/height totota bare.
@@ -87,7 +101,6 @@ export default function ChatWidget() {
   const clearChat = () => {
     setMessages([INITIAL_GREETING])
     setInput('')
-    setShowSuggestions(true)
   }
 
   const sendQuestion = async (rawQuestion) => {
@@ -110,7 +123,6 @@ export default function ChatWidget() {
     const userMsg = { id: `user-${Date.now()}`, role: 'user', text: trimmed }
     setMessages((prev) => [...prev, userMsg])
     setInput('')
-    setShowSuggestions(false)
     setIsLoading(true)
 
     try {
@@ -182,7 +194,7 @@ export default function ChatWidget() {
           aria-label="Open ForenTrace Assistant"
           onClick={() => setIsOpen(true)}
         >
-          <span className="ft-chat-launcher-icon" aria-hidden="true">?</span>
+          <span className="ft-chat-launcher-icon" aria-hidden="true"><DnaHelix rungs={3} /></span>
           <span className="ft-chat-launcher-text">Help</span>
         </button>
       )}
@@ -205,7 +217,7 @@ export default function ChatWidget() {
           <div className="ft-chat-header">
             <span className="ft-chat-avatar"><DnaHelix rungs={4} /></span>
             <div className="ft-chat-header-text">
-              <h2 className="ft-chat-title">ForenTrace Assistant</h2>
+              <h2 className="ft-chat-title">ForenTrace Assistant <span className="live-dot" aria-hidden="true" /></h2>
               <p className="ft-chat-subtitle">Ask about using ForenTrace.</p>
             </div>
             <button
@@ -269,35 +281,22 @@ export default function ChatWidget() {
           </div>
 
           <div className="ft-chat-footer">
-          <div className="ft-chat-suggestions">
-            <div className="ft-chat-suggestions-bar">
-              <span className="ft-chat-suggestions-label">Suggested questions</span>
-              <button
-                type="button"
-                className="ft-chat-suggestions-toggle"
-                aria-expanded={showSuggestions}
-                aria-controls="ft-chat-chip-list"
-                onClick={() => setShowSuggestions((v) => !v)}
-              >
-                {showSuggestions ? 'Hide ▾' : 'Show ▸'}
-              </button>
+          {/* Suggested question — shudhu 💡 button on thakle dekhay */}
+          {showSuggestions && (
+            <div id="ft-chat-chip-list" ref={chipsRef} className="ft-chat-suggestions" aria-label="Suggested questions">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className="ft-chat-chip"
+                  onClick={() => handleSuggestion(s)}
+                  disabled={isLoading}
+                >
+                  {s}
+                </button>
+              ))}
             </div>
-            {showSuggestions && (
-              <div id="ft-chat-chip-list" className="ft-chat-chip-list">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    className="ft-chat-chip"
-                    onClick={() => handleSuggestion(s)}
-                    disabled={isLoading}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          )}
 
           <form className="ft-chat-input-area" onSubmit={handleSubmit}>
             <label htmlFor="ft-chat-input" className="visually-hidden">
@@ -321,6 +320,18 @@ export default function ChatWidget() {
                 {charCount}/{MAX_LEN}
               </span>
               <div className="ft-chat-actions">
+                {/* 💡 — suggested question dekhano / lukano */}
+                <button
+                  type="button"
+                  className={`ft-chat-suggest-toggle${showSuggestions ? ' is-active' : ''}`}
+                  onClick={() => setShowSuggestions((v) => !v)}
+                  aria-pressed={showSuggestions}
+                  aria-controls="ft-chat-chip-list"
+                  aria-label={showSuggestions ? 'Hide suggested questions' : 'Show suggested questions'}
+                  title="Suggested questions"
+                >
+                  💡
+                </button>
                 <button
                   type="button"
                   className="ft-chat-clear"

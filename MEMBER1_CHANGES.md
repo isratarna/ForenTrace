@@ -9209,7 +9209,7 @@ The chatbot widget (`ChatWidget`) came in with its own **light** theme (white pa
 | File | What changed |
 |---|---|
 | `frontend/src/components/ChatWidget.css` | Every colour now from `--ft-*` variables; livelier header / bubbles; separate footer band; suggestion toggle, maximize and resize styles |
-| `frontend/src/components/ChatWidget.jsx` | DNA helix avatar in the header, Hide / Show button for suggested questions, maximize button, drag-to-resize handle. **Chat logic (send, errors, sources) unchanged** |
+| `frontend/src/components/ChatWidget.jsx` | DNA helix avatar + live dot in the header, helix icon in the launcher, 💡 suggestion toggle, mouse-wheel horizontal scroll for chips, maximize button, drag-to-resize handle. **Chat logic (send, errors, sources) unchanged** |
 | `frontend/src/index.css` | `.back-to-top` `bottom: 1.5rem` → `5.25rem`; `color-scheme: dark` on `:root`; dark `option, optgroup`; dark autofill |
 | `frontend/src/components/FamilyMembersManager.jsx` | Form card headers, buttons, relationship badge, "Register DNA" button |
 | `frontend/src/pages/DnaLabsPage.jsx` | Wrapper, cards, form header, table head, badges, text colours |
@@ -9241,7 +9241,7 @@ Feedback: after the dark conversion the bot looked **dull**, the suggested quest
 | Livelier header | DNA helix avatar (`DnaHelix` from `DnaEffects.jsx`, same as the sidebar logo) + faint teal glow top-left |
 | Assistant bubbles stand out | A bit lighter (`rgba(255,255,255,0.06)`) + thin teal left edge (like the sidebar's active link); typing dots teal |
 | Chat space vs suggestions | Suggestions + input sit in a separate darker **footer band** (`.ft-chat-footer`) with a stronger top border; chips are teal (clearly clickable, not messages) |
-| Suggestions take less space | "SUGGESTED QUESTIONS" label + **Hide ▾ / Show ▸** button (`showSuggestions` state). Chips smaller, wrap into 2 rows |
+| Suggestions take less space | One **horizontal scrolling row** (mouse wheel scrolls it sideways; right edge fades out so you can tell there is more). Shown / hidden with the **💡 button** next to Clear chat (`showSuggestions` state). No label bar — when hidden, the chip area disappears completely. Chips smaller. (A "SUGGESTED QUESTIONS · Hide ▾ / Show ▸" bar was tried first, then removed on request since the 💡 button does the same) |
 | Maximize | Header button toggles `.ft-chat-panel-max` → `min(960px, 100vw − 44px)` × `100vh − 44px`. Icon switches between expand / shrink corners |
 | Resize | Grip at the **top-left** corner (panel is anchored bottom-right, so that corner moves). `pointerdown` → track the mouse on `window` → new size = start size + how far the mouse moved left / up. Clamped to min 320 × 380, max screen − 44px. Size is passed as CSS variables (`--ft-chat-w`, `--ft-chat-h`), so the mobile media query can still force full screen |
 | Mobile (≤ 480px) | Panel already full screen → grip and maximize button hidden |
@@ -9251,10 +9251,22 @@ Feedback: after the dark conversion the bot looked **dull**, the suggested quest
 
 | From `aaafb90` | Result |
 |---|---|
-| Suggestions auto-hide after the first question, come back on "Clear chat" | **Kept** — works together with the Hide / Show button |
-| Shorter greeting ("Hi! Ask me anything about how ForenTrace works, or try a suggestion below.") | **Kept** |
-| Shorter small-talk reply in `backend/chatbot/smallTalk.js` | **Kept** (no conflict) |
-| 💡 toggle button next to Clear chat + `.ft-chat-suggest-toggle` CSS (old white / navy colours) | **Removed** — same job as the Hide / Show button, and it was light-themed |
+| Suggestions auto-hide after the first question, come back on "Clear chat" | **Not kept** — Member 1's version kept; suggestions only hide with the 💡 button |
+| Shorter greeting ("Hi! Ask me anything about how ForenTrace works, or try a suggestion below.") | **Not kept** — original greeting kept |
+| Shorter small-talk reply in `backend/chatbot/smallTalk.js` | **Kept** (backend, no conflict) |
+| 💡 toggle button next to Clear chat + `.ft-chat-suggest-toggle` CSS (old white / navy colours) | **Kept, restyled dark** — grey when suggestions are hidden, teal + lit when shown. Now the **only** suggestion toggle (the Hide / Show bar was removed) |
+
+**Live elements + transitions** (feedback: "still looks dull"). All in `ChatWidget.css`; the `prefers-reduced-motion` rule in `index.css` switches them off for users who turn motion off:
+
+| Element | Effect |
+|---|---|
+| Launcher | DNA helix icon instead of "?", soft teal pulse ring around the button |
+| Panel open | Pops in from the bottom-right corner (fade + small scale) |
+| Header | Pulsing live dot after the title (`.live-dot` from `index.css`); teal glow slowly drifts |
+| Messages | New message fades up; user message slides in from the right |
+| Suggestion chips | Slide in one after another when shown; lift on hover |
+| Buttons (Send, Clear, 💡, maximize, close) | Lift on hover, press-down on click |
+| 💡 turned on | Small "light up" pop + teal ripple |
 
 Tested with the real `ChatWidget` bundled into a scratch page (headless Edge, script clicks launcher / maximize / drags the grip): default **400×560**, maximized **960×(screen − 44)**, dragged 200px left → width grew by 200 + grab offset, height stopped at the screen limit; Hide collapses the chips to the one-line label.
 
@@ -9264,20 +9276,28 @@ Tested with the real `ChatWidget` bundled into a scratch page (headless Edge, sc
 
 ```diff
 diff --git a/frontend/src/components/ChatWidget.jsx b/frontend/src/components/ChatWidget.jsx
-index 23d564e..4c66eb8 100644
+index f404f52..32e96a1 100644
 --- a/frontend/src/components/ChatWidget.jsx
 +++ b/frontend/src/components/ChatWidget.jsx
-@@ -1,5 +1,6 @@
+@@ -1,11 +1,12 @@
  import { useEffect, useRef, useState } from 'react'
  import { askChatbot } from '../services/chatbotService'
 +import { DnaHelix } from './DnaEffects' // sidebar logo er same DNA icon, header e
  import './ChatWidget.css'
  
  const INITIAL_GREETING = {
-@@ -36,8 +37,37 @@ export default function ChatWidget() {
+   id: 'greeting',
+   role: 'assistant',
+-  text: "Hi! Ask me anything about how ForenTrace works, or try a suggestion below.",
++  text: "Hello! I'm the ForenTrace Assistant. I can answer questions about ForenTrace, cases, DNA samples, DNA matching, laboratories, and accounts. Ask me anything about using the system.",
+   isGreeting: true,
+ }
+ 
+@@ -36,9 +37,52 @@ export default function ChatWidget() {
    const [messages, setMessages] = useState([INITIAL_GREETING])
    const [input, setInput] = useState('')
    const [isLoading, setIsLoading] = useState(false)
+-  const [showSuggestions, setShowSuggestions] = useState(true)
 +  const [showSuggestions, setShowSuggestions] = useState(true) // suggested question gula lukano / dekhano
 +  const [isMaximized, setIsMaximized] = useState(false) // boro kore dekhano (prai pura screen)
 +  const [size, setSize] = useState(null) // user drag kore je size dilo { w, h } — null hole default 380x560
@@ -9285,6 +9305,21 @@ index 23d564e..4c66eb8 100644
    const listRef = useRef(null)
    const textareaRef = useRef(null)
 +  const panelRef = useRef(null)
++  const chipsRef = useRef(null)
++
++  // Mouse er chaka (upor-niche) ghurale suggestion chip gula pashe scroll hoy.
++  // passive: false lage, noile preventDefault kaj kore na (pichoner page scroll hoye jeto).
++  useEffect(() => {
++    const row = chipsRef.current
++    if (!row) return
++    const onWheel = (e) => {
++      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
++      e.preventDefault()
++      row.scrollLeft += e.deltaY
++    }
++    row.addEventListener('wheel', onWheel, { passive: false })
++    return () => row.removeEventListener('wheel', onWheel)
++  }, [isOpen, showSuggestions])
 +
 +  // Panel niche-dane atkano, tai upor-bam kona tene boro/choto kora hoy.
 +  // Mouse jotota bame/upore jay, width/height totota bare.
@@ -9312,7 +9347,30 @@ index 23d564e..4c66eb8 100644
  
    // Auto-scroll to newest message
    useEffect(() => {
-@@ -155,15 +185,42 @@ export default function ChatWidget() {
+@@ -57,7 +101,6 @@ export default function ChatWidget() {
+   const clearChat = () => {
+     setMessages([INITIAL_GREETING])
+     setInput('')
+-    setShowSuggestions(true)
+   }
+ 
+   const sendQuestion = async (rawQuestion) => {
+@@ -80,7 +123,6 @@ export default function ChatWidget() {
+     const userMsg = { id: `user-${Date.now()}`, role: 'user', text: trimmed }
+     setMessages((prev) => [...prev, userMsg])
+     setInput('')
+-    setShowSuggestions(false)
+     setIsLoading(true)
+ 
+     try {
+@@ -152,21 +194,48 @@ export default function ChatWidget() {
+           aria-label="Open ForenTrace Assistant"
+           onClick={() => setIsOpen(true)}
+         >
+-          <span className="ft-chat-launcher-icon" aria-hidden="true">?</span>
++          <span className="ft-chat-launcher-icon" aria-hidden="true"><DnaHelix rungs={3} /></span>
+           <span className="ft-chat-launcher-text">Help</span>
+         </button>
        )}
  
        {isOpen && (
@@ -9334,8 +9392,9 @@ index 23d564e..4c66eb8 100644
            <div className="ft-chat-header">
 +            <span className="ft-chat-avatar"><DnaHelix rungs={4} /></span>
              <div className="ft-chat-header-text">
-               <h2 className="ft-chat-title">ForenTrace Assistant</h2>
+-              <h2 className="ft-chat-title">ForenTrace Assistant</h2>
 -              <p className="ft-chat-subtitle">Ask questions about the ForenTrace system.</p>
++              <h2 className="ft-chat-title">ForenTrace Assistant <span className="live-dot" aria-hidden="true" /></h2>
 +              <p className="ft-chat-subtitle">Ask about using ForenTrace.</p>
              </div>
              <button
@@ -9358,51 +9417,33 @@ index 23d564e..4c66eb8 100644
                aria-label="Close chat"
                title="Close chat"
                onClick={() => setIsOpen(false)}
-@@ -208,18 +265,35 @@ export default function ChatWidget() {
+@@ -211,8 +280,10 @@ export default function ChatWidget() {
              )}
            </div>
  
--          <div className="ft-chat-suggestions" aria-label="Suggested questions">
--            {SUGGESTIONS.map((s) => (
 +          <div className="ft-chat-footer">
-+          <div className="ft-chat-suggestions">
-+            <div className="ft-chat-suggestions-bar">
-+              <span className="ft-chat-suggestions-label">Suggested questions</span>
-               <button
--                key={s}
-                 type="button"
--                className="ft-chat-chip"
--                onClick={() => handleSuggestion(s)}
--                disabled={isLoading}
-+                className="ft-chat-suggestions-toggle"
-+                aria-expanded={showSuggestions}
-+                aria-controls="ft-chat-chip-list"
-+                onClick={() => setShowSuggestions((v) => !v)}
-               >
--                {s}
-+                {showSuggestions ? 'Hide ▾' : 'Show ▸'}
-               </button>
--            ))}
-+            </div>
-+            {showSuggestions && (
-+              <div id="ft-chat-chip-list" className="ft-chat-chip-list">
-+                {SUGGESTIONS.map((s) => (
-+                  <button
-+                    key={s}
-+                    type="button"
-+                    className="ft-chat-chip"
-+                    onClick={() => handleSuggestion(s)}
-+                    disabled={isLoading}
-+                  >
-+                    {s}
-+                  </button>
-+                ))}
-+              </div>
-+            )}
-           </div>
- 
-           <form className="ft-chat-input-area" onSubmit={handleSubmit}>
-@@ -258,6 +332,7 @@ export default function ChatWidget() {
++          {/* Suggested question — shudhu 💡 button on thakle dekhay */}
+           {showSuggestions && (
+-            <div className="ft-chat-suggestions" aria-label="Suggested questions">
++            <div id="ft-chat-chip-list" ref={chipsRef} className="ft-chat-suggestions" aria-label="Suggested questions">
+               {SUGGESTIONS.map((s) => (
+                 <button
+                   key={s}
+@@ -249,11 +320,13 @@ export default function ChatWidget() {
+                 {charCount}/{MAX_LEN}
+               </span>
+               <div className="ft-chat-actions">
++                {/* 💡 — suggested question dekhano / lukano */}
+                 <button
+                   type="button"
+                   className={`ft-chat-suggest-toggle${showSuggestions ? ' is-active' : ''}`}
+                   onClick={() => setShowSuggestions((v) => !v)}
+                   aria-pressed={showSuggestions}
++                  aria-controls="ft-chat-chip-list"
+                   aria-label={showSuggestions ? 'Hide suggested questions' : 'Show suggested questions'}
+                   title="Suggested questions"
+                 >
+@@ -273,6 +346,7 @@ export default function ChatWidget() {
                </div>
              </div>
            </form>
@@ -9416,7 +9457,7 @@ index 23d564e..4c66eb8 100644
 
 ```diff
 diff --git a/frontend/src/components/ChatWidget.css b/frontend/src/components/ChatWidget.css
-index 6479d5e..d4b565a 100644
+index 4d6a495..aa9e103 100644
 --- a/frontend/src/components/ChatWidget.css
 +++ b/frontend/src/components/ChatWidget.css
 @@ -1,4 +1,4 @@
@@ -9696,62 +9737,37 @@ index 6479d5e..d4b565a 100644
    animation: ft-bounce 1.2s infinite ease-in-out both;
  }
  .ft-chat-dot:nth-child(1) { animation-delay: -0.32s; }
-@@ -213,44 +282,82 @@
+@@ -213,44 +282,55 @@
    40% { transform: scale(1); opacity: 1; }
  }
  
+-/* Suggestions */
 +/* Footer (suggestion + input) — chat er jayga theke alada, ektu gadho band */
 +.ft-chat-footer {
 +  background: rgba(0, 0, 0, 0.28);
 +  border-top: 1px solid var(--ft-border-hover);
 +}
 +
- /* Suggestions */
++/* Suggestions — ek line e, pashe scroll (mouse chaka diyeo). Dane halka fade = aro ache bojhay */
  .ft-chat-suggestions {
-+  padding: 0.5rem 0.9rem 0.55rem;
-+}
-+.ft-chat-suggestions-bar {
-+  display: flex;
-+  align-items: center;
-+  justify-content: space-between;
-+}
-+.ft-chat-suggestions-label {
-+  font-size: 0.66rem;
-+  font-weight: 600;
-+  letter-spacing: 0.1em;
-+  text-transform: uppercase;
-+  color: var(--ft-muted);
-+}
-+.ft-chat-suggestions-toggle {
-+  padding: 0.1rem 0.45rem;
-+  border: 1px solid transparent;
-+  border-radius: 6px;
-+  background: transparent;
-+  color: var(--ft-teal-light);
-+  font-size: 0.72rem;
-+  font-weight: 600;
-+  cursor: pointer;
-+}
-+.ft-chat-suggestions-toggle:hover {
-+  background: var(--ft-teal-soft);
-+}
-+.ft-chat-suggestions-toggle:focus-visible {
-+  outline: 2px solid var(--ft-teal-light);
-+  outline-offset: 2px;
-+}
-+.ft-chat-chip-list {
    display: flex;
-   flex-wrap: wrap;
--  gap: 0.4rem;
+-  flex-wrap: wrap;
+   gap: 0.4rem;
 -  padding: 0.6rem 0.9rem 0.2rem;
 -  background: #fff;
 -  border-top: 1px solid #e8eef3;
-+  gap: 0.35rem;
-+  margin-top: 0.45rem;
++  overflow-x: auto;
++  scrollbar-width: none;
++  padding: 0.6rem 2rem 0.6rem 0.9rem;
++  mask-image: linear-gradient(to right, #000 82%, transparent);
++  border-bottom: 1px solid var(--ft-border); /* chip lukano thakle eta o nai — tai double dag hoy na */
  }
++.ft-chat-suggestions::-webkit-scrollbar { display: none; }
  .ft-chat-chip {
 -  padding: 0.32rem 0.6rem;
++  flex: 0 0 auto;
 +  white-space: nowrap;
++  animation: ft-chip-in 0.35s ease backwards;
 +  padding: 0.26rem 0.55rem;
    border-radius: 999px;
 -  border: 1px solid #d9e2ec;
@@ -9791,11 +9807,10 @@ index 6479d5e..d4b565a 100644
 -  border-top: 1px solid #e8eef3;
 +  padding: 0.6rem 0.9rem 0.8rem;
 +  background: transparent;
-+  border-top: 1px solid var(--ft-border);
    display: flex;
    flex-direction: column;
    gap: 0.5rem;
-@@ -260,22 +367,26 @@
+@@ -260,22 +340,26 @@
    min-height: 44px;
    max-height: 92px;
    padding: 0.55rem 0.65rem;
@@ -9829,7 +9844,7 @@ index 6479d5e..d4b565a 100644
    opacity: 0.7;
  }
  .ft-chat-controls {
-@@ -286,10 +397,10 @@
+@@ -286,41 +370,43 @@
  }
  .ft-chat-count {
    font-size: 0.72rem;
@@ -9842,7 +9857,53 @@ index 6479d5e..d4b565a 100644
    font-weight: 600;
  }
  .ft-chat-actions {
-@@ -304,22 +415,25 @@
+   display: flex;
+   gap: 0.45rem;
+ }
++/* 💡 button — Clear chat er moto dark; suggestion khola thakle teal */
+ .ft-chat-suggest-toggle {
+-  display: inline-flex;
+-  align-items: center;
+-  justify-content: center;
+-  width: 32px;
+-  height: 32px;
++  display: inline-grid;
++  place-items: center;
++  width: 34px;
+   padding: 0;
+   border-radius: 6px;
+-  border: 1px solid #d9e2ec;
+-  background: #fff;
+-  color: #334e68;
++  border: 1px solid var(--ft-border);
++  background: var(--ft-surface);
+   font-size: 0.95rem;
+   line-height: 1;
+   cursor: pointer;
++  filter: grayscale(1) opacity(0.6);
++  transition: background 0.2s, border-color 0.2s, filter 0.2s;
+ }
+ .ft-chat-suggest-toggle:hover {
+-  background: #f4f7fa;
++  background: var(--ft-surface-hover);
++  border-color: var(--ft-border-hover);
++  filter: none;
+ }
+ .ft-chat-suggest-toggle.is-active {
+-  background: #eef4f7;
+-  border-color: #1f7a8c;
+-  color: #1f7a8c;
++  background: var(--ft-teal-soft);
++  border-color: rgba(45, 212, 191, 0.4);
++  filter: none;
+ }
+ .ft-chat-suggest-toggle:focus-visible {
+-  outline: 2px solid #102a43;
++  outline: 2px solid var(--ft-teal-light);
+   outline-offset: 2px;
+ }
+ 
+@@ -332,22 +418,25 @@
    font-size: 0.82rem;
    font-weight: 600;
    cursor: pointer;
@@ -9876,7 +9937,7 @@ index 6479d5e..d4b565a 100644
  }
  .ft-chat-clear:disabled,
  .ft-chat-send:disabled {
-@@ -328,7 +442,7 @@
+@@ -356,10 +445,104 @@
  }
  .ft-chat-clear:focus-visible,
  .ft-chat-send:focus-visible {
@@ -9885,7 +9946,104 @@ index 6479d5e..d4b565a 100644
    outline-offset: 2px;
  }
  
-@@ -347,11 +461,13 @@
++/* =====================================================================
++   Live element + transition (chat ke "zinda" dekhanor jonno)
++   index.css er "reduce motion" rule egulo automatic bondho kore dey
++   ===================================================================== */
++
++/* Launcher er charpashe teal dheu (live-dot er moto pulse) */
++.ft-chat-launcher::after {
++  content: '';
++  position: absolute;
++  inset: -1px;
++  border-radius: inherit;
++  pointer-events: none;
++  animation: ft-ring 2.6s ease-out infinite;
++}
++@keyframes ft-ring {
++  0% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.45); }
++  100% { box-shadow: 0 0 0 12px rgba(45, 212, 191, 0); }
++}
++.ft-chat-launcher-icon .dna-helix { width: 14px; gap: 3px; }
++
++/* Panel khulle niche-dan kona theke pop kore ashe */
++.ft-chat-panel {
++  transform-origin: bottom right;
++  animation: ft-panel-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
++}
++@keyframes ft-panel-in {
++  from { opacity: 0; transform: translateY(10px) scale(0.94); }
++  to { opacity: 1; transform: none; }
++}
++
++/* Title er pashe choto "live" dot (index.css er .live-dot) */
++.ft-chat-title .live-dot {
++  display: inline-block;
++  vertical-align: middle;
++  margin-left: 0.35rem;
++}
++
++/* Header er teal alo dhire dhire nore */
++.ft-chat-header {
++  background-size: 160% 160%;
++  animation: ft-glow 8s ease-in-out infinite alternate;
++}
++@keyframes ft-glow {
++  from { background-position: 0% 0%; }
++  to { background-position: 40% 30%; }
++}
++
++/* Notun message niche theke fade hoye ashe; user er ta dan theke */
++.ft-chat-msg { animation: ft-msg-in 0.3s ease backwards; }
++.ft-chat-msg-user { animation-name: ft-msg-in-right; }
++@keyframes ft-msg-in {
++  from { opacity: 0; transform: translateY(8px); }
++  to { opacity: 1; transform: none; }
++}
++@keyframes ft-msg-in-right {
++  from { opacity: 0; transform: translateX(12px); }
++  to { opacity: 1; transform: none; }
++}
++
++/* Chip gula ekta por ekta ashe; hover e ektu upore */
++.ft-chat-chip:nth-child(2) { animation-delay: 0.05s; }
++.ft-chat-chip:nth-child(3) { animation-delay: 0.1s; }
++.ft-chat-chip:nth-child(n + 4) { animation-delay: 0.15s; }
++@keyframes ft-chip-in {
++  from { opacity: 0; transform: translateX(10px); }
++  to { opacity: 1; transform: none; }
++}
++.ft-chat-chip { transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s; }
++.ft-chat-chip:hover:not(:disabled) { transform: translateY(-1px); }
++
++/* Button — hover e upore, click e chapa */
++.ft-chat-send,
++.ft-chat-clear,
++.ft-chat-suggest-toggle,
++.ft-chat-icon-btn {
++  transition: background 0.2s, border-color 0.2s, color 0.2s, filter 0.2s, transform 0.15s;
++}
++.ft-chat-send:hover:not(:disabled),
++.ft-chat-clear:hover:not(:disabled),
++.ft-chat-suggest-toggle:hover,
++.ft-chat-icon-btn:hover { transform: translateY(-1px); }
++.ft-chat-send:active:not(:disabled),
++.ft-chat-clear:active:not(:disabled),
++.ft-chat-suggest-toggle:active,
++.ft-chat-icon-btn:active { transform: scale(0.95); }
++
++/* 💡 on korle "jole othe" */
++.ft-chat-suggest-toggle.is-active { animation: ft-bulb-on 0.4s ease; }
++@keyframes ft-bulb-on {
++  0% { transform: scale(0.85); box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.5); }
++  60% { transform: scale(1.08); }
++  100% { transform: none; box-shadow: 0 0 0 8px rgba(45, 212, 191, 0); }
++}
++
+ /* Visually hidden for a11y */
+ .visually-hidden {
+   position: absolute !important;
+@@ -375,11 +558,13 @@
  
  /* Responsive */
  @media (max-width: 480px) {
@@ -9900,7 +10058,7 @@ index 6479d5e..d4b565a 100644
      max-height: 100vh;
      border-radius: 0;
      border-left: none;
-@@ -361,4 +477,9 @@
+@@ -389,4 +574,9 @@
      right: 14px;
      bottom: 14px;
    }

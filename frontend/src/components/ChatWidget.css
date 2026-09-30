@@ -288,47 +288,21 @@
   border-top: 1px solid var(--ft-border-hover);
 }
 
-/* Suggestions */
+/* Suggestions — ek line e, pashe scroll (mouse chaka diyeo). Dane halka fade = aro ache bojhay */
 .ft-chat-suggestions {
-  padding: 0.5rem 0.9rem 0.55rem;
-}
-.ft-chat-suggestions-bar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  gap: 0.4rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0.6rem 2rem 0.6rem 0.9rem;
+  mask-image: linear-gradient(to right, #000 82%, transparent);
+  border-bottom: 1px solid var(--ft-border); /* chip lukano thakle eta o nai — tai double dag hoy na */
 }
-.ft-chat-suggestions-label {
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ft-muted);
-}
-.ft-chat-suggestions-toggle {
-  padding: 0.1rem 0.45rem;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ft-teal-light);
-  font-size: 0.72rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-.ft-chat-suggestions-toggle:hover {
-  background: var(--ft-teal-soft);
-}
-.ft-chat-suggestions-toggle:focus-visible {
-  outline: 2px solid var(--ft-teal-light);
-  outline-offset: 2px;
-}
-.ft-chat-chip-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-top: 0.45rem;
-}
+.ft-chat-suggestions::-webkit-scrollbar { display: none; }
 .ft-chat-chip {
+  flex: 0 0 auto;
   white-space: nowrap;
+  animation: ft-chip-in 0.35s ease backwards;
   padding: 0.26rem 0.55rem;
   border-radius: 999px;
   border: 1px solid rgba(45, 212, 191, 0.3);
@@ -357,7 +331,6 @@
 .ft-chat-input-area {
   padding: 0.6rem 0.9rem 0.8rem;
   background: transparent;
-  border-top: 1px solid var(--ft-border);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -407,6 +380,35 @@
   display: flex;
   gap: 0.45rem;
 }
+/* 💡 button — Clear chat er moto dark; suggestion khola thakle teal */
+.ft-chat-suggest-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--ft-border);
+  background: var(--ft-surface);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  filter: grayscale(1) opacity(0.6);
+  transition: background 0.2s, border-color 0.2s, filter 0.2s;
+}
+.ft-chat-suggest-toggle:hover {
+  background: var(--ft-surface-hover);
+  border-color: var(--ft-border-hover);
+  filter: none;
+}
+.ft-chat-suggest-toggle.is-active {
+  background: var(--ft-teal-soft);
+  border-color: rgba(45, 212, 191, 0.4);
+  filter: none;
+}
+.ft-chat-suggest-toggle:focus-visible {
+  outline: 2px solid var(--ft-teal-light);
+  outline-offset: 2px;
+}
 
 .ft-chat-clear,
 .ft-chat-send {
@@ -445,6 +447,100 @@
 .ft-chat-send:focus-visible {
   outline: 2px solid var(--ft-teal-light);
   outline-offset: 2px;
+}
+
+/* =====================================================================
+   Live element + transition (chat ke "zinda" dekhanor jonno)
+   index.css er "reduce motion" rule egulo automatic bondho kore dey
+   ===================================================================== */
+
+/* Launcher er charpashe teal dheu (live-dot er moto pulse) */
+.ft-chat-launcher::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: ft-ring 2.6s ease-out infinite;
+}
+@keyframes ft-ring {
+  0% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.45); }
+  100% { box-shadow: 0 0 0 12px rgba(45, 212, 191, 0); }
+}
+.ft-chat-launcher-icon .dna-helix { width: 14px; gap: 3px; }
+
+/* Panel khulle niche-dan kona theke pop kore ashe */
+.ft-chat-panel {
+  transform-origin: bottom right;
+  animation: ft-panel-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes ft-panel-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Title er pashe choto "live" dot (index.css er .live-dot) */
+.ft-chat-title .live-dot {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 0.35rem;
+}
+
+/* Header er teal alo dhire dhire nore */
+.ft-chat-header {
+  background-size: 160% 160%;
+  animation: ft-glow 8s ease-in-out infinite alternate;
+}
+@keyframes ft-glow {
+  from { background-position: 0% 0%; }
+  to { background-position: 40% 30%; }
+}
+
+/* Notun message niche theke fade hoye ashe; user er ta dan theke */
+.ft-chat-msg { animation: ft-msg-in 0.3s ease backwards; }
+.ft-chat-msg-user { animation-name: ft-msg-in-right; }
+@keyframes ft-msg-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ft-msg-in-right {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Chip gula ekta por ekta ashe; hover e ektu upore */
+.ft-chat-chip:nth-child(2) { animation-delay: 0.05s; }
+.ft-chat-chip:nth-child(3) { animation-delay: 0.1s; }
+.ft-chat-chip:nth-child(n + 4) { animation-delay: 0.15s; }
+@keyframes ft-chip-in {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: none; }
+}
+.ft-chat-chip { transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s; }
+.ft-chat-chip:hover:not(:disabled) { transform: translateY(-1px); }
+
+/* Button — hover e upore, click e chapa */
+.ft-chat-send,
+.ft-chat-clear,
+.ft-chat-suggest-toggle,
+.ft-chat-icon-btn {
+  transition: background 0.2s, border-color 0.2s, color 0.2s, filter 0.2s, transform 0.15s;
+}
+.ft-chat-send:hover:not(:disabled),
+.ft-chat-clear:hover:not(:disabled),
+.ft-chat-suggest-toggle:hover,
+.ft-chat-icon-btn:hover { transform: translateY(-1px); }
+.ft-chat-send:active:not(:disabled),
+.ft-chat-clear:active:not(:disabled),
+.ft-chat-suggest-toggle:active,
+.ft-chat-icon-btn:active { transform: scale(0.95); }
+
+/* 💡 on korle "jole othe" */
+.ft-chat-suggest-toggle.is-active { animation: ft-bulb-on 0.4s ease; }
+@keyframes ft-bulb-on {
+  0% { transform: scale(0.85); box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.5); }
+  60% { transform: scale(1.08); }
+  100% { transform: none; box-shadow: 0 0 0 8px rgba(45, 212, 191, 0); }
 }
 
 /* Visually hidden for a11y */
