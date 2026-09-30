@@ -16,8 +16,8 @@ The earlier CB-1…CB-8 work is in `MEMBER1_CHATBOT_CHANGES.md`.
 | 1 | Step 1 | Fix the chunker (`Q:` only at a word start) + chunk checker | `chunker.js`, `checkChunks.js` | ✅ Done (0 problems, 37 chunks) |
 | 2 | Step 2 | Evaluation script, main + holdout question files, choose the threshold | `evaluate.js`, `data/eval_questions.json`, `data/holdout_questions.json` | ✅ Done (main 10/10, holdout 81/91 → **86/91** after the 8 wording changes (Phase 2b); threshold kept at 0.65) |
 | 3 | Step 3 | Pre-flight check (env, model, FAQ loaded, index, smoke test) | `preflight.js` | ✅ Done (5/5 ✅; failure paths tested) |
-| 4 | Step 4 | Teach-the-bot test (swap in FAQ v2, re-ingest, restore) | `teachTest.js` | ⏳ Next (needs `forentrace_faq_v2.pdf` on the Desktop) |
-| 5 | Step 5 | FAQ checker (roles, exact menu names, vague answers) + wording list | `checkFaq.js`, `data/faq_terms.json` | ⏳ |
+| 4 | Step 4 | Teach-the-bot test (swap in FAQ v2, re-ingest, restore) | `teachTest.js` | ✅ Done (blocked 0.6445 → answered 0.8265 by the new entry; original restored; pre-flight 5/5) |
+| 5 | Step 5 | FAQ checker (roles, exact menu names, vague answers) + wording list | `checkFaq.js`, `data/faq_terms.json` | ⏳ Next |
 | 6 | Step 6 | Bangla search-side test file | `data/bangla_questions.json` | ⏳ |
 | 7 | Step 7 | Follow-up search-side test (copy of Member 2's rule) | `followupTest.js`, `data/followup_questions.json` | ⏳ |
 | 8 | Step 8 | Draft FAQ entries for the new features (not added yet) | `data/new_feature_faq_drafts.txt` | ⏳ |
@@ -1135,3 +1135,315 @@ Nothing. Run `node chatbot/preflight.js` before the demo and before each end-to-
 ### Known gaps / notes
 - Check 5 uses one fixed question. If that FAQ entry is ever reworded, update `SMOKE_EXPECT`.
 - The pre-flight checks the search side only. It doesn't start the server or call Gemini (that is the end-to-end test in Part B).
+
+---
+
+## Phase 4 — Step 4: Teach-the-bot test
+
+### Goal
+Prove that the chatbot learns from the FAQ alone, with **no code change**: a question the FAQ doesn't cover is blocked, then one Q&A is added to the FAQ, it is re-ingested, and the same question is answered by the new entry. After that, the original FAQ is always put back.
+
+### Files changed
+
+| File | Type | Purpose |
+| --- | --- | --- |
+| `backend/chatbot/teachTest.js` | **New** | The whole swap test: before → backup → v2 + re-ingest → after → restore + re-ingest → pre-flight |
+| `C:\Users\MSI\Desktop\forentrace_faq_v2.pdf` / `.docx` | Outside the repo (**not committed**) | FAQ copy with one extra Q&A, used only by this test |
+
+### The new Q&A (checked against the real app first)
+
+The rule was checked in the `main` branch code before writing the answer:
+
+| Where | What the code does |
+| --- | --- |
+| `backend/routes/caseRoutes.js` | `router.delete('/:id', requireAuth, requireRole('Officer'), deleteCase)`: **only Officers** can delete. Admin and Lab Technician are refused. |
+| `backend/controllers/caseController.js` → `deleteCase` | Checks the case exists and deletes it. There is **no "own case only" check**, and `listCases` shows every case to an Officer, so an Officer can delete any case. |
+| `frontend/src/pages/Cases.jsx` | "Delete" button in the Investigation Cases list and "Delete Case" on the case page, shown only when `role === 'Officer'`. Confirm box: "Delete case N? This action cannot be undone." |
+| `database/schema.sql` | No other table references `case_files.case_id`, so deleting a case removes only the case record. The missing person (`person_id`) stays. |
+
+Added to the v2 copy, after the case-statuses entry:
+```text
+Q: Can I delete (remove) an investigation case? Who can delete a case?
+A: Only Officers can delete an investigation case. Open Investigation Cases and click Delete beside the case, or open the case and click Delete Case, then confirm. Deleting cannot be undone. Deleting a case removes only the case record; the missing person record is not deleted. Admins and Lab Technicians cannot delete cases.
+```
+The v2 Word file was built the same way as in Phase 2b (source text + the new Q&A → `docx` script → Word exports the PDF to the Desktop). Checks: the v2 PDF text equals the v2 source exactly, it gives 38 chunks (1 more), and the new Q&A is one clean chunk.
+
+### Which question to test with (a finding)
+The first idea, "Can an officer delete an investigation case?", is **not blocked** by today's FAQ. It scores **0.7616** and lands on "How do I create (open, register) an investigation case?", because "officer" and "investigation case" match that entry strongly. So the test uses **"Can I delete a case?"** (0.6445) as the main question, which must be blocked before. The other 3 wordings are also tracked, and after the swap all 4 must find the new entry.
+
+### How to run
+```powershell
+cd backend
+node chatbot/teachTest.js                        # v2 = Desktop\forentrace_faq_v2.pdf
+node chatbot/teachTest.js "D:\some\faq_v2.pdf"   # another v2 file
+```
+It takes about 1–2 minutes (two ingests plus index sync). Don't stop it halfway. If you do, see "Known gaps".
+
+### Code — `backend/chatbot/teachTest.js` (full new file)
+
+```js
+// backend/chatbot/teachTest.js   →   run from backend folder:
+//   node chatbot/teachTest.js                        (v2 = Desktop/forentrace_faq_v2.pdf)
+//   node chatbot/teachTest.js "D:\some\faq_v2.pdf"   (any other v2 path)
+// Shows that the bot learns from the FAQ alone, with no code change:
+//   1. search the new question on the current FAQ   → should be BLOCKED (below threshold)
+//   2. back up the original FAQ PDF
+//   3. put v2 in its place, re-ingest, search again  → should be ANSWERED by the new entry
+//   4. ALWAYS restore the original PDF and re-ingest (even if step 3 failed)
+//   5. run the pre-flight check to confirm everything is back to normal
+// No Gemini call. (FAQ e notun Q&A dilei bot shikhe fele — code change chara)
+import 'dotenv/config';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { getCollection, closeMongo } from './mongoClient.js';
+import { searchTop, getThreshold, isHit, questionLine } from './evaluate.js';
+import { runPreflight } from './preflight.js';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const BACKEND_DIR = path.dirname(here);
+const FAQ_PDF = path.join(here, 'data', 'forentrace_faq.pdf');
+const BACKUP_PDF = path.join(here, 'data', 'forentrace_faq.backup.pdf'); // crash hole ekhane theke restore
+const V2_PDF = process.argv[2] || path.join(os.homedir(), 'Desktop', 'forentrace_faq_v2.pdf');
+
+// v2 er notun Q&A — original FAQ e nei
+const NEW_ENTRY = 'Can I delete (remove) an investigation case';
+const MAIN_QUESTION = 'Can I delete a case?'; // BEFORE e eta block hote hobe
+const EXTRA_QUESTIONS = [                    // onno wording — AFTER e shobai notun entry pabe
+  'Can an officer delete an investigation case?',
+  'Who can delete a case?',
+  'How do I remove a case?'
+];
+const SYNC_WAIT_MS = 5000;
+const SYNC_TRIES = 30; // ~150s porjonto index sync er jonno wait
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+
+// ingest.js alada process e chalano — tar nijer closeMongo amader connection bondho kore na
+function runIngest(label) {
+  console.log(`\n→ Re-ingest (${label})`);
+  const result = spawnSync(process.execPath, ['chatbot/ingest.js'], { cwd: BACKEND_DIR, encoding: 'utf8' });
+  const lines = `${result.stdout}\n${result.stderr}`.split(/\r?\n/).filter(l => /Created|Inserted|FAILED/.test(l));
+  lines.forEach(l => console.log(`   ${l.trim()}`));
+  if (result.status !== 0) throw new Error(`ingest.js failed (${label})`);
+  const inserted = lines.join(' ').match(/Inserted (\d+) chunks/);
+  return inserted ? Number(inserted[1]) : null;
+}
+
+// Ingest er por index notun chunk dhorte shomoy ney — shob chunk search e asha porjonto wait
+async function waitForIndexSync() {
+  const col = await getCollection();
+  const expected = await col.countDocuments();
+  for (let attempt = 1; attempt <= SYNC_TRIES; attempt++) {
+    const found = (await searchTop('index sync check', 100)).length; // limit 100 ≥ chunk count
+    if (found === expected) {
+      console.log(`   vector_index synced (${found}/${expected} chunks searchable)`);
+      return;
+    }
+    console.log(`   …waiting for vector_index to sync (${found}/${expected} chunks searchable)`);
+    await sleep(SYNC_WAIT_MS);
+  }
+  throw new Error('vector_index did not sync within ~150s');
+}
+
+// Shob question search kore top result, score, decision table e dekhay
+async function measure(label, threshold) {
+  const rows = [];
+  for (const q of [MAIN_QUESTION, ...EXTRA_QUESTIONS]) {
+    const [top] = await searchTop(q);
+    const score = top?.score ?? 0;
+    rows.push({ q, score, answered: score >= threshold, newEntryFirst: isHit(top?.text ?? '', NEW_ENTRY), top: questionLine(top?.text ?? '') });
+  }
+  console.log(`\n${label}`);
+  console.table(rows.map(r => ({
+    question: r.q,
+    score: r.score.toFixed(4),
+    decision: r.answered ? 'answer' : 'block',
+    'new entry first': r.newEntryFirst ? 'yes' : 'no',
+    'top chunk': r.top.slice(0, 60)
+  })));
+  return rows;
+}
+
+const results = []; // { step, ok, detail }
+const record = (step, ok, detail) => results.push({ step, ok, detail });
+
+try {
+  const threshold = getThreshold();
+  if (threshold === null) throw new Error('CHATBOT_SCORE_THRESHOLD is not set');
+  if (!fs.existsSync(V2_PDF)) throw new Error(`v2 PDF not found: ${V2_PDF}`);
+  if (fs.existsSync(BACKUP_PDF)) {
+    // Ager run majhpothe theme gele backup theke jay — tokhon original e ki ache bola jay na
+    throw new Error(`${path.basename(BACKUP_PDF)} already exists, so an earlier teach test did not finish. ` +
+      'Copy it over forentrace_faq.pdf, run node chatbot/ingest.js, delete the backup, then run this again.');
+  }
+  console.log(`CHATBOT_SCORE_THRESHOLD = ${threshold}`);
+  console.log(`v2 PDF: ${V2_PDF}`);
+
+  const col = await getCollection();
+  const originalCount = await col.countDocuments();
+
+  // 1. BEFORE — original FAQ
+  const before = await measure(`1. BEFORE (original FAQ, ${originalCount} chunks)`, threshold);
+  const mainBefore = before[0];
+  record('1. Before: main question blocked', !mainBefore.answered,
+    `"${MAIN_QUESTION}" ${mainBefore.score.toFixed(4)} → ${mainBefore.answered ? 'ANSWERED (should be blocked)' : 'blocked'}`);
+  // Onno wording threshold par hole Gemini ke bolte hobe FAQ te nei — shudhu info
+  for (const r of before.slice(1).filter(r => r.answered && !r.newEntryFirst)) {
+    console.log(`   ⚠ "${r.q}" passes (${r.score.toFixed(4)}) with an unrelated entry — Gemini must say the FAQ doesn't cover it`);
+  }
+
+  // 2. Backup
+  const originalHash = sha256(FAQ_PDF);
+  fs.copyFileSync(FAQ_PDF, BACKUP_PDF);
+  if (sha256(BACKUP_PDF) !== originalHash) throw new Error('backup copy is not identical to the original');
+  console.log(`\n2. Backed up original FAQ → ${path.basename(BACKUP_PDF)}`);
+
+  try {
+    // 3. v2 boshano + re-ingest + abar search
+    fs.copyFileSync(V2_PDF, FAQ_PDF);
+    console.log('\n3. Swapped in FAQ v2');
+    const v2Count = runIngest('FAQ v2');
+    await waitForIndexSync();
+    const after = await measure(`3. AFTER (FAQ v2, ${v2Count} chunks)`, threshold);
+    const allTaught = after.every(r => r.answered && r.newEntryFirst);
+    record('3. After: new entry first and answered', allTaught,
+      `"${MAIN_QUESTION}" ${after[0].score.toFixed(4)}; ${after.filter(r => r.answered && r.newEntryFirst).length}/${after.length} wordings answered by the new entry`);
+  } catch (err) {
+    record('3. After: new entry first and answered', false, err.message);
+  } finally {
+    // 4. RESTORE — step 3 fail korleo shob shomoy
+    try {
+      fs.copyFileSync(BACKUP_PDF, FAQ_PDF);
+      if (sha256(FAQ_PDF) !== originalHash) throw new Error('restored PDF is not identical to the original');
+      console.log('\n4. Restored original FAQ PDF (identical, sha256 checked)');
+      const restoredCount = runIngest('original FAQ');
+      await waitForIndexSync();
+      if (restoredCount !== originalCount) throw new Error(`restored ${restoredCount} chunks, expected ${originalCount}`);
+      fs.unlinkSync(BACKUP_PDF); // restore thik hole tobei backup muchi
+      record('4. Original FAQ restored', true, `PDF identical, ${restoredCount} chunks re-ingested, backup removed`);
+    } catch (err) {
+      record('4. Original FAQ restored', false, `${err.message} — backup kept at ${BACKUP_PDF}`);
+    }
+  }
+
+  // 5. Pre-flight — shob abar normal kina
+  console.log('\n5. Pre-flight');
+  const preflightOk = await runPreflight();
+  record('5. Pre-flight after restore', preflightOk, preflightOk ? 'all checks passed' : 'see ❌ above');
+} catch (err) {
+  record('Teach test', false, err.message);
+} finally {
+  console.log('\nTeach test summary:');
+  for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.step} — ${r.detail}`);
+  if (results.some(r => !r.ok)) process.exitCode = 1;
+  await closeMongo(); // fail korleo connection bondho
+}
+```
+
+### What each part does
+
+| Part | What it does |
+| --- | --- |
+| `V2_PDF` | Default `Desktop\forentrace_faq_v2.pdf` (from `os.homedir()`), or the path given as the first argument. |
+| `NEW_ENTRY`, `MAIN_QUESTION`, `EXTRA_QUESTIONS` | The new entry's question text (used to check "new entry first"), the question that must be blocked before, and 3 more wordings that must all be answered after. |
+| Start checks | Stops before touching anything if the threshold is missing, the v2 PDF doesn't exist, or **a backup from an earlier run is still there**. A leftover backup means a run was interrupted, so the current `forentrace_faq.pdf` might be v2. The message says how to restore. |
+| `measure()` | Searches every question with `searchTop()` from `evaluate.js` and prints score, answer/block, whether the new entry came first, and the top chunk. |
+| Step 1 (before) | ✅ only if the main question is **blocked**. Other wordings that pass the threshold with an unrelated entry are shown as ⚠, because Gemini must say the FAQ doesn't cover them (checked in the end-to-end tests later). |
+| Step 2 (backup) | Copies `forentrace_faq.pdf` → `forentrace_faq.backup.pdf` and checks the copy with a sha256 hash. |
+| `runIngest()` | Runs the unchanged `ingest.js` as a separate process (`spawnSync`) and shows only its "Created / Inserted / FAILED" lines. A non-zero exit code = the ingest failed. `ingest.js` never deletes the old chunks if it fails. |
+| `waitForIndexSync()` | After an ingest, Atlas needs a few seconds to index the new chunks. It searches with `limit 100` until the number of results equals the number of chunks in the collection (every 5 s, up to ~150 s). This is stricter than "any result", so the "after" search can't run against a half-built index. |
+| Step 3 (v2) | Copies v2 over the FAQ PDF, ingests, waits, searches. ✅ only if **all 4 wordings** are answered and the new entry comes first. |
+| Step 4 (restore), in `finally` | **Always runs**, even when step 3 fails: copies the backup back, checks its sha256 equals the original's, ingests, waits, and checks the chunk count equals the count before the test. Only then is the backup deleted. If anything fails, the backup is kept, and its path is printed. |
+| Step 5 | `runPreflight()` from `preflight.js`: all 5 checks must pass after the restore. |
+| Summary + exit code | One ✅/❌ line per step. Exit code 1 if any ❌. `closeMongo()` runs in `finally`. |
+
+### Testing results
+
+**Real run with the Desktop v2:**
+```text
+1. BEFORE (original FAQ, 37 chunks)
+  'Can I delete a case?'                          0.6445  block   new entry first: no  → How do I create (open, register) an investigation case?
+  'Can an officer delete an investigation case?'  0.7616  answer  no                   → How do I create … investigation case?
+  'Who can delete a case?'                        0.6886  answer  no                   → How do I create … investigation case?
+  'How do I remove a case?'                       0.6454  block   no                   → How do I create … investigation case?
+   ⚠ "Can an officer delete an investigation case?" passes (0.7616) with an unrelated entry — Gemini must say the FAQ doesn't cover it
+   ⚠ "Who can delete a case?" passes (0.6886) with an unrelated entry — Gemini must say the FAQ doesn't cover it
+
+2. Backed up original FAQ → forentrace_faq.backup.pdf
+3. Swapped in FAQ v2
+→ Re-ingest (FAQ v2)
+   Created 38 chunks
+   Inserted 38 chunks into MongoDB
+   …waiting for vector_index to sync (0/38 chunks searchable)
+   …waiting for vector_index to sync (0/38 chunks searchable)
+   vector_index synced (38/38 chunks searchable)
+
+3. AFTER (FAQ v2, 38 chunks)
+  'Can I delete a case?'                          0.8265  answer  yes
+  'Can an officer delete an investigation case?'  0.9098  answer  yes
+  'Who can delete a case?'                        0.8614  answer  yes
+  'How do I remove a case?'                       0.7265  answer  yes
+
+4. Restored original FAQ PDF (identical, sha256 checked)
+→ Re-ingest (original FAQ)
+   Created 37 chunks
+   Inserted 37 chunks into MongoDB
+   vector_index synced (37/37 chunks searchable)
+
+5. Pre-flight
+Pre-flight: 5/5 checks passed
+
+Teach test summary:
+✅ 1. Before: main question blocked — "Can I delete a case?" 0.6445 → blocked
+✅ 3. After: new entry first and answered — "Can I delete a case?" 0.8265; 4/4 wordings answered by the new entry
+✅ 4. Original FAQ restored — PDF identical, 37 chunks re-ingested, backup removed
+✅ 5. Pre-flight after restore — all checks passed
+(exit code 0)
+```
+`forentrace_faq.pdf` had the same sha256 before and after (`f9094133…a0ffd`), and `git status` showed no change to it.
+
+| Question | Before | After (v2) |
+| --- | --- | --- |
+| **Can I delete a case?** (main) | 0.6445 **blocked** | **0.8265 answered by the new entry** |
+| Can an officer delete an investigation case? | 0.7616 answered with the wrong entry ⚠ | 0.9098 new entry |
+| Who can delete a case? | 0.6886 answered with the wrong entry ⚠ | 0.8614 new entry |
+| How do I remove a case? | 0.6454 blocked | 0.7265 new entry |
+
+**Failure test: restore still happens when step 3 fails** (a text file passed as "v2", so the v2 ingest fails):
+```text
+3. Swapped in FAQ v2
+   Ingestion FAILED: Invalid PDF structure
+4. Restored original FAQ PDF (identical, sha256 checked)
+   Created 37 chunks
+   Inserted 37 chunks into MongoDB
+Pre-flight: 5/5 checks passed
+
+Teach test summary:
+✅ 1. Before: main question blocked — "Can I delete a case?" 0.6445 → blocked
+❌ 3. After: new entry first and answered — ingest.js failed (FAQ v2)
+✅ 4. Original FAQ restored — PDF identical, 37 chunks re-ingested, backup removed
+✅ 5. Pre-flight after restore — all checks passed
+(exit code 1)
+```
+
+**Safety test: a leftover backup blocks the run** (dummy backup file created, then removed):
+```text
+❌ Teach test — forentrace_faq.backup.pdf already exists, so an earlier teach test did not finish. Copy it over forentrace_faq.pdf, run node chatbot/ingest.js, delete the backup, then run this again.
+(exit code 1, nothing was changed)
+```
+
+**Sentence for the demo/report:** "'Can I delete a case?' was blocked (0.64). We added one Q&A to the FAQ and re-ingested, with no code change, and it was answered by the new entry (0.83). All 4 wordings we tried found it. Then the original FAQ was restored."
+
+### What you (Member 1) do for this step
+Nothing more. The v2 files stay on the Desktop for step 12 (the same test through the widget, in Bangla).
+
+### Known gaps / notes
+- **Two wordings pass the threshold with the wrong entry today** ("Can an officer delete an investigation case?" 0.76, "Who can delete a case?" 0.69 → "create a case" entry). Gemini gets the create-case chunk and must say the FAQ doesn't cover deleting, not invent an answer. This is added to the end-to-end checks for steps 9–10.
+- **Should the delete Q&A go into the real FAQ?** It is accurate (checked against `main`) and fixes the ⚠ above. That's your call. If yes, add it to `forentrace_faq.docx` and `forentrace_faq_source.txt`, re-export and re-ingest. The teach test would then need a different "new" question.
+- If the test is stopped halfway (Ctrl+C, laptop sleeps), `forentrace_faq.backup.pdf` is left in `data/`. The next run refuses to start and prints the restore steps.
+- `waitForIndexSync()` uses `limit 100`, so it assumes the FAQ has at most 100 chunks (today: 37).
