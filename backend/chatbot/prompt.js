@@ -17,12 +17,15 @@ const LANGUAGE_RULES = {
   banglish: 'Write the answer in Banglish (Bangla written with English letters), the same way the user wrote. Keep the name ForenTrace, menu names, button names, role names and terms such as DNA or STR exactly as they appear in the CONTEXT.'
 };
 
-export function buildPrompt(question, chunks, { lang = 'en', englishQuestion = '' } = {}) {
+export function buildPrompt(question, chunks, { lang = 'en', englishQuestion = '', resolvedQuestion = '' } = {}) {
   const context = chunks.map((c, i) => `[${i + 1}] ${c.text}`).join('\n\n');
+  const clarification = resolvedQuestion
+    ? `\n\nSTANDALONE QUESTION (conversation references resolved; not a factual source):\n${resolvedQuestion}\nAnswer this question using only CONTEXT. Refuse unrelated topics even if CONTEXT contains ForenTrace information.`
+    : '';
   if (!LANGUAGE_RULES[lang]) {
-    return `CONTEXT:\n${context}\n\nUSER QUESTION:\n${question}\n\nANSWER:`;
+    return `CONTEXT:\n${context}\n\nUSER QUESTION:\n${question}${clarification}\n\nANSWER:`;
   }
-  return `CONTEXT:\n${context}\n\nUSER QUESTION:\n${question}\n\n` +
+  return `CONTEXT:\n${context}\n\nUSER QUESTION:\n${question}${clarification}\n\n` +
     `ENGLISH TRANSLATION OF THE QUESTION:\n${englishQuestion}\n\n` +
     `LANGUAGE: ${LANGUAGE_RULES[lang]} If the CONTEXT does not contain the answer, still reply with exactly: ${OUT_OF_CONTEXT_TOKEN}\n\nANSWER:`;
 }

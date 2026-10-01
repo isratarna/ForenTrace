@@ -3,6 +3,12 @@
 import { embed } from './embedder.js';
 import { getCollection } from './mongoClient.js';
 
+// Load the embedding model + open the MongoDB connection at server start,
+// so the first user question does not pay ~1.5 s of setup time.
+export async function warmUpChatbot() {
+  await Promise.all([embed('warm up'), getCollection()]);
+}
+
 export async function searchChunks(question, limit = 4) {
   const queryVector = await embed(question);
   const col = await getCollection();

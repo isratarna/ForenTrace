@@ -22,6 +22,7 @@ import dnaSampleRoutes from './routes/dnaSampleRoutes.js' // DNA Sample module (
 import dnaMatchRoutes from './routes/dnaMatchRoutes.js' // DNA Match module (Member 1 - Issue 4)
 
 import chatbotRoutes from './routes/chatbotRoutes.js';
+import { warmUpChatbot } from './chatbot/retriever.js';
 
 const app = express()
 
@@ -73,6 +74,10 @@ async function startServer() {
 
     app.listen(PORT, () => {
       console.log(`ForenTrace API listening on http://localhost:${PORT}`)
+      // runs in the background; if it fails the chatbot just loads on its first question
+      warmUpChatbot()
+        .then(() => console.log('Chatbot warmed up.'))
+        .catch(err => console.warn('Chatbot warm-up skipped:', err.message))
     })
   } catch (error) {
     console.error('MySQL connection failed:', error.message)

@@ -3,6 +3,9 @@ import {
   findUserByEmail,
   updateLastLogin,
 } from '../models/userModel.js'
+import { findAllStations } from '../models/policeStationModel.js'
+import { getAllLabs } from '../models/dnaLabModel.js'
+import { createManagedUser } from './userController.js'
 
 export async function login(req, res) {
   try {
@@ -101,4 +104,43 @@ export function logout(req, res) {
       message: 'Logout successful.',
     })
   })
+}
+
+// Public self-registration (Police Officer / Lab Technician).
+// Admin er createManagedUser er same validation + transaction reuse kora hocche,
+// tai profile (officers / lab_technicians) ar users row eksathe toiri hoy.
+// Account shob shomoy 'pending_approval' thake — admin approve na kora porjonto login hobe na.
+// createManagedUser nije e role ke Officer / Lab Technician e limit kore, tai Admin register kora jabe na.
+export function register(req, res) {
+  // Username nije dite parbe na — first + last name theke auto generate hobe
+  const { username, ...body } = req.body || {}
+  req.body = body
+  return createManagedUser(req, res)
+}
+
+// Register form er dropdown er jonno station ar lab list (login chara).
+// Shudhu id ar name pathano hocche, baki station/lab details public kora hocche na.
+export async function getRegisterOptions(req, res) {
+  try {
+    const [stations, labs] = await Promise.all([findAllStations(), getAllLabs()])
+
+    return res.status(200).json({
+      success: true,
+      stations: stations.map(station => ({
+        id: station.station_id,
+        name: station.station_name,
+      })),
+      labs: labs.map(lab => ({
+        id: lab.lab_id,
+        name: lab.lab_name,
+      })),
+    })
+  } catch (error) {
+    console.error('Register options error:', error)
+
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error.',
+    })
+  }
 }

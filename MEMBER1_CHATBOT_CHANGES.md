@@ -20,6 +20,7 @@ This file records every change made in each phase: what was added, the full code
 | 4 | CB-4 | Create `vector_index` by script (replaces Member 2's temporary one), check READY | `backend/chatbot/createIndex.js` | ✅ Done (`vector_index` READY; re-test with Member 2's `testSearch.js` when it lands) |
 | 5 | CB-8 | Tune `CHATBOT_SCORE_THRESHOLD` with the 20-question score table | `.env` (not committed) + score table in this file | ✅ Done (threshold **0.65**; re-test through the API when Member 2's route lands) |
 | 6 | Wrap-up | Final checklist, commit own files by name, push, open PR, hand-off message | — | ✅ Done (open PR + send messages; teammate review pending) |
+| 7 | Latency fix | Make answers fast: skip a failing Gemini model, warm up at start, cache repeated answers | `backend/chatbot/gemini.js`, `retriever.js`, `translate.js`, `controllers/chatbotController.js`, `server.js` | ✅ Done (~7 s+ → ~1–2 s) |
 
 Rules followed in every phase: ES modules only (`import`/`export`, `.js` on local imports), `process.env` is read inside functions, `embedder.js` and `mongoClient.js` are not modified, the chatbot never reads MySQL, `.env` is never committed, and files are added to git by name (never `git add .`).
 
@@ -809,3 +810,202 @@ If anything is wrong, tell me the Q&A and I'll fix + re-ingest.
 3. Explain the **embedding** (meaning as numbers), the **vector index** (`vector_index`, 384 dims, cosine) and the **threshold 0.65** (layer 1), using the Phase 5 score table: on-topic ≥ 0.81, off-topic ≤ 0.55.
 
 Viva numbers to remember: **36** Q&As → **37** chunks · **384** dimensions · threshold **0.65** · lowest on-topic **0.8088** · highest off-topic **0.5497** · Atlas score = (1 + cosine) / 2.
+
+---
+
+## Phase 7 — Latency fix (chatbot answers were very slow)
+
+### Goal
+The chatbot took many seconds to answer. Find where the time goes and cut it down without changing the answers.
+
+### What was measured (before the fix)
+
+| Stage | Time | Note |
+| --- | --- | --- |
+| Embedding model load | ~740 ms | only on the **first** question after server start |
+| MongoDB connect | ~750 ms | only on the **first** question |
+| Embed + vector search (warm) | ~100 ms | fine |
+| `gemini-3.8-flash` (main model) | **2.4 s → 503 "high demand"**, then **429 "free tier quota (20) exceeded"** | the real problem |
+| `gemini-3.5-flash-lite` (backup) | ~0.5–1 s | works fine |
+
+**Root cause:** every question first called the main model, which was busy/out of quota. The old `callGemini` waited for it, slept 1 s, retried, slept 2 s, and only then used the backup — **6+ seconds wasted per Gemini call**. Bangla/Banglish questions make **two** Gemini calls (translate + answer), so they waited twice.
+
+### Files changed
+
+| File | Change |
+| --- | --- |
+| `backend/chatbot/gemini.js` | Model "cooldown" (skip a model after 429/503 for the time Gemini asks), switch model immediately instead of sleeping, 15 s timeout, optional `GEMINI_THINKING_LEVEL` |
+| `backend/chatbot/translate.js` | Translation uses the faster backup model first (`preferFallback: true`) |
+| `backend/chatbot/retriever.js` | New `warmUpChatbot()` — loads embedding model + MongoDB connection |
+| `backend/server.js` | Calls `warmUpChatbot()` in the background after `app.listen` |
+| `backend/controllers/chatbotController.js` | In-memory answer cache (1 hour, max 200 questions) |
+| `backend/.env.example` | Documents optional `GEMINI_TIMEOUT_MS` and `GEMINI_THINKING_LEVEL` |
+
+### `backend/chatbot/gemini.js` (full file)
+
+| Part | What it does |
+| --- | --- |
+| `cooldownUntil` map | Remembers until when a model should not be called |
+| `cooldownMs()` | Reads `retryDelay` from Gemini's 429 error (e.g. `58s`); otherwise 60 s for 429, 30 s for 503 |
+| `AbortSignal.timeout(...)` | A hung request fails after 15 s (or `GEMINI_TIMEOUT_MS`) and the next model is tried |
+| `thinkingConfig` | Only sent when `GEMINI_THINKING_LEVEL` is set; `minimal`/`low` = faster answers |
+| `callGemini(..., { preferFallback })` | Skips cooling-down models; a non-last model hands over at once; only the last model retries once (not on 429, quota will not clear in 1 s) |
+
+```js
+// Calls Google Gemini with plain fetch (built into Node 18+).
+// If a model is busy (503) or out of quota (429), it is skipped for a while ("cooldown")
+// and the next model in the list answers right away, so users do not wait on a failing model.
+const RETRYABLE = new Set([429, 500, 503]);
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// model name → time (ms) until which we do not call it
+const cooldownUntil = new Map();
+
+function isCoolingDown(model) {
+  return (cooldownUntil.get(model) || 0) > Date.now();
+}
+
+// Gemini says how long to wait on a 429 ("retryDelay": "58s"); otherwise use a default
+function cooldownMs(status, data) {
+  const retryInfo = data.error?.details?.find(d => d['@type']?.endsWith('RetryInfo'));
+  const seconds = parseFloat(retryInfo?.retryDelay);
+  if (seconds > 0) return seconds * 1000;
+  return status === 429 ? 60_000 : 30_000;
+}
+
+async function requestGemini(model, prompt, systemInstruction) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+  const generationConfig = { temperature: 0.2 }; // low = factual, less creative
+  // 'minimal' / 'low' = less "thinking" before answering = faster reply
+  if (process.env.GEMINI_THINKING_LEVEL) {
+    generationConfig.thinkingConfig = { thinkingLevel: process.env.GEMINI_THINKING_LEVEL };
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': process.env.GEMINI_API_KEY
+    },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemInstruction }] },
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig
+    }),
+    // a hung request should fail over to the next model, not block the user forever
+    signal: AbortSignal.timeout(Number(process.env.GEMINI_TIMEOUT_MS) || 15_000)
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err = new Error(`Gemini error ${response.status} (${model}): ${data.error?.message || 'unknown'}`);
+    err.status = response.status;
+    err.cooldownMs = cooldownMs(response.status, data);
+    throw err;
+  }
+
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  return parts.map(p => p.text || '').join('').trim();
+}
+
+// options.preferFallback: try the backup (lighter, faster) model first — used for simple jobs like translation
+export async function callGemini(prompt, systemInstruction, { preferFallback = false } = {}) {
+  let models = [process.env.GEMINI_MODEL, process.env.GEMINI_FALLBACK_MODEL].filter(Boolean);
+  if (preferFallback) models.reverse();
+
+  // skip models that recently failed; if all of them did, try them anyway
+  const available = models.filter(m => !isCoolingDown(m));
+  if (available.length) models = available;
+
+  let lastError;
+  for (const [i, model] of models.entries()) {
+    const isLast = i === models.length - 1;
+    // only the last model gets a second try; the others hand over to the next model immediately
+    for (let attempt = 1; attempt <= (isLast ? 2 : 1); attempt++) {
+      try {
+        return await requestGemini(model, prompt, systemInstruction);
+      } catch (err) {
+        lastError = err;
+        // wrong key / bad request: retrying will not help, stop now
+        if (err.status && !RETRYABLE.has(err.status)) throw err;
+        if (err.cooldownMs) cooldownUntil.set(model, Date.now() + err.cooldownMs);
+        console.warn(`${err.message} → ${isLast ? 'retrying' : 'switching model'}...`);
+        // quota errors will not clear in a second, so only wait before retrying a busy/timeout error
+        if (isLast && attempt === 1 && err.status !== 429) await sleep(1000);
+        else if (isLast) break;
+      }
+    }
+  }
+  throw lastError;
+}
+```
+
+### `backend/chatbot/translate.js` (changed line)
+
+```js
+  // translation is easy, so the faster backup model goes first (saves time + main model quota)
+  const output = await callGemini(`TEXT:\n${text}\n\nENGLISH:`, TRANSLATE_INSTRUCTION, { preferFallback: true });
+```
+
+### `backend/chatbot/retriever.js` (added)
+
+```js
+// Load the embedding model + open the MongoDB connection at server start,
+// so the first user question does not pay ~1.5 s of setup time.
+export async function warmUpChatbot() {
+  await Promise.all([embed('warm up'), getCollection()]);
+}
+```
+
+### `backend/server.js` (added)
+
+```js
+import { warmUpChatbot } from './chatbot/retriever.js';
+// ...inside app.listen callback:
+      // runs in the background; if it fails the chatbot just loads on its first question
+      warmUpChatbot()
+        .then(() => console.log('Chatbot warmed up.'))
+        .catch(err => console.warn('Chatbot warm-up skipped:', err.message))
+```
+
+### `backend/controllers/chatbotController.js` (added)
+
+The cache key is the question in lowercase without `? ! . , ।`. Both in-context answers and off-topic replies are cached; errors are **not** cached. Small talk is answered before the cache (it is already instant).
+
+```js
+// Same question again → same answer from memory, no search / Gemini call (fast + saves quota)
+const ANSWER_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const ANSWER_CACHE_MAX = 200;
+const answerCache = new Map(); // normalized question → { body, expires }
+
+function cacheKey(question) {
+  return question.toLowerCase().replace(/[?!.,।]+/g, '').trim();
+}
+
+function getCachedAnswer(question) { /* returns body if not expired */ }
+function cacheAnswer(question, body) { /* drops oldest when full, stores body, returns it */ }
+
+// in askChatbot, after small talk:
+  const cached = getCachedAnswer(question);
+  if (cached) {
+    return res.json(cached);
+  }
+// and every successful res.json(...) became res.json(cacheAnswer(question, {...}))
+```
+
+### Testing (through the real controller, after the fix)
+
+| Question | Time |
+| --- | --- |
+| Warm-up (server start, in background) | 930 ms |
+| How do I register a DNA sample? (main model 429 → switched at once) | 1797 ms |
+| How can I log in? (main model skipped, cooling down) | 922 ms |
+| DNA sample kivabe register korbo? (Banglish, 2 Gemini calls) | 1908 ms |
+| How do I register a DNA sample? (repeat → cache) | 0 ms |
+| what is the capital of France? (off-topic, no Gemini) | 89 ms |
+
+### Known gaps / notes
+- `gemini-3.8-flash` free tier allows only **20 requests** and was overloaded during testing; the backup model did all the work. Consider making `gemini-3.5-flash-lite` the main model in `.env`, or enabling billing.
+- `GEMINI_THINKING_LEVEL=minimal` was tested OK on `gemini-3.5-flash-lite`; it could not be tested on `gemini-3.8-flash` (quota), so it is left empty by default.
+- Cooldown and cache are in memory: they reset when the server restarts (fine for one server).

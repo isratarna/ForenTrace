@@ -126,7 +126,18 @@ export default function ChatWidget() {
     setIsLoading(true)
 
     try {
-      const data = await askChatbot(trimmed)
+      const history = []
+      for (let i = 0; i < messages.length - 1; i++) {
+        const user = messages[i]
+        const assistant = messages[i + 1]
+        if (user.role === 'user' && assistant.role === 'assistant' && !assistant.isError) {
+          history.push(
+            { role: 'user', text: user.text.slice(0, MAX_LEN) },
+            { role: 'assistant', text: assistant.text.slice(0, 2000) }
+          )
+        }
+      }
+      const data = await askChatbot(trimmed, history.slice(-6))
       // Expected shapes:
       // { answer, inContext: boolean, sources: [] }
       const answer = data?.answer ?? ''
@@ -336,7 +347,7 @@ export default function ChatWidget() {
                   type="button"
                   className="ft-chat-clear"
                   onClick={clearChat}
-                  disabled={isLoading && messages.length <= 1}
+                  disabled={isLoading}
                 >
                   Clear chat
                 </button>

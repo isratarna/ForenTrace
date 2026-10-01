@@ -47,7 +47,8 @@ Rules:
 
 // Gemini diye English translation. Kichu na asle original text-i ferot (search tokhon block korbe).
 export async function translateToEnglish(text) {
-  const output = await callGemini(`TEXT:\n${text}\n\nENGLISH:`, TRANSLATE_INSTRUCTION);
+  // translation is easy, so the faster backup model goes first (saves time + main model quota)
+  const output = await callGemini(`TEXT:\n${text}\n\nENGLISH:`, TRANSLATE_INSTRUCTION, { preferFallback: true });
   const firstLine = (output || '').split('\n').map(l => l.trim()).find(Boolean) || '';
   const cleaned = firstLine.replace(/^english:\s*/i, '').replace(/^["'“”]+|["'“”]+$/g, '').trim();
   return cleaned || text;

@@ -5,6 +5,7 @@ import { callGemini } from '../chatbot/gemini.js';
 import { SYSTEM_INSTRUCTION, OUT_OF_CONTEXT_TOKEN, buildPrompt } from '../chatbot/prompt.js';
 import { getSmallTalkReply } from '../chatbot/smallTalk.js';
 import { detectLanguage, translateToEnglish } from '../chatbot/translate.js';
+import { validateHistory, resolveFollowup } from '../chatbot/followup.js';
 
 // Question je bhashay, off-topic reply ar error message-o sei bhashay
 const OUT_OF_CONTEXT_REPLIES = {
@@ -24,6 +25,33 @@ const UNAVAILABLE_MESSAGES = {
   bn: 'অ্যাসিস্ট্যান্ট এই মুহূর্তে কাজ করছে না। একটু পরে আবার চেষ্টা করুন।',
   banglish: 'Assistant ekhon kaj korche na. Ektu pore abar try korun.'
 };
+
+// Same question again → same answer from memory, no search / Gemini call (fast + saves quota)
+const ANSWER_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const ANSWER_CACHE_MAX = 200;
+const answerCache = new Map(); // normalized question → { body, expires }
+
+function cacheKey(question) {
+  return question.toLowerCase().replace(/[?!.,।]+/g, '').trim();
+}
+
+function getCachedAnswer(question) {
+  const key = cacheKey(question);
+  const hit = answerCache.get(key);
+  if (!hit) return null;
+  if (hit.expires < Date.now()) {
+    answerCache.delete(key);
+    return null;
+  }
+  return hit.body;
+}
+
+function cacheAnswer(question, body) {
+  // Map keeps insertion order, so the first key is the oldest one
+  if (answerCache.size >= ANSWER_CACHE_MAX) answerCache.delete(answerCache.keys().next().value);
+  answerCache.set(cacheKey(question), { body, expires: Date.now() + ANSWER_CACHE_TTL_MS });
+  return body;
+}
 
 /**
  * Sanitizes input string to prevent HTML/script injection and strip harmful control characters
@@ -71,10 +99,25 @@ export async function askChatbot(req, res) {
     return res.status(400).json({ message: 'Please type a question.' });
   }
 
+  let history;
+  try {
+    history = validateHistory(req.body?.history, sanitizeQuestion);
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
+  }
+
+  // Include context so identical follow-ups in different conversations cannot share answers.
+  const answerKey = JSON.stringify({ question, history });
+
   // LAYER 0 – small talk (hi, thanks, bye...): friendly reply, no AI call
   const smallTalk = getSmallTalkReply(question);
   if (smallTalk) {
     return res.json({ answer: smallTalk, inContext: true, sources: [] });
+  }
+
+  const cached = getCachedAnswer(answerKey);
+  if (cached) {
+    return res.json(cached);
   }
 
   // read here (not at file top) so the value from .env is always loaded
@@ -86,27 +129,29 @@ export async function askChatbot(req, res) {
 
   try {
     // LAYER 0.5 – Bangla/Banglish hole age English e translate (search model shudhu English bojhe)
-    const searchText = lang === 'en' ? question : await translateToEnglish(question);
+    const searchText = history.length
+      ? await resolveFollowup(question, history)
+      : lang === 'en' ? question : await translateToEnglish(question);
 
     // LAYER 1 – semantic search: keep only chunks that are similar enough
     const results = await searchChunks(searchText, 4);
     const relevant = results.filter(r => r.score >= threshold);
-
+    //out of scope before api handle
     // Nothing similar → off-topic question → do NOT call the LLM at all
     if (relevant.length === 0) {
-      return res.json({ answer: outOfContextReply, inContext: false, sources: [] });
+      return res.json(cacheAnswer(answerKey, { answer: outOfContextReply, inContext: false, sources: [] }));
     }
 
     // LAYER 2 – generation: Gemini answers using ONLY the retrieved chunks (question er bhashay)
-    const prompt = buildPrompt(question, relevant, { lang, englishQuestion: searchText });
+    const prompt = buildPrompt(question, relevant, { lang, englishQuestion: searchText, resolvedQuestion: history.length ? searchText : '' });
     const answer = await callGemini(prompt, SYSTEM_INSTRUCTION);
-
+    // out of scope after api call
     if (!answer || answer.includes(OUT_OF_CONTEXT_TOKEN)) {
-      return res.json({ answer: outOfContextReply, inContext: false, sources: [] });
+      return res.json(cacheAnswer(answerKey, { answer: outOfContextReply, inContext: false, sources: [] }));
     }
 
     const sources = [...new Set(relevant.map(r => r.source))];
-    return res.json({ answer, inContext: true, sources });
+    return res.json(cacheAnswer(answerKey, { answer, inContext: true, sources }));
   } catch (err) {
     console.error('Chatbot error:', err.message);
     return res.status(500).json({ message: UNAVAILABLE_MESSAGES[lang] });

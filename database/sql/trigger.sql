@@ -24,15 +24,15 @@ DROP TRIGGER IF EXISTS trg_dna_match_confirmed_update;
 DROP TRIGGER IF EXISTS trg_dna_match_confirmed_insert;
 
 DELIMITER //
-
+-- kono match update korte glele auto trigger
 -- 1. AFTER UPDATE trigger: match review kore Confirmed korle
 CREATE TRIGGER trg_dna_match_confirmed_update
-AFTER UPDATE ON dna_matches
+AFTER UPDATE ON dna_matches -- dna_matches update holei trigger fire hobe
 FOR EACH ROW
 BEGIN
     -- Shudhu tokhon-i jokhon status notun kore 'Confirmed' holo (age Confirmed chilo na)
-    IF NEW.match_status = 'Confirmed' AND OLD.match_status <> 'Confirmed' THEN
-        UPDATE missing_persons
+    IF NEW.match_status = 'Confirmed' AND OLD.match_status <> 'Confirmed' THEN -- notun status confirmed and age confirmed chilona then
+        UPDATE missing_persons -- update koro
         SET status = 'Identified'
         WHERE person_id = (
             -- Matched (reference) sample er missing person
@@ -45,6 +45,8 @@ BEGIN
 END //
 
 -- 2. AFTER INSERT trigger: shorashori 'Confirmed' match insert korle
+-- notun match create korar shomoy e confiremd dile
+-- mane jokhoni match insert kora hoy eta autro itrrger
 CREATE TRIGGER trg_dna_match_confirmed_insert
 AFTER INSERT ON dna_matches
 FOR EACH ROW

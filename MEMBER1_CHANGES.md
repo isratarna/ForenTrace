@@ -25,6 +25,7 @@ This file records every change made for Member 1, phase by phase. Each phase mat
 | UI 1b | UI minimal pass: neutral dark, teal only as accent, fewer/quieter effects | ✅ Done |
 | UI 2 | DNA Analytics page onto the theme + removed unprotected duplicate `/dna-analytics` route | ✅ Done |
 | UI 3 | Chatbot widget onto the dark theme + leftover light-theme pages (DNA Labs, Lab Technicians, Family Members) | ✅ Done |
+| Extra | Restored Officer / Lab Technician self-registration on the login page (pending admin approval) | ✅ Done |
 
 ---
 
@@ -10490,3 +10491,563 @@ index 3a1173e..c43a267 100644
 |---|---|
 | `PoliceStations.jsx` | Still unused + Tailwind. Team decision whether to delete |
 | Real app check | Screenshots used static markup (login + backend needed for the real widget). Open the app once and click through the chatbot to confirm |
+
+---
+
+# Extra — Restore Officer / Lab Technician self-registration on the login page
+
+## Goal
+
+The login page used to have "Register as Police Officer" and "Register as Lab Technician" options. Commit `8a414e9` ("Implement admin operational user creation") removed them together with the backend `/api/auth/register` routes, so only an admin could create accounts. This phase brings the two register options back **without** bringing back the old code, which had a weakness: a Lab Technician registered that way only got a `users` row and was never linked to `lab_technicians`.
+
+The new register endpoint reuses the admin's `createManagedUser` (in `userController.js`), so self-registration gets exactly the same validation and the same single transaction as admin creation:
+- **Officer:** an `officers` row plus a linked `users` row
+- **Lab Technician:** a `lab_technicians` row plus a linked `users` row (through `createTechnicianAccountInTransaction`)
+
+Every self-registered account is `pending_approval`. It cannot log in until an admin activates it on the Administration → Users page.
+
+## Files changed
+
+| File | Type | What changed |
+|---|---|---|
+| `backend/controllers/authController.js` | Modified | Added `register` (public, reuses `createManagedUser`) and `getRegisterOptions` (station and lab id + name for the dropdowns) |
+| `backend/routes/authRoutes.js` | Modified | Added `POST /api/auth/register` and `GET /api/auth/register/options` (no login needed) |
+| `frontend/src/services/authService.js` | Modified | Added `registerAccount` and `getRegisterOptions` |
+| `frontend/src/pages/Auth.jsx` | Modified | Login page now has a mode switch: Sign in / Register as Police Officer / Register as Lab Technician |
+
+No new SQL: the endpoints only reuse existing model functions (`findAllStations`, `getAllLabs`) and the existing admin create transaction.
+
+## API endpoints
+
+| Method | Endpoint | Roles | Purpose |
+|---|---|---|---|
+| POST | `/api/auth/register` | Public | Creates an Officer or Lab Technician account in `pending_approval` state |
+| GET | `/api/auth/register/options` | Public | Police station and lab list for the register form (only `id` and `name`) |
+
+## Access rules
+
+| Rule | How it is enforced |
+|---|---|
+| Only Officer / Lab Technician can register | `createManagedUser` rejects every other role ("Role must be Officer or Lab Technician.") |
+| A registered person cannot log in until approved | Account is inserted with `account_status = 'pending_approval'`; `login` only allows `active` |
+| A registered person cannot choose their username | `register` removes `username` from the body; the username is generated from first + last name |
+| Station / lab details stay private | `register/options` returns only `id` and `name`, not addresses, contacts or emails |
+
+## `backend/controllers/authController.js`
+
+| Part | What it does |
+|---|---|
+| `register` | Drops any `username` from the request body, then calls the admin's `createManagedUser`, which validates, checks duplicates (email, profile email, badge number) and runs the insert transaction |
+| `getRegisterOptions` | Loads all stations and labs and returns only `id` + `name` for the dropdowns |
+
+```diff
+diff --git a/backend/controllers/authController.js b/backend/controllers/authController.js
+index b5468d5..3782c6a 100644
+--- a/backend/controllers/authController.js
++++ b/backend/controllers/authController.js
+@@ -3,6 +3,9 @@ import {
+   findUserByEmail,
+   updateLastLogin,
+ } from '../models/userModel.js'
++import { findAllStations } from '../models/policeStationModel.js'
++import { getAllLabs } from '../models/dnaLabModel.js'
++import { createManagedUser } from './userController.js'
+ 
+ export async function login(req, res) {
+   try {
+@@ -102,3 +105,42 @@ export function logout(req, res) {
+     })
+   })
+ }
++
++// Public self-registration (Police Officer / Lab Technician).
++// Admin er createManagedUser er same validation + transaction reuse kora hocche,
++// tai profile (officers / lab_technicians) ar users row eksathe toiri hoy.
++// Account shob shomoy 'pending_approval' thake — admin approve na kora porjonto login hobe na.
++// createManagedUser nije e role ke Officer / Lab Technician e limit kore, tai Admin register kora jabe na.
++export function register(req, res) {
++  // Username nije dite parbe na — first + last name theke auto generate hobe
++  const { username, ...body } = req.body || {}
++  req.body = body
++  return createManagedUser(req, res)
++}
++
++// Register form er dropdown er jonno station ar lab list (login chara).
++// Shudhu id ar name pathano hocche, baki station/lab details public kora hocche na.
++export async function getRegisterOptions(req, res) {
++  try {
++    const [stations, labs] = await Promise.all([findAllStations(), getAllLabs()])
++
++    return res.status(200).json({
++      success: true,
++      stations: stations.map(station => ({
++        id: station.station_id,
++        name: station.station_name,
++      })),
++      labs: labs.map(lab => ({
++        id: lab.lab_id,
++        name: lab.lab_name,
++      })),
++    })
++  } catch (error) {
++    console.error('Register options error:', error)
++
++    return res.status(500).json({
++      success: false,
++      message: 'Internal server error.',
++    })
++  }
++}
+```
+
+## `backend/routes/authRoutes.js`
+
+```diff
+diff --git a/backend/routes/authRoutes.js b/backend/routes/authRoutes.js
+index 20faa83..f32c71a 100644
+--- a/backend/routes/authRoutes.js
++++ b/backend/routes/authRoutes.js
+@@ -3,11 +3,16 @@ import {
+   login,
+   logout,
+   getCurrentUser,
++  register,
++  getRegisterOptions,
+ } from '../controllers/authController.js'
+ import { requireAuth } from '../middleware/authMiddleware.js'
+ const router = express.Router()
+ 
+ router.post('/login', login)
++// Public self-registration — account pending_approval thake, admin approve korle login hobe
++router.post('/register', register)
++router.get('/register/options', getRegisterOptions)
+ router.post('/logout', logout)
+ router.get('/me', requireAuth, getCurrentUser)
+ export default router
+\ No newline at end of file
+```
+
+## `frontend/src/services/authService.js`
+
+```diff
+diff --git a/frontend/src/services/authService.js b/frontend/src/services/authService.js
+index 231bfee..b8c696d 100644
+--- a/frontend/src/services/authService.js
++++ b/frontend/src/services/authService.js
+@@ -18,3 +18,15 @@ export async function logoutUser() {
+   const response = await api.post('/auth/logout')
+   return response.data
+ }
++
++// Officer / Lab Technician self-registration — admin approve korar por login kora jabe
++export async function registerAccount(data) {
++  const response = await api.post('/auth/register', data)
++  return response.data
++}
++
++// Register form er station ar lab dropdown (login chara pawa jay)
++export async function getRegisterOptions() {
++  const response = await api.get('/auth/register/options')
++  return response.data
++}
+```
+
+## `frontend/src/pages/Auth.jsx`
+
+| Part | What it does |
+|---|---|
+| `mode` state | `'login'`, `'Officer'` or `'Lab Technician'`. The register role is the mode itself, so it is sent straight to the API |
+| `useEffect` | When the page goes into a register mode, loads stations and labs from `/api/auth/register/options` |
+| `changeMode` | Switches mode and clears the error, notice and register form |
+| `submit` | In register mode, sends only the fields that role needs, then goes back to Sign in with a green "Registration submitted…" notice. In login mode, unchanged |
+| `registerField` | Small helper that renders a label + input in a half-width column |
+| Footer | Login mode shows "Register as Police Officer" and "Register as Lab Technician"; register mode shows "Already have an account? Sign in" |
+
+Full file:
+
+```jsx
+import { useEffect, useState } from 'react'
+import { Navigate, useNavigate } from 'react-router-dom'
+
+import { useAuth } from '../context/AuthContext'
+import { getRegisterOptions, registerAccount } from '../services/authService'
+import { dashboardPath } from '../utils/auth'
+import { DnaHelix } from '../components/DnaEffects' // DNA animation (UI upgrade)
+
+// Register form er khali value — mode change korle form reset hoy
+const EMPTY_REGISTER_FORM = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  password: '',
+  rank: '',
+  badgeNumber: '',
+  stationId: '',
+  designation: '',
+  labId: '',
+}
+
+export default function Login() {
+  const { user, login } = useAuth()
+  const navigate = useNavigate()
+
+  // mode: 'login', 'Officer' ba 'Lab Technician' (register er role)
+  const [mode, setMode] = useState('login')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [form, setForm] = useState({
+    email: '',
+    password: '',
+  })
+  const [registerForm, setRegisterForm] = useState(EMPTY_REGISTER_FORM)
+  const [options, setOptions] = useState({ stations: [], labs: [] })
+
+  const registering = mode !== 'login'
+
+  // Register mode e gele station ar lab dropdown er list load hoy
+  useEffect(() => {
+    if (!registering) return undefined
+
+    let ignore = false
+
+    getRegisterOptions()
+      .then(result => {
+        if (!ignore) setOptions({ stations: result.stations, labs: result.labs })
+      })
+      .catch(() => {
+        if (!ignore) setError('Could not load police stations and laboratories.')
+      })
+
+    return () => {
+      ignore = true
+    }
+  }, [registering])
+
+  if (user) {
+    return (
+      <Navigate
+        to={dashboardPath(user.role)}
+        replace
+      />
+    )
+  }
+
+  const update = event =>
+    setForm(current => ({
+      ...current,
+      [event.target.name]: event.target.value,
+    }))
+
+  const updateRegister = event =>
+    setRegisterForm(current => ({
+      ...current,
+      [event.target.name]: event.target.value,
+    }))
+
+  const changeMode = nextMode => {
+    setMode(nextMode)
+    setError('')
+    setNotice('')
+    setRegisterForm(EMPTY_REGISTER_FORM)
+  }
+
+  const submit = async (event) => {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+
+    try {
+      if (registering) {
+        // Role onujayi shudhu dorkari profile field pathano hoy
+        await registerAccount({
+          role: mode,
+          firstName: registerForm.firstName,
+          lastName: registerForm.lastName,
+          email: registerForm.email,
+          phone: registerForm.phone,
+          password: registerForm.password,
+          ...(mode === 'Officer'
+            ? {
+                rank: registerForm.rank,
+                badgeNumber: registerForm.badgeNumber,
+                stationId: registerForm.stationId,
+              }
+            : {
+                designation: registerForm.designation,
+                labId: registerForm.labId,
+              }),
+        })
+
+        changeMode('login')
+        setNotice(
+          'Registration submitted. An administrator must approve your account before you can sign in.'
+        )
+        return
+      }
+
+      const authenticatedUser = await login(
+        form.email,
+        form.password
+      )
+
+      navigate(
+        dashboardPath(authenticatedUser.role),
+        { replace: true }
+      )
+    } catch (submissionError) {
+      setError(
+        submissionError.response?.data?.message ||
+        submissionError.message ||
+        'Authentication failed.'
+      )
+    }
+  }
+
+  // Register form er ekta text input — label + input eksathe
+  const registerField = (name, label, type = 'text', autoComplete = 'off') => (
+    <div className="col-md-6">
+      <label className="form-label" htmlFor={`register-${name}`}>
+        {label}
+      </label>
+      <input
+        id={`register-${name}`}
+        className="form-control"
+        name={name}
+        type={type}
+        value={registerForm[name]}
+        onChange={updateRegister}
+        autoComplete={autoComplete}
+        required
+      />
+    </div>
+  )
+
+  return (
+    <main className="login-page">
+      <section className="login-brand">
+        <div className="brand-icon large">FT</div>
+        <h1>ForenTrace</h1>
+        <p>DNA Identification System</p>
+        <hr />
+        <p className="small">
+          Centralized management for missing-person investigations,
+          forensic DNA samples, and identification records.
+        </p>
+        {/* Boro ghurte thaka DNA helix — login page er decoration (UI upgrade) */}
+        <DnaHelix rungs={10} size="large" />
+      </section>
+
+      <section className="login-form-wrap">
+        <form className="login-card" onSubmit={submit}>
+          <span className="eyebrow">
+            {registering ? 'ACCOUNT REQUEST' : 'AUTHORIZED ACCESS'}
+          </span>
+
+          <h2>
+            {mode === 'login'
+              ? 'Sign in to ForenTrace'
+              : mode === 'Officer'
+                ? 'Register as Police Officer'
+                : 'Register as Lab Technician'}
+          </h2>
+
+          <p className="text-secondary">
+            {registering
+              ? 'Your account will be reviewed by an administrator before you can sign in.'
+              : 'Sign in using your registered email address and password.'}
+          </p>
+
+          {error && (
+            <div className="alert alert-danger py-2" role="alert">
+              {error}
+            </div>
+          )}
+
+          {notice && (
+            <div className="alert alert-success py-2" role="status">
+              {notice}
+            </div>
+          )}
+
+          {registering ? (
+            <div className="row g-3 mb-4">
+              {registerField('firstName', 'First name', 'text', 'given-name')}
+              {registerField('lastName', 'Last name', 'text', 'family-name')}
+              {registerField('email', 'Email', 'email', 'email')}
+              {registerField('phone', 'Phone', 'tel', 'tel')}
+
+              {mode === 'Officer' ? (
+                <>
+                  {registerField('rank', 'Rank')}
+                  {registerField('badgeNumber', 'Badge number')}
+                  <div className="col-12">
+                    <label className="form-label" htmlFor="register-stationId">
+                      Police station
+                    </label>
+                    <select
+                      id="register-stationId"
+                      className="form-select"
+                      name="stationId"
+                      value={registerForm.stationId}
+                      onChange={updateRegister}
+                      required
+                    >
+                      <option value="">Select station</option>
+                      {options.stations.map(station => (
+                        <option key={station.id} value={station.id}>
+                          {station.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {registerField('designation', 'Designation')}
+                  <div className="col-md-6">
+                    <label className="form-label" htmlFor="register-labId">
+                      Laboratory
+                    </label>
+                    <select
+                      id="register-labId"
+                      className="form-select"
+                      name="labId"
+                      value={registerForm.labId}
+                      onChange={updateRegister}
+                      required
+                    >
+                      <option value="">Select laboratory</option>
+                      {options.labs.map(lab => (
+                        <option key={lab.id} value={lab.id}>
+                          {lab.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              <div className="col-12">
+                <label className="form-label" htmlFor="register-password">
+                  Password
+                </label>
+                <input
+                  id="register-password"
+                  className="form-control"
+                  name="password"
+                  type="password"
+                  value={registerForm.password}
+                  onChange={updateRegister}
+                  autoComplete="new-password"
+                  minLength={6}
+                  required
+                />
+              </div>
+            </div>
+          ) : (
+            <>
+              <label className="form-label" htmlFor="email">
+                Email
+              </label>
+
+              <input
+                id="email"
+                className="form-control mb-3"
+                name="email"
+                type="email"
+                value={form.email}
+                onChange={update}
+                autoComplete="email"
+                required
+              />
+
+              <label className="form-label" htmlFor="password">
+                Password
+              </label>
+
+              <input
+                id="password"
+                className="form-control mb-4"
+                name="password"
+                type="password"
+                value={form.password}
+                onChange={update}
+                autoComplete="current-password"
+                required
+              />
+            </>
+          )}
+
+          <button className="btn btn-primary w-100">
+            {registering ? 'Submit registration' : 'Sign in'}
+          </button>
+
+          {/* Login ↔ register mode switch */}
+          <div className="text-secondary small text-center mt-4 mb-0">
+            {registering ? (
+              <>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm p-0 align-baseline"
+                  onClick={() => changeMode('login')}
+                >
+                  Sign in
+                </button>
+              </>
+            ) : (
+              <div className="d-flex flex-column gap-2 align-items-center">
+                <span>Need an account?</span>
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm p-0"
+                  onClick={() => changeMode('Officer')}
+                >
+                  Register as Police Officer
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm p-0"
+                  onClick={() => changeMode('Lab Technician')}
+                >
+                  Register as Lab Technician
+                </button>
+              </div>
+            )}
+          </div>
+
+          {!registering && (
+            <p className="text-secondary small text-center mt-3 mb-0">
+              Admin accounts are predefined and cannot be registered.
+            </p>
+          )}
+        </form>
+      </section>
+    </main>
+  )
+}
+```
+
+## Testing
+
+| Test | Result |
+|---|---|
+| `vite build` | ✅ |
+| `GET /api/auth/register/options` without login | ✅ 3 stations, 4 labs, only `id` + `name` |
+| Register with role `Admin` | ✅ 400 "Role must be Officer or Lab Technician." |
+| Register with missing fields | ✅ 400 "Complete all required account and profile fields." |
+| Register Officer (with `username: "hijack"` sent) | ✅ 201, `officers` row + linked user, username auto-generated (`zz.regtest`), not `hijack` |
+| Register Lab Technician | ✅ 201, `lab_technicians` row + linked user (`technicianId` set) |
+| Register again with the same email | ✅ 409 "An account with this email already exists." |
+| Log in with the new pending account | ✅ 403 "Account is not active." |
+| Test accounts | Deleted from the database after the test |
+
+## Known gaps
+
+| Item | Note |
+|---|---|
+| Team decision | This reverses part of commit `8a414e9`, which moved account creation to admins only. Confirm with the team |
+| Success message from the API | The API returns the admin wording ("Activate it to allow sign-in."); the login page shows its own "An administrator must approve…" notice instead |
+| No rate limit / captcha on `/api/auth/register` | Anyone can submit requests; each one stays pending until an admin approves |
+| `frontend/src/services/mockAuth.js` | Still holds the unused `REGISTERABLE_ROLES` constant |
