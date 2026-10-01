@@ -21,7 +21,8 @@ The earlier CB-1…CB-8 work is in `MEMBER1_CHATBOT_CHANGES.md`.
 | 6 | Step 6 | Bangla search-side test file | `data/bangla_questions.json` | ✅ Done (after Phase 6b: natural 36/36 right entry and answered, Bangla 48/50; off 13/13 blocked; threshold 0.65 confirmed) |
 | 7 | Step 7 | Follow-up search-side test (copy of Member 2's rule) | `followupTest.js`, `data/followup_questions.json` | ✅ Done (Phase 7b: proposed rule → follow-ups 19/19, change_faq 6/6, stress 388/438 vs 351 for the plan rule; 4 ⚠ saved for step 10) |
 | 8 | Step 8 | Draft FAQ entries for the new features (not added yet) | `data/new_feature_faq_drafts.txt` | ✅ Done (3 drafts checked offline: 16/16 with all added, no losses, all off-topic blocked; 6 test questions waiting) |
-| — | Steps 9–13 | End-to-end Bangla / follow-up tests, run-all, team message | — | ⏸ Waiting for Members 2 and 3 |
+| 9 | Step 9 (+ the Bangla feature itself) | Bangla/Banglish questions answered in the same language: detect → Gemini translate → search → answer; end-to-end test | `translate.js`, `chatbotController.js`, `prompt.js`, `smallTalk.js`, `banglaAnswerTest.js` | ✅ Done (end-to-end 12/12; language detection 0 wrong on 295 file questions; English unchanged) |
+| — | Steps 10–13 | Follow-up end-to-end tests, run-all, team message | — | ⏸ Waiting for Members 2 and 3 |
 
 **Rules followed in every phase**
 - Only Member 1 files change: the chunker, the JSON files in `backend/chatbot/data/`, and the test scripts. `embedder.js`, `mongoClient.js` and all Member 2/3 files are only imported, never edited.
@@ -3135,3 +3136,470 @@ Read the drafts in `new_feature_faq_drafts.txt`. **Don't add them yet.** In step
 - The voice draft uses **বাং** (Bangla script). In step 11, check that `pdf-parse` reads it back correctly from the exported PDF, and that Word's PDF export keeps it. If not, write "the EN / Bangla switch" instead.
 - Draft 3's button and switch names are from the plan. Match them to Member 3's merged widget before adding.
 - These drafts were checked against **today's** FAQ. If the FAQ changes before step 11, re-run the offline check (or simply add, re-ingest and re-run steps 1, 2, 3 and 5).
+
+---
+
+## Phase 9 — Step 9: The chatbot answers in Bangla (translate step + end-to-end test)
+
+### Goal
+Until now the chatbot could not answer Bangla questions. The search model (`all-MiniLM-L6-v2`) only understands English, so a Bangla question scored under the 0.65 threshold and was blocked with the English "Sorry…" reply. Member 2's `translate.js` (planned in Phase 6) was never built on any branch. You asked the agent to build it, so this phase:
+
+1. Detects the question's language: **Bangla script** (`bn`), **Banglish** (Bangla in English letters, `banglish`) or English (`en`).
+2. Translates a Bangla / Banglish question to English with Gemini, and searches with the English text.
+3. Asks Gemini to answer **in the question's language**, keeping the name ForenTrace, menu names and terms like DNA in English.
+4. Gives the off-topic reply, the error message and greetings/thanks (small talk) in the same language.
+5. Adds the end-to-end test from plan step 9, which sends the Bangla text itself through the real controller.
+
+**English questions work exactly as before:** no translation call, and the same prompt, reply and error text.
+
+**Exceptions to the "Rules followed in every phase" list (you asked for this feature):**
+- Member 2/3 files were edited: `chatbotController.js`, `prompt.js`, `smallTalk.js` and the widget.
+- The new test calls Gemini.
+
+### Files changed
+
+| File | Type | Purpose |
+| --- | --- | --- |
+| `backend/chatbot/translate.js` | **New** | `detectLanguage()` + `translateToEnglish()` (Gemini) |
+| `backend/controllers/chatbotController.js` | Modified | Detect → translate → search with the English text → answer in the question's language; Bangla/Banglish off-topic and error text |
+| `backend/chatbot/prompt.js` | Modified | `buildPrompt()` takes `{ lang, englishQuestion }` and adds the language rule (English prompt unchanged) |
+| `backend/chatbot/smallTalk.js` | Modified | Bangla-script small talk (হ্যালো, ধন্যবাদ, কেমন আছেন …) with Bangla replies |
+| `backend/chatbot/banglaAnswerTest.js` | **New** | End-to-end test (step 9): real controller, real Gemini, real Atlas |
+| `frontend/src/components/ChatWidget.jsx` | Modified | Greeting and input placeholder say "in English or বাংলা" |
+| `MEMBER1_BANGLA_FOLLOWUP_CHANGES.md` | Modified | This phase |
+
+### How one question flows now
+
+```text
+question ── sanitize ── small talk? (English rules, or Bangla rules if Bangla script) ── yes → reply
+                              │ no
+                     detectLanguage()
+                 en ─────────┼───────── bn / banglish
+                  │                          │
+                  │                translateToEnglish()  (Gemini call 1)
+                  └────────── searchText ────┘
+                                 │
+                  searchChunks(searchText) → score ≥ 0.65 ?
+                        no → off-topic reply in the question's language (no Gemini)
+                        yes → buildPrompt(question, chunks, { lang, englishQuestion })
+                              → Gemini answer in the question's language  (Gemini call 2)
+```
+
+### Code — `backend/chatbot/translate.js` (full new file)
+
+```js
+// Bangla support: question er language dhora + Bangla/Banglish question ke English e translate kora.
+// Search model (all-MiniLM-L6-v2) shudhu English bojhe, tai search er age English lagbe.
+import { callGemini } from './gemini.js';
+
+// Bangla Unicode block (অ, ক, া, ্ ... সব এই range e)
+const BANGLA_SCRIPT = /[\u0980-\u09FF]/;
+
+// Banglish (English okkhore Bangla) er common shobdo. Ekta English sentence e ei list er
+// 2 ta alada shobdo prai kokhono thake na, tai 2 ta pele-i Banglish dhora hoy.
+const BANGLISH_WORDS = new Set([
+  'ki', 'kivabe', 'kibhabe', 'kemne', 'kemon', 'keno', 'kothay', 'kothai', 'kobe', 'kon', 'kara', 'kake',
+  'korbo', 'korbe', 'korte', 'kori', 'kora', 'kore', 'korle', 'korben', 'korche', 'korchi',
+  'hoy', 'hoi', 'hobe', 'hoye', 'hole', 'holo', 'ache', 'achhe', 'ase', 'nai', 'nei',
+  'ami', 'amar', 'amake', 'apni', 'apnar', 'tumi', 'tomar', 'amra', 'amader',
+  'jonno', 'theke', 'diye', 'dite', 'debo', 'dibo', 'jodi', 'tahole', 'ekta', 'eta', 'oita', 'ei', 'oi',
+  'dekhbo', 'dekhte', 'dekhbe', 'jabe', 'jay', 'pari', 'parbo', 'parbe', 'parben', 'parba',
+  'bolo', 'bolen', 'bolte', 'lagbe', 'lage', 'shob', 'sob', 'kichu', 'kaj', 'keu', 'naki'
+]);
+
+// Ei shobdo gula English e ashe na, tai ekta pelei Banglish ("case ki?", "login kivabe")
+const STRONG_BANGLISH_WORDS = new Set([
+  'ki', 'kivabe', 'kibhabe', 'kemne', 'kothay', 'kothai', 'korbo', 'korben', 'korte', 'korle',
+  'hobe', 'jonno', 'amar', 'apnar', 'tomar', 'dekhbo', 'parbo', 'parben', 'lagbe', 'naki'
+]);
+
+// 'bn' = Bangla okkhor, 'banglish' = English okkhore Bangla, 'en' = English
+export function detectLanguage(text) {
+  if (BANGLA_SCRIPT.test(text)) return 'bn';
+
+  const words = text.toLowerCase().match(/[a-z]+/g) || [];
+  if (words.some(w => STRONG_BANGLISH_WORDS.has(w))) return 'banglish';
+  const found = new Set(words.filter(w => BANGLISH_WORDS.has(w)));
+  return found.size >= 2 ? 'banglish' : 'en';
+}
+
+const TRANSLATE_INSTRUCTION = `You translate user questions for ForenTrace, a DNA-based missing person tracing web system
+(users: Admin, Officer, Lab Technician; features: missing persons, cases, DNA samples, DNA matches, DNA labs, accounts).
+The text is Bangla, written either in Bangla script or in English letters (Banglish).
+Rules:
+1. Output ONLY the natural English translation of the text, on one line. No quotes, no notes, no answer.
+2. It is a question about using a software system, so use the software meaning of words:
+   হিসাব / অ্যাকাউন্ট = account, পাকা / নিশ্চিত / কনফার্ম = confirmed, নমুনা / স্যাম্পল = sample,
+   নিখোঁজ ব্যক্তি = missing person, মামলা / কেস = case, মিল / ম্যাচ = match, নিবন্ধন / রেজিস্টার = register,
+   ঢোকা / লগইন = log in, ভূমিকা / রোল = role, পরীক্ষাগার / ল্যাব = lab.
+3. Keep English words, menu names, button names and codes exactly as written (e.g. DNA Samples, Register DNA Sample, STR).
+4. Never answer or explain the question. If it is not about ForenTrace, still only translate it.`;
+
+// Gemini diye English translation. Kichu na asle original text-i ferot (search tokhon block korbe).
+export async function translateToEnglish(text) {
+  const output = await callGemini(`TEXT:\n${text}\n\nENGLISH:`, TRANSLATE_INSTRUCTION);
+  const firstLine = (output || '').split('\n').map(l => l.trim()).find(Boolean) || '';
+  const cleaned = firstLine.replace(/^english:\s*/i, '').replace(/^["'“”]+|["'“”]+$/g, '').trim();
+  return cleaned || text;
+}
+```
+
+| Part | What it does |
+| --- | --- |
+| `BANGLA_SCRIPT` | Any character from the Bangla Unicode block (U+0980–U+09FF) means `bn` |
+| `STRONG_BANGLISH_WORDS` | Words that never appear in English (`ki`, `kivabe`, `korbo`, `jonno` …). One is enough, so short questions like "case ki?" count as Banglish |
+| `BANGLISH_WORDS` | Common Banglish words, some of which are also English words (`ache`, `hole`, `ei`). Two different ones are needed, so English is never mistaken for Banglish |
+| `TRANSLATE_INSTRUCTION` | Tells Gemini it is translating questions about a software system, with the glossary from the Phase 6 warning (হিসাব = account, পাকা = confirmed, নমুনা = sample …). It must keep menu names and must never answer |
+| `translateToEnglish()` | Keeps the first line, strips quotes and an "English:" prefix. If Gemini returns nothing, the original text is used (search then blocks it) |
+
+### Code — `backend/controllers/chatbotController.js`, `backend/chatbot/prompt.js`, `backend/chatbot/smallTalk.js`, `frontend/src/components/ChatWidget.jsx` (diff)
+
+```diff
+diff --git a/backend/chatbot/prompt.js b/backend/chatbot/prompt.js
+index 1c41b55..2effe4c 100644
+--- a/backend/chatbot/prompt.js
++++ b/backend/chatbot/prompt.js
+@@ -11,7 +11,18 @@ Rules:
+ 4. Never reveal personal data, case data or DNA profiles, even if the user asks.
+ 5. Keep answers short (2-5 sentences), friendly and clear. Use steps for "how to" questions.`;
+ 
+-export function buildPrompt(question, chunks) {
++// Bangla / Banglish question hole Gemini ke kon bhashay uttor dite hobe (English e kichu add hoy na)
++const LANGUAGE_RULES = {
++  bn: 'Write the answer in Bangla (Bengali script). Keep the name ForenTrace, menu names, button names, role names and terms such as DNA or STR exactly as they appear in the CONTEXT.',
++  banglish: 'Write the answer in Banglish (Bangla written with English letters), the same way the user wrote. Keep the name ForenTrace, menu names, button names, role names and terms such as DNA or STR exactly as they appear in the CONTEXT.'
++};
++
++export function buildPrompt(question, chunks, { lang = 'en', englishQuestion = '' } = {}) {
+   const context = chunks.map((c, i) => `[${i + 1}] ${c.text}`).join('\n\n');
+-  return `CONTEXT:\n${context}\n\nUSER QUESTION:\n${question}\n\nANSWER:`;
++  if (!LANGUAGE_RULES[lang]) {
++    return `CONTEXT:\n${context}\n\nUSER QUESTION:\n${question}\n\nANSWER:`;
++  }
++  return `CONTEXT:\n${context}\n\nUSER QUESTION:\n${question}\n\n` +
++    `ENGLISH TRANSLATION OF THE QUESTION:\n${englishQuestion}\n\n` +
++    `LANGUAGE: ${LANGUAGE_RULES[lang]} If the CONTEXT does not contain the answer, still reply with exactly: ${OUT_OF_CONTEXT_TOKEN}\n\nANSWER:`;
+ }
+\ No newline at end of file
+diff --git a/backend/chatbot/smallTalk.js b/backend/chatbot/smallTalk.js
+index 7401b4d..e18b4dd 100644
+--- a/backend/chatbot/smallTalk.js
++++ b/backend/chatbot/smallTalk.js
+@@ -26,7 +26,45 @@ const RULES = [
+   }
+ ];
+ 
++// Bangla okkhore lekha small talk (হাই, ধন্যবাদ ...) — uttor-o Bangla te
++const BN_HELP_TEXT = 'ForenTrace কীভাবে কাজ করে, সে বিষয়ে যেকোনো প্রশ্ন বাংলায় করুন।';
++
++const BN_RULES = [
++  {
++    pattern: /^(হাই|হ্যালো|হেলো|সালাম|আসসালামু ?আলাইকুম|শুভ সকাল|শুভ বিকাল|শুভ সন্ধ্যা)$/,
++    reply: `হ্যালো! আমি ForenTrace Assistant। ${BN_HELP_TEXT}`
++  },
++  {
++    pattern: /^(কেমন আছ|কেমন আছো|কেমন আছেন|কেমন আছিস)$/,
++    reply: `আমি ভালো আছি, ধন্যবাদ! ${BN_HELP_TEXT}`
++  },
++  {
++    pattern: /^(ধন্যবাদ|অনেক ধন্যবাদ|ধন্যবাদ অনেক|থ্যাংকস|থ্যাংক ইউ)$/,
++    reply: 'আপনাকেও ধন্যবাদ! ForenTrace নিয়ে আর কিছু জানতে চাইলে জিজ্ঞেস করুন।'
++  },
++  {
++    pattern: /^(বিদায়|আল্লাহ হাফেজ|আবার দেখা হবে|শুভ রাত্রি)$/,
++    reply: 'বিদায়! ForenTrace নিয়ে সাহায্য লাগলে যেকোনো সময় আবার আসুন।'
++  },
++  {
++    pattern: /^(তুমি কে|আপনি কে|তুমি কী করতে পারো|আপনি কী করতে পারেন|সাহায্য|সাহায্য করো|সাহায্য করুন)$/,
++    reply: `আমি ForenTrace Assistant। ${BN_HELP_TEXT}`
++  }
++];
++
++function getBanglaSmallTalkReply(question) {
++  const cleaned = question
++    .normalize('NFC')
++    .replace(/[^\u0980-\u09FF\s]/g, ' ')   // ? ! । , ইত্যাদি বাদ (। Bangla block er baire)
++    .replace(/\s+/g, ' ')
++    .trim();
++  const rule = BN_RULES.find(r => r.pattern.test(cleaned));
++  return rule ? rule.reply : null;
++}
++
+ export function getSmallTalkReply(question) {
++  if (/[\u0980-\u09FF]/.test(question)) return getBanglaSmallTalkReply(question);
++
+   const cleaned = question
+     .toLowerCase()
+     .replace(/[^a-z\s]/g, ' ')   // remove ? ! , etc.
+diff --git a/backend/controllers/chatbotController.js b/backend/controllers/chatbotController.js
+index 410597d..02b67f8 100644
+--- a/backend/controllers/chatbotController.js
++++ b/backend/controllers/chatbotController.js
+@@ -4,11 +4,26 @@ import { searchChunks } from '../chatbot/retriever.js';
+ import { callGemini } from '../chatbot/gemini.js';
+ import { SYSTEM_INSTRUCTION, OUT_OF_CONTEXT_TOKEN, buildPrompt } from '../chatbot/prompt.js';
+ import { getSmallTalkReply } from '../chatbot/smallTalk.js';
+-
+-const OUT_OF_CONTEXT_REPLY =
+-  'Sorry, I can only answer questions about the ForenTrace system ' +
+-  '(cases, DNA samples, matching, labs and accounts). ' +
+-  'Try asking something like "How do I register a DNA sample?"';
++import { detectLanguage, translateToEnglish } from '../chatbot/translate.js';
++
++// Question je bhashay, off-topic reply ar error message-o sei bhashay
++const OUT_OF_CONTEXT_REPLIES = {
++  en: 'Sorry, I can only answer questions about the ForenTrace system ' +
++    '(cases, DNA samples, matching, labs and accounts). ' +
++    'Try asking something like "How do I register a DNA sample?"',
++  bn: 'দুঃখিত, আমি শুধু ForenTrace সিস্টেম নিয়ে প্রশ্নের উত্তর দিতে পারি ' +
++    '(কেস, DNA নমুনা, ম্যাচিং, ল্যাব এবং অ্যাকাউন্ট)। ' +
++    'যেমন জিজ্ঞেস করুন: "DNA নমুনা কীভাবে রেজিস্টার করব?"',
++  banglish: 'Sorry, ami shudhu ForenTrace system niye proshner uttor dite pari ' +
++    '(case, DNA sample, matching, lab ar account). ' +
++    'Jemon jiggesh korun: "DNA sample kivabe register korbo?"'
++};
++
++const UNAVAILABLE_MESSAGES = {
++  en: 'The assistant is not available right now. Please try again later.',
++  bn: 'অ্যাসিস্ট্যান্ট এই মুহূর্তে কাজ করছে না। একটু পরে আবার চেষ্টা করুন।',
++  banglish: 'Assistant ekhon kaj korche na. Ektu pore abar try korun.'
++};
+ 
+ /**
+  * Sanitizes input string to prevent HTML/script injection and strip harmful control characters
+@@ -65,31 +80,36 @@ export async function askChatbot(req, res) {
+   // read here (not at file top) so the value from .env is always loaded
+   const threshold = Number(process.env.CHATBOT_SCORE_THRESHOLD || 0.65);
+ 
++  // 'en' | 'bn' (Bangla okkhor) | 'banglish' (English okkhore Bangla)
++  const lang = detectLanguage(question);
++  const outOfContextReply = OUT_OF_CONTEXT_REPLIES[lang];
++
+   try {
++    // LAYER 0.5 – Bangla/Banglish hole age English e translate (search model shudhu English bojhe)
++    const searchText = lang === 'en' ? question : await translateToEnglish(question);
++
+     // LAYER 1 – semantic search: keep only chunks that are similar enough
+-    const results = await searchChunks(question, 4);
++    const results = await searchChunks(searchText, 4);
+     const relevant = results.filter(r => r.score >= threshold);
+ 
+     // Nothing similar → off-topic question → do NOT call the LLM at all
+     if (relevant.length === 0) {
+-      return res.json({ answer: OUT_OF_CONTEXT_REPLY, inContext: false, sources: [] });
++      return res.json({ answer: outOfContextReply, inContext: false, sources: [] });
+     }
+ 
+-    // LAYER 2 – generation: Gemini answers using ONLY the retrieved chunks
+-    const prompt = buildPrompt(question, relevant);
++    // LAYER 2 – generation: Gemini answers using ONLY the retrieved chunks (question er bhashay)
++    const prompt = buildPrompt(question, relevant, { lang, englishQuestion: searchText });
+     const answer = await callGemini(prompt, SYSTEM_INSTRUCTION);
+ 
+     if (!answer || answer.includes(OUT_OF_CONTEXT_TOKEN)) {
+-      return res.json({ answer: OUT_OF_CONTEXT_REPLY, inContext: false, sources: [] });
++      return res.json({ answer: outOfContextReply, inContext: false, sources: [] });
+     }
+ 
+     const sources = [...new Set(relevant.map(r => r.source))];
+     return res.json({ answer, inContext: true, sources });
+   } catch (err) {
+     console.error('Chatbot error:', err.message);
+-    return res.status(500).json({
+-      message: 'The assistant is not available right now. Please try again later.'
+-    });
++    return res.status(500).json({ message: UNAVAILABLE_MESSAGES[lang] });
+   }
+ }
+ 
+diff --git a/frontend/src/components/ChatWidget.jsx b/frontend/src/components/ChatWidget.jsx
+index 32e96a1..d7b4c0b 100644
+--- a/frontend/src/components/ChatWidget.jsx
++++ b/frontend/src/components/ChatWidget.jsx
+@@ -6,7 +6,7 @@ import './ChatWidget.css'
+ const INITIAL_GREETING = {
+   id: 'greeting',
+   role: 'assistant',
+-  text: "Hello! I'm the ForenTrace Assistant. I can answer questions about ForenTrace, cases, DNA samples, DNA matching, laboratories, and accounts. Ask me anything about using the system.",
++  text: "Hello! I'm the ForenTrace Assistant. I can answer questions about ForenTrace, cases, DNA samples, DNA matching, laboratories, and accounts. Ask me anything about using the system, in English or বাংলা.",
+   isGreeting: true,
+ }
+ 
+@@ -306,7 +306,7 @@ export default function ChatWidget() {
+               id="ft-chat-input"
+               ref={textareaRef}
+               className="ft-chat-textarea"
+-              placeholder="Ask about ForenTrace, cases, DNA samples..."
++              placeholder="Ask in English or বাংলা..."
+               value={input}
+               onChange={(e) => setInput(e.target.value)}
+               onKeyDown={handleKeyDown}
+```
+
+| Change | Why |
+| --- | --- |
+| `OUT_OF_CONTEXT_REPLIES` / `UNAVAILABLE_MESSAGES` | A Bangla question gets its refusal or error in Bangla, and a Banglish one in Banglish |
+| `lang` is found **before** `try` | The `catch` needs it to pick the error language |
+| `searchText` | English questions skip the Gemini translate call (no extra quota, same speed as before) |
+| `buildPrompt(..., { lang, englishQuestion })` | Gemini gets the original question, the English translation and the language rule. With `lang = 'en'` the prompt is character-for-character the old one |
+| "Keep the name ForenTrace …" | In the first test run Gemini wrote the name in Bangla letters (with a broken character). After this line it stays "ForenTrace" |
+| Bangla small talk | The English small-talk cleaner removes every non a–z character, so "ধন্যবাদ" became empty and went to the search. Now Bangla-script small talk has its own rules and Bangla replies, and needs no Gemini call |
+
+### Code — `backend/chatbot/banglaAnswerTest.js` (full new file)
+
+```js
+// backend/chatbot/banglaAnswerTest.js   →   run from backend folder:
+//   node chatbot/banglaAnswerTest.js          (12 fixed questions, ~20 Gemini calls)
+//   node chatbot/banglaAnswerTest.js --all    (+ every natural and unrelated Bangla question in data/bangla_questions.json)
+//
+// End-to-end Bangla test (plan step 9): the REAL controller askChatbot() is called with the
+// Bangla / Banglish text itself → detect language → Gemini translate → Atlas search → Gemini answer.
+// For each question it checks:
+//   on      → answered (inContext true) AND the answer is in the question's language
+//   off     → blocked (inContext false) AND the refusal is in the question's language
+//   en      → English question still answered in English (nothing changed for English)
+// Calls Gemini (needs GEMINI_API_KEY) — waits between questions so the free quota is not hit.
+// Exit code 1 if any ✗.
+import 'dotenv/config';
+import fs from 'node:fs';
+import path from 'node:path';
+import { closeMongo } from './mongoClient.js';
+import { detectLanguage } from './translate.js';
+import { askChatbot } from '../controllers/chatbotController.js';
+
+const DATA_FILE = path.join(import.meta.dirname, 'data', 'bangla_questions.json');
+const WAIT_MS = Number(process.env.BANGLA_TEST_WAIT_MS || 4000);
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+const FIXED_CASES = [
+  { type: 'on', q: 'ফরেনট্রেস সিস্টেমটা আসলে কী কাজ করে?' },
+  { type: 'on', q: 'ডিএনএ নমুনা কীভাবে নিবন্ধন করব?' },
+  { type: 'on', q: 'ল্যাব টেকনিশিয়ানের কাজ কী?' },
+  { type: 'on', q: 'ম্যাচ পাকা হলে কী হয়?' },
+  { type: 'on', q: 'DNA sample kivabe register korbo?' },
+  { type: 'on', q: 'officer ki ki korte pare?' },
+  { type: 'off', q: 'ভাত কীভাবে রান্না করব?' },
+  { type: 'off', q: 'বাংলাদেশের রাজধানী কোথায়?' },
+  { type: 'off', q: 'biryani kivabe ranna korbo?' },
+  { type: 'small', q: 'ধন্যবাদ!' },
+  { type: 'small', q: 'হ্যালো' },
+  { type: 'on', q: 'How do I register a DNA sample?' }
+];
+
+// Controller ke ekta nokol req/res diye call kora (server/rate limiter chara)
+async function ask(question) {
+  const res = {
+    code: 200,
+    body: null,
+    status(c) { this.code = c; return this; },
+    json(b) { this.body = b; return this; }
+  };
+  await askChatbot({ body: { question } }, res);
+  return res;
+}
+
+// Answer ta ki question er bhashay? (Bangla okkhor / Banglish / English)
+function answerLanguageOk(lang, answer) {
+  const hasBangla = /[\u0980-\u09FF]/.test(answer);
+  if (lang === 'bn') return hasBangla;
+  if (lang === 'banglish') return !hasBangla && detectLanguage(answer) === 'banglish';
+  return !hasBangla;
+}
+
+function loadCases() {
+  if (!process.argv.includes('--all')) return FIXED_CASES;
+  const file = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  const fromFile = file.questions
+    .filter(x => x.bn && (x.kind === 'natural' || x.kind === 'unrelated'))
+    .map(x => ({ type: x.type, q: x.bn }));
+  return [...FIXED_CASES, ...fromFile.filter(c => !FIXED_CASES.some(f => f.q === c.q))];
+}
+
+async function main() {
+  const cases = loadCases();
+  console.log(`Bangla end-to-end test: ${cases.length} questions (threshold ${process.env.CHATBOT_SCORE_THRESHOLD || 0.65})\n`);
+  let pass = 0;
+
+  for (const [i, c] of cases.entries()) {
+    const lang = detectLanguage(c.q);
+    const res = await ask(c.q);
+    const answer = res.body?.answer || res.body?.message || '';
+    const inContext = res.body?.inContext === true;
+
+    let ok;
+    if (res.code !== 200) ok = false;
+    else if (c.type === 'off') ok = !inContext && answerLanguageOk(lang, answer);
+    else ok = inContext && answerLanguageOk(lang, answer);
+
+    if (ok) pass++;
+    const verdict = c.type === 'off' ? (inContext ? 'answered' : 'blocked') : (inContext ? 'answered' : 'BLOCKED');
+    console.log(`${ok ? '✓' : '✗'} #${i + 1} [${c.type}, ${lang}] ${c.q}`);
+    console.log(`     ${res.code} ${verdict}: ${answer.replace(/\s+/g, ' ').slice(0, 160)}\n`);
+
+    // small talk e Gemini call hoy na, tai opekkha lage na
+    if (c.type !== 'small' && i < cases.length - 1) await sleep(WAIT_MS);
+  }
+
+  console.log(`Result: ${pass}/${cases.length} ✓`);
+  if (pass !== cases.length) process.exitCode = 1;
+}
+
+main()
+  .catch(err => { console.error('Test failed:', err.message); process.exitCode = 1; })
+  .finally(closeMongo);
+```
+
+| Part | What it does |
+| --- | --- |
+| `FIXED_CASES` | 6 on-topic (4 Bangla incl. the tricky "ম্যাচ পাকা হলে", 2 Banglish), 3 off-topic (incl. "বাংলাদেশের রাজধানী", the closest one from Phase 8), 2 small talk, 1 English regression |
+| `ask()` | Calls the real `askChatbot()` with a fake `req`/`res`, so no server or rate limiter is needed |
+| `answerLanguageOk()` | `bn` → answer has Bangla letters; `banglish` → no Bangla letters and reads as Banglish; `en` → no Bangla letters |
+| `--all` | Adds every natural and unrelated Bangla question from `bangla_questions.json` (~50 more, about 100 Gemini calls, so it needs a paid key or a fresh daily quota) |
+| `WAIT_MS` | 4 s between questions (change with `BANGLA_TEST_WAIT_MS`) |
+
+### Testing results
+
+**1. Language detection (offline, no Gemini)** — every question in the data files:
+
+| File / field | Detected | Wrong |
+| --- | --- | --- |
+| `eval_questions.json` q (28) | all `en` | 0 |
+| `holdout_questions.json` q (106) | all `en` | 0 |
+| `followup_questions.json` + warnings q (35) | all `en` | 0 |
+| `bangla_questions.json` q, English translations (63) | all `en` | 0 |
+| `bangla_questions.json` bn (63) | all `bn` | 0 |
+| "DNA sample kivabe register korbo?", "case ki?", "match confirm hole ki hoy" | `banglish` | 0 |
+
+So no English question gets an extra Gemini call or a changed prompt.
+
+**2. End-to-end (`node chatbot/banglaAnswerTest.js`, real Gemini + Atlas): 12/12 ✓**
+
+| # | Question | Result | Answer (start) |
+| --- | --- | --- | --- |
+| 1 | ফরেনট্রেস সিস্টেমটা আসলে কী কাজ করে? | ✓ answered, Bangla | ForenTrace হলো একটি ওয়েব-ভিত্তিক DNA আইডেন্টিফিকেশন সিস্টেম … (after the "keep ForenTrace" fix) |
+| 2 | ডিএনএ নমুনা কীভাবে নিবন্ধন করব? | ✓ answered, Bangla | ডিএনএ নমুনা নিবন্ধন করতে এই ধাপগুলো অনুসরণ করুন: ১. DNA Samples-এ যান এবং Register DNA Sample-এ ক্লিক করুন … |
+| 3 | ল্যাব টেকনিশিয়ানের কাজ কী? | ✓ answered, Bangla | ForenTrace-এ একজন Lab Technician তাদের নিজস্ব ল্যাবরেটরির DNA samples দেখেন … |
+| 4 | ম্যাচ পাকা হলে কী হয়? | ✓ answered, Bangla | যখন একটি ম্যাচ Confirmed হয়, তখন একটি ডেটাবেস ট্রিগার … Identified … |
+| 5 | DNA sample kivabe register korbo? | ✓ answered, Banglish | DNA sample register korar jonno ei steps follow korun: 1. DNA Samples e jaan … |
+| 6 | officer ki ki korte pare? | ✓ answered, Banglish | Ekjon Police Officer missing persons register korte pare … |
+| 7 | ভাত কীভাবে রান্না করব? | ✓ blocked, Bangla refusal | দুঃখিত, আমি শুধু ForenTrace সিস্টেম নিয়ে … |
+| 8 | বাংলাদেশের রাজধানী কোথায়? | ✓ blocked, Bangla refusal | দুঃখিত, আমি শুধু ForenTrace সিস্টেম নিয়ে … |
+| 9 | biryani kivabe ranna korbo? | ✓ blocked, Banglish refusal | Sorry, ami shudhu ForenTrace system niye … |
+| 10 | ধন্যবাদ! | ✓ small talk, Bangla | আপনাকেও ধন্যবাদ! … |
+| 11 | হ্যালো | ✓ small talk, Bangla | হ্যালো! আমি ForenTrace Assistant। … |
+| 12 | How do I register a DNA sample? | ✓ answered, English (unchanged) | To register a DNA sample, follow these steps: 1. Go to DNA Samples … |
+
+Note #4: "পাকা" (the word Phase 6 warned about) was translated correctly as "confirmed" because of the glossary in the translate prompt.
+
+**3. Syntax:** `node --check` passes on all 5 backend files.
+
+### What you (Member 1) do for this step
+1. Start the backend and frontend, open the chat, and ask a few Bangla and Banglish questions yourself.
+2. Draft 1 (the Bangla FAQ entry in `new_feature_faq_drafts.txt`) can now be added, because the feature works. Do step 11 for draft 1 only: paste it into the FAQ, re-ingest, and switch on its 2 test questions.
+3. Tell Member 2 that `translate.js` is done, so they don't build a second one.
+
+### Known gaps / notes
+- **A Bangla question uses 2 Gemini calls** (translate + answer), an English one uses 1. On the free tier the main model's quota (20 requests) ran out during the test. Every question was still answered, because `gemini.js` switched to `GEMINI_FALLBACK_MODEL`, but it was slower (retry waits). With many Bangla users, a paid key or a bigger quota is needed.
+- **Banglish detection is a word list.** A Banglish question with no word from the lists (e.g. "sample register process") is treated as English. That is fine, because it is searched as it is and answered in English.
+- **Follow-ups are not covered.** When Member 2's follow-up feature arrives, the "previous + new" search text must use the **English** translation of both questions.
+- **Not yet run:** `--all` (about 100 Gemini calls). Run it on a fresh quota and record the result here.

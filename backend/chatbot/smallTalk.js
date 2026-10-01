@@ -26,7 +26,45 @@ const RULES = [
   }
 ];
 
+// Bangla okkhore lekha small talk (হাই, ধন্যবাদ ...) — uttor-o Bangla te
+const BN_HELP_TEXT = 'ForenTrace কীভাবে কাজ করে, সে বিষয়ে যেকোনো প্রশ্ন বাংলায় করুন।';
+
+const BN_RULES = [
+  {
+    pattern: /^(হাই|হ্যালো|হেলো|সালাম|আসসালামু ?আলাইকুম|শুভ সকাল|শুভ বিকাল|শুভ সন্ধ্যা)$/,
+    reply: `হ্যালো! আমি ForenTrace Assistant। ${BN_HELP_TEXT}`
+  },
+  {
+    pattern: /^(কেমন আছ|কেমন আছো|কেমন আছেন|কেমন আছিস)$/,
+    reply: `আমি ভালো আছি, ধন্যবাদ! ${BN_HELP_TEXT}`
+  },
+  {
+    pattern: /^(ধন্যবাদ|অনেক ধন্যবাদ|ধন্যবাদ অনেক|থ্যাংকস|থ্যাংক ইউ)$/,
+    reply: 'আপনাকেও ধন্যবাদ! ForenTrace নিয়ে আর কিছু জানতে চাইলে জিজ্ঞেস করুন।'
+  },
+  {
+    pattern: /^(বিদায়|আল্লাহ হাফেজ|আবার দেখা হবে|শুভ রাত্রি)$/,
+    reply: 'বিদায়! ForenTrace নিয়ে সাহায্য লাগলে যেকোনো সময় আবার আসুন।'
+  },
+  {
+    pattern: /^(তুমি কে|আপনি কে|তুমি কী করতে পারো|আপনি কী করতে পারেন|সাহায্য|সাহায্য করো|সাহায্য করুন)$/,
+    reply: `আমি ForenTrace Assistant। ${BN_HELP_TEXT}`
+  }
+];
+
+function getBanglaSmallTalkReply(question) {
+  const cleaned = question
+    .normalize('NFC')
+    .replace(/[^\u0980-\u09FF\s]/g, ' ')   // ? ! । , ইত্যাদি বাদ (। Bangla block er baire)
+    .replace(/\s+/g, ' ')
+    .trim();
+  const rule = BN_RULES.find(r => r.pattern.test(cleaned));
+  return rule ? rule.reply : null;
+}
+
 export function getSmallTalkReply(question) {
+  if (/[\u0980-\u09FF]/.test(question)) return getBanglaSmallTalkReply(question);
+
   const cleaned = question
     .toLowerCase()
     .replace(/[^a-z\s]/g, ' ')   // remove ? ! , etc.

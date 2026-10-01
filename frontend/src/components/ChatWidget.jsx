@@ -6,7 +6,7 @@ import './ChatWidget.css'
 const INITIAL_GREETING = {
   id: 'greeting',
   role: 'assistant',
-  text: "Hello! I'm the ForenTrace Assistant. I can answer questions about ForenTrace, cases, DNA samples, DNA matching, laboratories, and accounts. Ask me anything about using the system.",
+  text: "Hello! I'm the ForenTrace Assistant. I can answer questions about ForenTrace, cases, DNA samples, DNA matching, laboratories, and accounts. Ask me anything about using the system, in English or বাংলা.",
   isGreeting: true,
 }
 
@@ -306,7 +306,7 @@ export default function ChatWidget() {
               id="ft-chat-input"
               ref={textareaRef}
               className="ft-chat-textarea"
-              placeholder="Ask about ForenTrace, cases, DNA samples..."
+              placeholder="Ask in English or বাংলা..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
